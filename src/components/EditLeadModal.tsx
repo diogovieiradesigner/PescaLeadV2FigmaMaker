@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
-import { CRMLead, CustomField } from '../types/crm';
+import { CRMLead, CustomField, KanbanColumn } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
+import { loadCustomFieldsForLead } from '../services/custom-fields-service';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../utils/supabase/client';
 
 interface EditLeadModalProps {
   lead: CRMLead | null;
@@ -14,11 +17,78 @@ interface EditLeadModalProps {
 }
 
 export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStatus, theme }: EditLeadModalProps) {
+  const { currentWorkspace } = useAuth();
   const [formData, setFormData] = useState<CRMLead | null>(lead);
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<CustomField['fieldType']>('text');
   const [showAddField, setShowAddField] = useState(false);
   const [newTag, setNewTag] = useState('');
+  const [loadingCustomFields, setLoadingCustomFields] = useState(false);
+  const [funnelColumns, setFunnelColumns] = useState<KanbanColumn[]>([]);
+  const [loadingColumns, setLoadingColumns] = useState(false);
+
+  // 🔥 Buscar colunas do funil quando o modal abrir
+  useEffect(() => {
+    if (isOpen && currentWorkspace?.id) {
+      loadFunnelColumns();
+    }
+  }, [isOpen, currentWorkspace?.id]);
+
+  // 🔥 Buscar colunas do funil do workspace atual
+  const loadFunnelColumns = async () => {
+    if (!currentWorkspace?.id) return;
+    
+    setLoadingColumns(true);
+    try {
+      console.log('[EDIT LEAD MODAL] 🔄 Buscando colunas do funil para workspace:', currentWorkspace.id);
+      
+      // Buscar o funil ativo do workspace
+      const { data: funnels, error: funnelError } = await supabase
+        .from('funnels')
+        .select('id')
+        .eq('workspace_id', currentWorkspace.id)
+        .limit(1)
+        .single();
+
+      if (funnelError) {
+        console.error('[EDIT LEAD MODAL] ❌ Erro ao buscar funil:', funnelError);
+        return;
+      }
+
+      if (!funnels?.id) {
+        console.log('[EDIT LEAD MODAL] ⚠️ Nenhum funil encontrado');
+        return;
+      }
+
+      // Buscar colunas do funil
+      const { data: columns, error: columnsError } = await supabase
+        .from('funnel_columns')
+        .select('id, title, position, color')
+        .eq('funnel_id', funnels.id)
+        .order('position', { ascending: true });
+
+      if (columnsError) {
+        console.error('[EDIT LEAD MODAL] ❌ Erro ao buscar colunas:', columnsError);
+        return;
+      }
+
+      if (columns && columns.length > 0) {
+        const mappedColumns: KanbanColumn[] = columns.map(col => ({
+          id: col.id,
+          title: col.title,
+          leads: [],
+          color: col.color || undefined
+        }));
+        
+        console.log('[EDIT LEAD MODAL] ✅ Colunas carregadas:', mappedColumns.length);
+        setFunnelColumns(mappedColumns);
+      }
+    } catch (error) {
+      console.error('[EDIT LEAD MODAL] ❌ Erro inesperado ao carregar colunas:', error);
+    } finally {
+      setLoadingColumns(false);
+    }
+  };
 
   // Update formData when lead or isOpen changes
   useEffect(() => {
@@ -30,8 +100,8 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
           clientName: '',
           company: '',
           dealValue: 0,
-          priority: 'medium',
-          dueDate: new Date().toISOString().split('T')[0],
+          priority: '',
+          dueDate: '',
           tags: [],
           status: initialStatus || 'new',
           assignee: {
@@ -50,13 +120,40 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
         setFormData(emptyLead);
       } else if (lead) {
         setFormData(lead);
+        
+        // 🔥 LAZY LOADING: Carregar custom fields apenas quando abrir modal em modo edit
+        if (mode === 'edit' && currentWorkspace?.id && (!lead.customFields || lead.customFields.length === 0)) {
+          loadCustomFieldsAsync(lead.id);
+        }
       }
       setShowAddField(false);
       setNewFieldName('');
       setNewFieldType('text');
       setNewTag('');
     }
-  }, [isOpen, lead, mode, initialStatus]);
+  }, [isOpen, lead, mode, initialStatus, currentWorkspace?.id]);
+
+  // 🔥 LAZY LOADING: Função para carregar custom fields sob demanda
+  const loadCustomFieldsAsync = async (leadId: string) => {
+    if (!currentWorkspace?.id) return;
+    
+    setLoadingCustomFields(true);
+    try {
+      console.log('[EDIT LEAD MODAL] 🔄 Carregando custom fields para lead:', leadId);
+      const { customFields, error } = await loadCustomFieldsForLead(leadId, currentWorkspace.id);
+      
+      if (error) {
+        console.error('[EDIT LEAD MODAL] ❌ Erro ao carregar custom fields:', error);
+      } else if (customFields.length > 0) {
+        console.log('[EDIT LEAD MODAL] ✅ Custom fields carregados:', customFields.length);
+        setFormData(prev => prev ? { ...prev, customFields } : null);
+      }
+    } catch (error) {
+      console.error('[EDIT LEAD MODAL] ❌ Erro inesperado:', error);
+    } finally {
+      setLoadingCustomFields(false);
+    }
+  };
 
   if (!isOpen || !formData) return null;
 
@@ -64,6 +161,7 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[EDIT LEAD MODAL] Saving lead:', { formData, mode, initialStatus });
     onSave(formData);
     onClose();
   };
@@ -95,18 +193,18 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
     });
   };
 
-  const handleCustomFieldChange = (fieldId: string, value: string) => {
+  const handleCustomFieldChange = (fieldId: string, value: string, key: 'fieldValue' | 'fieldName' | 'fieldType' = 'fieldValue') => {
     setFormData({
       ...formData,
       customFields: (formData.customFields || []).map(f =>
-        f.id === fieldId ? { ...f, fieldValue: value } : f
+        f.id === fieldId ? { ...f, [key]: value } : f
       ),
     });
   };
 
   const handleAddTag = () => {
     if (!newTag.trim()) return;
-    if (formData.tags.includes(newTag.trim())) return; // Avoid duplicates
+    if (formData.tags.includes(newTag.trim())) return;
     
     setFormData({
       ...formData,
@@ -211,13 +309,12 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   <label className={`block text-sm mb-2 ${
                     isDark ? 'text-white/70' : 'text-text-secondary-light'
                   }`}>
-                    Empresa *
+                    Empresa
                   </label>
                   <input
                     type="text"
                     value={formData.company}
                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                    required
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.08] text-white'
@@ -230,13 +327,12 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   <label className={`block text-sm mb-2 ${
                     isDark ? 'text-white/70' : 'text-text-secondary-light'
                   }`}>
-                    Valor do Negócio *
+                    Valor do Negócio
                   </label>
                   <input
                     type="number"
-                    value={formData.dealValue}
-                    onChange={(e) => setFormData({ ...formData, dealValue: parseFloat(e.target.value) })}
-                    required
+                    value={formData.dealValue || ''}
+                    onChange={(e) => setFormData({ ...formData, dealValue: e.target.value ? parseFloat(e.target.value) : 0 })}
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.08] text-white'
@@ -249,18 +345,18 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   <label className={`block text-sm mb-2 ${
                     isDark ? 'text-white/70' : 'text-text-secondary-light'
                   }`}>
-                    Prioridade *
+                    Prioridade
                   </label>
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value as CRMLead['priority'] })}
-                    required
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.08] text-white'
                         : 'bg-light-elevated border-border-light text-text-primary-light'
                     }`}
                   >
+                    <option value="">Selecione...</option>
                     <option value="low">Baixa</option>
                     <option value="medium">Média</option>
                     <option value="high">Alta</option>
@@ -271,13 +367,12 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   <label className={`block text-sm mb-2 ${
                     isDark ? 'text-white/70' : 'text-text-secondary-light'
                   }`}>
-                    Data de Vencimento *
+                    Data de Vencimento
                   </label>
                   <input
                     type="date"
                     value={formData.dueDate}
                     onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                    required
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.08] text-white'
@@ -290,22 +385,33 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   <label className={`block text-sm mb-2 ${
                     isDark ? 'text-white/70' : 'text-text-secondary-light'
                   }`}>
-                    Status
+                    Etapa do Pipeline *
                   </label>
                   <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as CRMLead['status'] })}
+                    value={formData.columnId || ''}
+                    onChange={(e) => setFormData({ ...formData, columnId: e.target.value })}
+                    required
+                    disabled={loadingColumns || funnelColumns.length === 0}
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
-                        ? 'bg-white/[0.05] border-white/[0.08] text-white'
-                        : 'bg-light-elevated border-border-light text-text-primary-light'
+                        ? 'bg-white/[0.05] border-white/[0.08] text-white disabled:opacity-50'
+                        : 'bg-light-elevated border-border-light text-text-primary-light disabled:opacity-50'
                     }`}
                   >
-                    <option value="new">Novo</option>
-                    <option value="contacted">Contactado</option>
-                    <option value="qualified">Qualificado</option>
-                    <option value="proposal">Proposta</option>
-                    <option value="negotiation">Negociação</option>
+                    {loadingColumns ? (
+                      <option value="">Carregando colunas...</option>
+                    ) : funnelColumns.length === 0 ? (
+                      <option value="">Nenhuma coluna disponível</option>
+                    ) : (
+                      <>
+                        <option value="">Selecione a etapa...</option>
+                        {funnelColumns.map((column) => (
+                          <option key={column.id} value={column.id}>
+                            {column.title}
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
@@ -476,47 +582,60 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   {formData.customFields.map((field) => (
                     <div
                       key={field.id}
-                      className={`p-4 rounded-lg border ${
+                      className={`p-3 rounded-lg border ${
                         isDark 
                           ? 'bg-white/[0.02] border-white/[0.08]' 
                           : 'bg-light-elevated border-border-light'
                       }`}
                     >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <label className={`block text-sm mb-1.5 ${
-                            isDark ? 'text-white' : 'text-text-primary-light'
-                          }`}>
-                            {field.fieldName}
-                          </label>
-                          <span className={`text-xs ${
-                            isDark ? 'text-white/40' : 'text-text-secondary-light'
-                          }`}>
-                            {fieldTypeLabels[field.fieldType]}
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={field.fieldName}
+                          onChange={(e) => handleCustomFieldChange(field.id, e.target.value, 'fieldName')}
+                          className={`flex-1 bg-transparent border-b px-1 py-0.5 text-xs font-medium focus:outline-none focus:border-[#0169D9] transition-colors ${
+                             isDark ? 'border-white/20 text-white placeholder-white/30' : 'border-gray-300 text-gray-700 placeholder-gray-400'
+                          }`}
+                          placeholder="Nome do campo"
+                        />
+
+                        <select
+                          value={field.fieldType}
+                          onChange={(e) => handleCustomFieldChange(field.id, e.target.value as any, 'fieldType')}
+                          className={`bg-transparent border rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:border-[#0169D9] transition-colors ${
+                            isDark 
+                              ? 'border-white/20 text-white/70' 
+                              : 'border-gray-300 text-gray-600'
+                          }`}
+                        >
+                          {Object.entries(fieldTypeLabels).map(([type, label]) => (
+                            <option key={type} value={type} className={isDark ? 'bg-gray-800' : 'bg-white'}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+
                         <button
                           type="button"
                           onClick={() => handleRemoveCustomField(field.id)}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            isDark
-                              ? 'hover:bg-white/[0.05] text-white/40 hover:text-red-400'
-                              : 'hover:bg-light-elevated text-text-secondary-light hover:text-red-500'
-                          }`}
+                          className={`p-1 rounded hover:bg-red-500/10 text-gray-400 hover:text-red-500 transition-colors`}
+                          title="Remover campo"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
+
                       {field.fieldType === 'textarea' ? (
                         <textarea
                           value={field.fieldValue}
                           onChange={(e) => handleCustomFieldChange(field.id, e.target.value)}
-                          rows={3}
+                          rows={2}
                           className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                             isDark
                               ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-white/40'
                               : 'bg-white border-border-light text-text-primary-light'
                           }`}
+                          placeholder={`Valor para ${field.fieldName}`}
                         />
                       ) : (
                         <input
@@ -528,6 +647,7 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                               ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-white/40'
                               : 'bg-white border-border-light text-text-primary-light'
                           }`}
+                          placeholder={`Valor para ${field.fieldName}`}
                         />
                       )}
                     </div>

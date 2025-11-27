@@ -2,11 +2,15 @@ export interface CRMLead {
   id: string;
   clientName: string;
   company: string;
+  email?: string; // ✅ Adicionado
+  phone?: string; // ✅ Adicionado
   dealValue: number;
   priority: 'high' | 'medium' | 'low';
   dueDate: string;
   tags: string[];
+  notes?: string; // ✅ Campo de notas
   status: 'new' | 'contacted' | 'qualified' | 'proposal' | 'negotiation';
+  columnId?: string; // ID da coluna do funil (stage do pipeline)
   assignee: {
     name: string;
     avatar: string;

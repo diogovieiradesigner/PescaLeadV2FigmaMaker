@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Plus, GripVertical, Edit2 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 
@@ -26,14 +26,19 @@ export function EditFunnelModal({
 }: EditFunnelModalProps) {
   const [funnelName, setFunnelName] = useState('');
   const [columns, setColumns] = useState<FunnelColumn[]>([]);
+  const initializedRef = useRef(false);
 
   const isDark = theme === 'dark';
 
-  // Initialize state when modal opens
+  // Initialize state ONLY when modal opens (not on every prop change)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !initializedRef.current) {
       setFunnelName(currentFunnelName);
       setColumns([...currentColumns]);
+      initializedRef.current = true;
+    } else if (!isOpen) {
+      // Reset flag when modal closes
+      initializedRef.current = false;
     }
   }, [isOpen, currentFunnelName, currentColumns]);
 

@@ -1,38 +1,63 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Phone, Video, MoreVertical, Check, CheckCheck, Smile, Mic, Image as ImageIcon, Play, X } from 'lucide-react';
+import { Send, ImageIcon, Mic, X, Clock, Check, CheckCheck, AlertCircle, Trash2, CheckCircle } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import { Conversation, Message } from '../../types/chat';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
+import { ChatActionsMenu } from './ChatActionsMenu';
+import { AudioPlayer } from './AudioPlayer';
+import { MessageBubble } from './MessageBubble';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface ChatAreaProps {
   conversation: Conversation | null;
   theme: Theme;
   onSendMessage: (message: Omit<Message, 'id' | 'timestamp' | 'type'>) => void;
+  onMarkAsResolved: () => void;
+  onClearHistory: () => void;
+  onDeleteConversation: () => void;
+  onNavigateToPipeline?: (leadId: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
 }
 
-const COMMON_EMOJIS = ['😀', '😊', '😂', '❤️', '👍', '🙏', '🎉', '✅', '👏', '🔥', '💯', '🤝', '✨', '💪', '🎯'];
-
-export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) {
+export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved, onClearHistory, onDeleteConversation, onNavigateToPipeline, onDeleteMessage }: ChatAreaProps) {
   const [messageText, setMessageText] = useState('');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+  const [expandedImage, setExpandedImage] = useState<string | null>(null); // ✅ Estado para imagem expandida
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<number | null>(null);
+  const recordingTimeRef = useRef<number>(0); // ✅ Ref para capturar o tempo real
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const emojiContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstRenderRef = useRef<boolean>(true); // ✅ Detectar primeira renderização
   
   const isDark = theme === 'dark';
 
+  const handleExpandImage = useCallback((url: string) => {
+    setExpandedImage(url);
+  }, []);
+
   // Auto scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // ✅ Primeira renderização: scroll instantâneo (sem animação)
+    // ✅ Próximas renderizações: scroll suave apenas para novas mensagens
+    if (isFirstRenderRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      isFirstRenderRef.current = false;
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [conversation?.messages]);
+
+  // ✅ Resetar flag quando trocar de conversa
+  useEffect(() => {
+    isFirstRenderRef.current = true;
+  }, [conversation?.id]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -43,23 +68,17 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
     };
   }, []);
 
-  // Close emoji picker when clicking outside
+  // ✅ Fechar modal de imagem expandida com ESC
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        emojiContainerRef.current &&
-        !emojiContainerRef.current.contains(event.target as Node) &&
-        showEmojiPicker
-      ) {
-        setShowEmojiPicker(false);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && expandedImage) {
+        setExpandedImage(null);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showEmojiPicker]);
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [expandedImage]);
 
   if (!conversation) {
     return (
@@ -92,23 +111,39 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
     );
   }
 
-  const handleSend = () => {
-    if (imagePreview) {
-      onSendMessage({
-        contentType: 'image',
-        imageUrl: imagePreview,
-        read: false,
-      });
-      setImagePreview(null);
-    } else if (messageText.trim()) {
-      onSendMessage({
-        text: messageText,
-        contentType: 'text',
-        read: false,
-      });
-      setMessageText('');
+  const handleSend = async () => {
+    if (isSending) return; // Prevenir duplo envio
+
+    try {
+      setIsSending(true);
+
+      if (imagePreview) {
+        // ✅ Limpar preview imediatamente (otimistic UI)
+        const imageToSend = imagePreview;
+        setImagePreview(null);
+        
+        await onSendMessage({
+          contentType: 'image',
+          imageUrl: imageToSend,
+          read: false,
+        });
+      } else if (messageText.trim()) {
+        // ✅ Limpar input imediatamente (otimistic UI)
+        const textToSend = messageText.trim();
+        setMessageText('');
+        
+        await onSendMessage({
+          text: textToSend,
+          contentType: 'text',
+          read: false,
+        });
+      }
+    } catch (error) {
+      console.error('[ChatArea] Error sending message:', error);
+      // Opcionalmente, mostrar uma notificação de erro ao usuário
+    } finally {
+      setIsSending(false);
     }
-    setShowEmojiPicker(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -118,15 +153,25 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
     }
   };
 
-  const handleEmojiClick = (emoji: string) => {
-    setMessageText((prev) => prev + emoji);
-    setShowEmojiPicker(false);
-  };
-
   const startRecording = async () => {
     try {
+      // ✅ Verificar permissão do microfone primeiro
+      console.log('[ChatArea] Requesting microphone permission...');
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      console.log('[ChatArea] Microphone permission granted!');
+      
+      // ✅ Tentar gravar em OGG (WhatsApp compatível), se não suportar usa WEBM
+      let mimeType = 'audio/ogg; codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/webm; codecs=opus';
+        console.log('[ChatArea] Browser does not support audio/ogg, using audio/webm');
+      } else {
+        console.log('[ChatArea] Recording in audio/ogg format');
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -135,54 +180,81 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
         audioChunksRef.current.push(event.data);
       };
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         
-        onSendMessage({
-          contentType: 'audio',
-          audioUrl,
-          audioDuration: recordingTime,
-          read: false,
-        });
+        // ✅ Usar a ref para pegar o tempo real de gravação
+        const actualDuration = recordingTimeRef.current;
+        
+        // ✅ Converter blob para base64 COM prefixo data URI completo
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          const base64Audio = reader.result as string;
+          
+          console.log('[ChatArea] Audio captured:', {
+            originalSize: audioBlob.size,
+            mimeType: audioBlob.type,
+            base64Length: base64Audio.length,
+            base64Prefix: base64Audio.substring(0, 50),
+            duration: actualDuration,
+            recordingTimeState: recordingTime,
+            recordingTimeRef: recordingTimeRef.current
+          });
+          
+          // ⚠️ IMPORTANTE: Garantir que a duração seja pelo menos 1 segundo
+          const finalDuration = Math.max(actualDuration, 1);
+          
+          console.log('🎤 [ChatArea] ==========================================');
+          console.log('🎤 [ChatArea] SENDING AUDIO MESSAGE');
+          console.log('🎤 [ChatArea] ==========================================');
+          console.log('   Final Duration:', finalDuration);
+          console.log('   Final Duration Type:', typeof finalDuration);
+          console.log('   Actual Duration:', actualDuration);
+          console.log('   Recording Time State:', recordingTime);
+          console.log('   Recording Time Ref:', recordingTimeRef.current);
+          console.log('🎤 [ChatArea] ==========================================');
+          
+          onSendMessage({
+            contentType: 'audio',
+            audioUrl: base64Audio, // ✅ Enviar com prefixo completo data:audio/webm;base64,...
+            audioDuration: finalDuration,
+            read: false,
+          });
+        };
 
         stream.getTracks().forEach(track => track.stop());
         setRecordingTime(0);
+        recordingTimeRef.current = 0; // ✅ Resetar ref
       };
 
       mediaRecorder.start();
       setIsRecording(true);
 
       recordingIntervalRef.current = window.setInterval(() => {
+        recordingTimeRef.current += 1; // ✅ Atualizar ref
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (error) {
-      // Silently handle microphone permission denial
-      // Create a mock audio message for demonstration purposes
-      const mockAudioUrl = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      console.error('[ChatArea] Failed to start recording:', error);
+      setIsRecording(false);
       
-      // Simulate recording for 3 seconds
-      setIsRecording(true);
-      let mockTime = 0;
-      
-      const mockInterval = window.setInterval(() => {
-        mockTime++;
-        setRecordingTime(mockTime);
-        
-        if (mockTime >= 3) {
-          clearInterval(mockInterval);
-          setIsRecording(false);
-          
-          onSendMessage({
-            contentType: 'audio',
-            audioUrl: mockAudioUrl,
-            audioDuration: 3,
-            read: false,
-          });
-          
-          setRecordingTime(0);
+      // ✅ Feedback específico baseado no tipo de erro
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        console.warn('[ChatArea] ⚠️ Microfone bloqueado pelo usuário');
+        // Mostrar toast se disponível, senão alert
+        if (typeof window !== 'undefined' && (window as any).showToast) {
+          (window as any).showToast('Permissão do microfone negada. Por favor, permita o acesso ao microfone nas configurações do navegador.', 'error');
+        } else {
+          alert('🎤 Permissão Negada\n\nPara enviar áudios, você precisa permitir o acesso ao microfone.\n\nClique no ícone de cadeado/informação na barra de endereço e permita o microfone.');
         }
-      }, 1000);
+      } else if (error.name === 'NotFoundError') {
+        console.error('[ChatArea] ⚠️ Nenhum microfone encontrado');
+        alert('🎤 Microfone não encontrado\n\nNenhum dispositivo de áudio foi detectado no seu sistema.');
+      } else {
+        console.error('[ChatArea] ⚠️ Erro desconhecido ao acessar microfone:', error);
+        alert(`Erro ao acessar o microfone: ${error.message}`);
+      }
     }
   };
 
@@ -253,7 +325,7 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
 
   return (
     <div
-      className={`flex-1 flex flex-col transition-colors ${
+      className={`flex-1 flex flex-col h-full min-h-0 transition-colors ${
         isDark ? 'bg-true-black' : 'bg-light-bg'
       }`}
     >
@@ -264,11 +336,6 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
         }`}
       >
         <div className="flex items-center gap-3">
-          <img
-            src={conversation.avatar}
-            alt={conversation.contactName}
-            className="w-10 h-10 rounded-full object-cover"
-          />
           <div>
             <h3 className={isDark ? 'text-white' : 'text-text-primary-light'}>
               {conversation.contactName}
@@ -279,10 +346,27 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
                   isDark ? 'text-white/50' : 'text-text-secondary-light'
                 }`}
               >
-                {conversation.contactPhone}
-              </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
-                Aguardando
+                {conversation.contactPhone?.includes('@g.us') 
+                  ? 'Grupo' 
+                  : (() => {
+                      const phone = conversation.contactPhone?.split('@')[0] || '';
+                      const digits = phone.replace(/\D/g, '');
+                      
+                      // Formato brasileiro: +55 (XX) XXXXX-XXXX ou +55 (XX) XXXX-XXXX
+                      if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+                        const ddd = digits.slice(2, 4);
+                        const number = digits.slice(4);
+                        if (number.length === 9) {
+                          return `+55 (${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
+                        } else if (number.length === 8) {
+                          return `+55 (${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
+                        }
+                      }
+                      
+                      // Outros países ou formato genérico
+                      return phone.startsWith('+') ? phone : `+${digits}`;
+                    })()
+                }
               </span>
             </div>
           </div>
@@ -290,33 +374,30 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <button
-            className={`p-2 rounded-lg transition-colors ${
-              isDark
-                ? 'hover:bg-white/[0.05] text-white/50'
-                : 'hover:bg-light-elevated text-text-secondary-light'
-            }`}
-          >
-            <Phone className="w-5 h-5" />
-          </button>
-          <button
-            className={`p-2 rounded-lg transition-colors ${
-              isDark
-                ? 'hover:bg-white/[0.05] text-white/50'
-                : 'hover:bg-light-elevated text-text-secondary-light'
-            }`}
-          >
-            <Video className="w-5 h-5" />
-          </button>
-          <button
-            className={`p-2 rounded-lg transition-colors ${
-              isDark
-                ? 'hover:bg-white/[0.05] text-white/50'
-                : 'hover:bg-light-elevated text-text-secondary-light'
-            }`}
-          >
-            <MoreVertical className="w-5 h-5" />
-          </button>
+          {/* Quick Action: Mark as Resolved */}
+          {conversation.status !== 'resolved' && (
+            <button
+              onClick={onMarkAsResolved}
+              title="Marcar como Resolvido"
+              className="flex items-center gap-2 p-2 sm:px-3 sm:py-2 rounded-lg transition-colors bg-green-600 hover:bg-green-700 text-white"
+            >
+              <CheckCircle className="w-4 h-4" />
+              <span className="text-sm hidden sm:inline">Resolvido</span>
+            </button>
+          )}
+
+          {/* Actions Menu (3 dots) */}
+          <ChatActionsMenu
+            theme={theme}
+            hasLead={!!conversation.leadId} // ✅ Só mostra "Perfil completo" se tiver leadId
+            onViewInPipeline={() => {
+              if (conversation.leadId && onNavigateToPipeline) {
+                onNavigateToPipeline(conversation.leadId);
+              }
+            }}
+            onClearHistory={onClearHistory}
+            onDeleteConversation={onDeleteConversation}
+          />
         </div>
       </div>
 
@@ -343,71 +424,13 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
         )}
 
         {conversation.messages.map((message) => (
-          <div
+          <MessageBubble
             key={message.id}
-            className={`flex ${message.type === 'sent' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[70%] rounded-lg ${
-                message.contentType === 'text' ? 'px-4 py-2' : 'p-1'
-              } ${
-                message.type === 'sent'
-                  ? 'bg-green-600 text-white'
-                  : isDark
-                  ? 'bg-elevated text-white'
-                  : 'bg-light-elevated text-text-primary-light'
-              }`}
-            >
-              {message.contentType === 'text' && message.text && (
-                <p className="text-sm">{message.text}</p>
-              )}
-
-              {message.contentType === 'image' && message.imageUrl && (
-                <div>
-                  <ImageWithFallback
-                    src={message.imageUrl}
-                    alt="Imagem enviada"
-                    className="max-w-full h-auto rounded"
-                  />
-                </div>
-              )}
-
-              {message.contentType === 'audio' && message.audioUrl && (
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <button className="p-1 rounded-full bg-white/20">
-                    <Play className="w-4 h-4" />
-                  </button>
-                  <div className="flex-1 h-1 bg-white/20 rounded">
-                    <div className="h-full w-0 bg-white rounded" />
-                  </div>
-                  <span className="text-xs">
-                    {formatTime(message.audioDuration || 0)}
-                  </span>
-                </div>
-              )}
-
-              <div
-                className={`flex items-center gap-1 justify-end mt-1 text-xs ${
-                  message.type === 'sent'
-                    ? 'text-white/70'
-                    : isDark
-                    ? 'text-white/50'
-                    : 'text-text-secondary-light'
-                }`}
-              >
-                <span>{message.timestamp}</span>
-                {message.type === 'sent' && (
-                  <>
-                    {message.read ? (
-                      <CheckCheck className="w-3 h-3" />
-                    ) : (
-                      <Check className="w-3 h-3" />
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+            message={message}
+            isDark={isDark}
+            onDeleteMessage={onDeleteMessage}
+            onExpandImage={handleExpandImage}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>
@@ -460,47 +483,14 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
             </button>
             <button
               onClick={stopRecording}
-              className="text-sm px-3 py-1 rounded bg-green-600 hover:bg-green-700 transition-colors text-white"
+              className="text-sm px-3 py-1 rounded bg-[#0169D9] hover:bg-[#0169D9]/90 transition-colors text-white"
             >
               Enviar
             </button>
           </div>
         )}
 
-        {/* Emoji Picker */}
-        {showEmojiPicker && (
-          <div 
-            className={`mb-3 p-3 rounded-lg border ${
-              isDark ? 'bg-elevated border-white/[0.08]' : 'bg-light-elevated border-border-light'
-            }`}
-          >
-            <div className="flex flex-wrap gap-2">
-              {COMMON_EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => handleEmojiClick(emoji)}
-                  className="text-2xl p-2 rounded hover:bg-white/[0.05] transition-colors"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-end gap-2" ref={emojiContainerRef}>
-          {/* Emoji Button */}
-          <button
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className={`p-2 rounded-lg transition-colors ${
-              isDark
-                ? 'hover:bg-white/[0.05] text-white/50'
-                : 'hover:bg-light-elevated text-text-secondary-light'
-            }`}
-          >
-            <Smile className="w-5 h-5" />
-          </button>
-
+        <div className="flex items-end gap-2">
           {/* Image Button */}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -539,7 +529,7 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
           {messageText.trim() || imagePreview ? (
             <button
               onClick={handleSend}
-              className="p-2 rounded-lg transition-colors bg-green-600 hover:bg-green-700 text-white"
+              className="p-2 rounded-lg transition-colors bg-[#0169D9] hover:bg-[#0169D9]/90 text-white"
             >
               <Send className="w-5 h-5" />
             </button>
@@ -549,7 +539,7 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
               className={`p-2 rounded-lg transition-colors ${
                 isRecording
                   ? 'bg-red-500 hover:bg-red-600 text-white'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-[#0169D9] hover:bg-[#0169D9]/90 text-white'
               }`}
             >
               <Mic className="w-5 h-5" />
@@ -557,6 +547,32 @@ export function ChatArea({ conversation, theme, onSendMessage }: ChatAreaProps) 
           )}
         </div>
       </div>
+
+      {/* ✅ Modal de Imagem Expandida */}
+      {expandedImage && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-in fade-in duration-200"
+          onClick={() => setExpandedImage(null)}
+        >
+          <button
+            onClick={() => setExpandedImage(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
+            aria-label="Fechar"
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+          <div 
+            className="max-w-[90vw] max-h-[90vh] relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ImageWithFallback
+              src={expandedImage}
+              alt="Imagem expandida"
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

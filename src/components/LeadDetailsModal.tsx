@@ -1,6 +1,10 @@
 import { X, Building2, DollarSign, Calendar, Tag, User, MessageSquare, Paperclip, Phone } from 'lucide-react';
 import { CRMLead } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
+import { Avatar } from './Avatar';
+import { useState, useEffect } from 'react';
+import { loadCustomFieldsForLead } from '../services/custom-fields-service';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LeadDetailsModalProps {
   lead: CRMLead | null;
@@ -11,6 +15,44 @@ interface LeadDetailsModalProps {
 }
 
 export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadDetailsModalProps) {
+  const { currentWorkspace } = useAuth();
+  const [customFields, setCustomFields] = useState(lead?.customFields || []);
+  const [loadingCustomFields, setLoadingCustomFields] = useState(false);
+
+  // 🔥 LAZY LOADING: Carregar custom fields quando abrir modal
+  useEffect(() => {
+    if (isOpen && lead && currentWorkspace?.id) {
+      // Se lead já tem custom fields, usar eles
+      if (lead.customFields && lead.customFields.length > 0) {
+        setCustomFields(lead.customFields);
+      } else {
+        // Senão, carregar do banco
+        loadCustomFieldsAsync(lead.id);
+      }
+    }
+  }, [isOpen, lead?.id, currentWorkspace?.id]);
+
+  const loadCustomFieldsAsync = async (leadId: string) => {
+    if (!currentWorkspace?.id) return;
+    
+    setLoadingCustomFields(true);
+    try {
+      console.log('[LEAD DETAILS MODAL] 🔄 Carregando custom fields para lead:', leadId);
+      const { customFields: loadedFields, error } = await loadCustomFieldsForLead(leadId, currentWorkspace.id);
+      
+      if (error) {
+        console.error('[LEAD DETAILS MODAL] ❌ Erro ao carregar custom fields:', error);
+      } else {
+        console.log('[LEAD DETAILS MODAL] ✅ Custom fields carregados:', loadedFields.length);
+        setCustomFields(loadedFields);
+      }
+    } catch (error) {
+      console.error('[LEAD DETAILS MODAL] ❌ Erro inesperado:', error);
+    } finally {
+      setLoadingCustomFields(false);
+    }
+  };
+
   if (!isOpen || !lead) return null;
 
   const isDark = theme === 'dark';
@@ -48,13 +90,11 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
           isDark ? 'border-white/[0.08]' : 'border-border-light'
         }`}>
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-full overflow-hidden">
-              <img
-                src={lead.avatar}
-                alt={lead.clientName}
-                className="w-full h-full object-cover"
-              />
-            </div>
+            <Avatar
+              src={lead.avatar}
+              alt={lead.clientName}
+              size="lg"
+            />
             <div>
               <h2 className={`text-xl mb-1 ${
                 isDark ? 'text-white' : 'text-text-primary-light'
@@ -150,7 +190,9 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
               <p className={`text-sm ${
                 isDark ? 'text-white' : 'text-text-primary-light'
               }`}>
-                {new Date(lead.dueDate).toLocaleDateString('pt-BR')}
+                {lead.dueDate && !isNaN(new Date(lead.dueDate).getTime())
+                  ? new Date(lead.dueDate).toLocaleDateString('pt-BR')
+                  : '-'}
               </p>
             </div>
 
@@ -209,13 +251,11 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
               Responsável
             </h3>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full overflow-hidden">
-                <img
-                  src={lead.assignee.avatar}
-                  alt={lead.assignee.name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
+              <Avatar
+                src={lead.assignee.avatar}
+                alt={lead.assignee.name}
+                size="md"
+              />
               <div>
                 <p className={`text-sm ${
                   isDark ? 'text-white' : 'text-text-primary-light'
@@ -300,7 +340,7 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
           </div>
 
           {/* Custom Fields */}
-          {lead.customFields && lead.customFields.length > 0 && (
+          {customFields && customFields.length > 0 && (
             <div>
               <h3 className={`text-sm mb-3 ${
                 isDark ? 'text-white/70' : 'text-text-secondary-light'
@@ -308,7 +348,7 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
                 Campos Personalizados
               </h3>
               <div className="grid grid-cols-2 gap-4">
-                {lead.customFields.map((field) => (
+                {customFields.map((field) => (
                   <div
                     key={field.id}
                     className={`p-4 rounded-lg border ${

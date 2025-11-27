@@ -1,6 +1,11 @@
 import { Search, MessageSquare } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import { Conversation, ConversationStatus } from '../../types/chat';
+import { ImageWithFallback } from '../figma/ImageWithFallback';
+import { useState, useRef, useEffect } from 'react';
+import { ConversationFilters, ConversationFiltersState } from './ConversationFilters';
+import { DbUser } from '../../types/database-chat';
+import { Inbox } from '../SettingsView';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -9,6 +14,13 @@ interface ConversationListProps {
   theme: Theme;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  agents?: DbUser[];
+  inboxes?: Inbox[];
+  filters: ConversationFiltersState;
+  onFiltersChange: (filters: ConversationFiltersState) => void;
+  loadMore?: () => void;
+  hasMore?: boolean;
+  totalConversations?: number;
 }
 
 const statusLabels: Record<ConversationStatus, string> = {
@@ -30,12 +42,93 @@ export function ConversationList({
   theme,
   searchQuery,
   onSearchChange,
+  agents,
+  inboxes,
+  filters,
+  onFiltersChange,
+  loadMore,
+  hasMore,
+  totalConversations = 0,
 }: ConversationListProps) {
   const isDark = theme === 'dark';
+  const [width, setWidth] = useState(320); // Largura inicial (w-80 = 320px)
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 🔍 Estado local para busca com debounce
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const MIN_WIDTH = 280; // Largura mínima
+  const MAX_WIDTH = 500; // Largura máxima
+
+  // Contador de filtros ativos
+  const activeFiltersCount =
+    (!filters.assignees.includes('all') ? 1 : 0) +
+    (!filters.inboxes.includes('all') ? 1 : 0) +
+    (!filters.statuses.includes('all') ? 1 : 0) +
+    (!filters.attendantTypes.includes('all') ? 1 : 0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  // 🔄 Sincronizar com searchQuery externo (quando limpar busca por fora)
+  useEffect(() => {
+    setLocalSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !containerRef.current) return;
+
+      const containerLeft = containerRef.current.getBoundingClientRect().left;
+      const newWidth = e.clientX - containerLeft;
+
+      // Aplicar limites
+      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
+        setWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // ⏱️ Debounce: Aguarda 300ms após parar de digitar para buscar
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      onSearchChange(localSearchQuery);
+    }, 300);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [localSearchQuery, onSearchChange]);
 
   return (
     <div
-      className={`w-80 border-r flex flex-col transition-colors ${
+      ref={containerRef}
+      style={{ width: `${width}px` }}
+      className={`border-r flex flex-col transition-colors relative ${
         isDark ? 'bg-true-black border-white/[0.08]' : 'bg-light-bg border-border-light'
       }`}
     >
@@ -46,7 +139,7 @@ export function ConversationList({
         }`}
       >
         <h2 className={`mb-3 ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-          Atendimentos
+          Atendimentos <span className="text-sm opacity-60">({activeFiltersCount > 0 ? conversations.length : totalConversations})</span>
         </h2>
         
         {/* Search */}
@@ -59,8 +152,8 @@ export function ConversationList({
           <input
             type="text"
             placeholder="Buscar conversas..."
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={localSearchQuery}
+            onChange={(e) => setLocalSearchQuery(e.target.value)}
             className={`w-full border text-sm pl-9 pr-3 py-1.5 rounded-lg focus:outline-none focus:border-[#0169D9] transition-all ${
               isDark
                 ? 'bg-elevated border-white/[0.08] text-white placeholder-white/40'
@@ -68,6 +161,17 @@ export function ConversationList({
             }`}
           />
         </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="relative z-10">
+        <ConversationFilters
+          theme={theme}
+          agents={agents || []}
+          inboxes={inboxes || []}
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+        />
       </div>
 
       {/* Conversation List */}
@@ -89,8 +193,8 @@ export function ConversationList({
             <div className="flex gap-3">
               {/* Avatar */}
               <div className="relative flex-shrink-0">
-                <img
-                  src={conversation.avatar}
+                <ImageWithFallback
+                  src={conversation.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(conversation.contactName)}&background=random`}
                   alt={conversation.contactName}
                   className="w-12 h-12 rounded-full object-cover"
                 />
@@ -136,18 +240,48 @@ export function ConversationList({
                   >
                     {statusLabels[conversation.status]}
                   </span>
-                  <span
-                    className={`text-xs ${
-                      isDark ? 'text-white/40' : 'text-text-secondary-light'
-                    }`}
-                  >
-                    {conversation.assignedTo}
-                  </span>
+                  {conversation.assignedToName && (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded ${
+                        isDark 
+                          ? 'bg-white/10 text-white/70' 
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {conversation.assignedToName}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
           </button>
         ))}
+
+        {hasMore && loadMore && (
+          <div className="p-4 flex justify-center">
+            <button
+              onClick={loadMore}
+              className={`text-sm px-4 py-2 rounded-lg transition-colors ${
+                isDark
+                  ? 'bg-white/[0.05] hover:bg-white/[0.1] text-white'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+            >
+              Carregar mais
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Resize Handle */}
+      <div
+        onMouseDown={handleMouseDown}
+        className={`absolute top-0 right-0 w-1 h-full cursor-col-resize group hover:w-1.5 transition-all ${
+          isResizing ? 'bg-[#0169D9]' : isDark ? 'hover:bg-white/20' : 'hover:bg-gray-300'
+        }`}
+        style={{ zIndex: 10 }}
+      >
+        <div className={`absolute inset-y-0 -right-1 w-3 ${isResizing ? 'cursor-col-resize' : ''}`} />
       </div>
     </div>
   );

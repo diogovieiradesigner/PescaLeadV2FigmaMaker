@@ -1,6 +1,9 @@
-import { Search, Bell, ChevronDown, LayoutGrid, List, Sun, Moon, Settings } from 'lucide-react';
+import { Search, Bell, ChevronDown, LayoutGrid, List, Sun, Moon, Settings, RefreshCw } from 'lucide-react';
 import { ViewMode } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
+import { ProfileMenu } from './ProfileMenu';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { useState } from 'react';
 
 interface HeaderProps {
   currentFunnel: string;
@@ -15,6 +18,8 @@ interface HeaderProps {
   onSearchChange: (query: string) => void;
   onNewFunnelClick: () => void;
   onEditFunnelClick: () => void;
+  onNavigateToSettings?: () => void;
+  onRefresh?: () => void; // ✅ Callback para recarregar leads
 }
 
 export function Header({
@@ -29,8 +34,11 @@ export function Header({
   onSearchChange,
   onNewFunnelClick,
   onEditFunnelClick,
+  onNavigateToSettings,
+  onRefresh,
 }: HeaderProps) {
   const isDark = theme === 'dark';
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleFunnelChange = (value: string) => {
     if (value === '__new__') {
@@ -40,8 +48,20 @@ export function Header({
     }
   };
   
+  const handleRefresh = async () => {
+    if (!onRefresh || isRefreshing) return;
+    
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      // Mantém animação por pelo menos 500ms para feedback visual
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
+  
   return (
-    <header className={`h-14 border-b flex items-center justify-between px-6 transition-colors ${
+    <header className={`h-16 border-b flex items-center justify-between px-6 transition-colors ${
       isDark 
         ? 'bg-true-black border-white/[0.08]' 
         : 'bg-light-bg border-border-light'
@@ -170,31 +190,23 @@ export function Header({
           <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-[#0169D9] rounded-full" />
         </button>
 
+        {/* Refresh Leads */}
+        {onRefresh && (
+          <button
+            onClick={handleRefresh}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isDark
+                ? 'hover:bg-white/[0.05] text-white/50 hover:text-white/70'
+                : 'hover:bg-light-elevated text-text-secondary-light hover:text-text-primary-light'
+            }`}
+            title="Recarregar Leads"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
+        )}
+
         {/* User Profile */}
-        <div className={`flex items-center gap-2.5 pl-4 border-l ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
-        }`}>
-          <div className="text-right">
-            <div className={`text-sm ${
-              isDark ? 'text-white' : 'text-text-primary-light'
-            }`}>João Silva</div>
-            <div className={`text-xs ${
-              isDark ? 'text-white/40' : 'text-text-secondary-light'
-            }`}>Gerente de Vendas</div>
-          </div>
-          <div className="relative">
-            <div className="w-8 h-8 rounded-full overflow-hidden">
-              <img
-                src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop"
-                alt="User"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className={`absolute bottom-0 right-0 w-2 h-2 bg-[#0169D9] rounded-full border-2 ${
-              isDark ? 'border-true-black' : 'border-light-bg'
-            }`} />
-          </div>
-        </div>
+        <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} />
       </div>
     </header>
   );

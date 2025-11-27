@@ -1,27 +1,77 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { AlertCircle } from 'lucide-react'
 
-const ERROR_IMG_SRC =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODgiIGhlaWdodD0iODgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIuMyIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIzLjciPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjU2IiBoZWlnaHQ9IjU2IiByeD0iNiIvPjxwYXRoIGQ9Im0xNiA1OCAxNi0xOCAzMiAzMiIvPjxjaXJjbGUgY3g9IjUzIiBjeT0iMzUiIHI9IjciLz48L3N2Zz4KCg=='
+// ✅ Cache global de imagens carregadas para evitar flash de loading ao navegar entre telas
+const loadedImagesCache = new Set<string>();
 
 export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const [didError, setDidError] = useState(false)
+  const { src, alt, style, className, ...rest } = props
+  
+  // Inicializa o estado verificando o cache global
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(() => {
+    if (!src) return 'error';
+    return loadedImagesCache.has(src) ? 'loaded' : 'loading';
+  })
+
+  useEffect(() => {
+    if (!src) return;
+    
+    // Se a URL mudou:
+    // 1. Se já estiver no cache, marca como loaded imediatamente
+    // 2. Se não, marca como loading
+    if (loadedImagesCache.has(src)) {
+      setStatus('loaded');
+    } else {
+      setStatus('loading');
+    }
+  }, [src])
 
   const handleError = () => {
-    setDidError(true)
+    setStatus('error')
   }
 
-  const { src, alt, style, className, ...rest } = props
+  const handleLoad = () => {
+    if (src) {
+      loadedImagesCache.add(src);
+    }
+    setStatus('loaded')
+  }
 
-  return didError ? (
-    <div
-      className={`inline-block bg-gray-100 text-center align-middle ${className ?? ''}`}
-      style={style}
-    >
-      <div className="flex items-center justify-center w-full h-full">
-        <img src={ERROR_IMG_SRC} alt="Error loading image" {...rest} data-original-url={src} />
+  // Se não tiver src, nem tenta renderizar imagem
+  if (!src) {
+    return null;
+  }
+
+  if (status === 'error') {
+    return (
+      <div
+        className={`flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-400 p-4 rounded-2xl ${className ?? ''}`}
+        style={style}
+      >
+         <AlertCircle className="w-6 h-6 mb-1" />
+         <span className="text-[10px]">Erro</span>
       </div>
+    )
+  }
+
+  return (
+    <div className={`relative inline-block overflow-hidden rounded-2xl ${className}`} style={style}>
+        {status === 'loading' && (
+             <div className="absolute inset-0 flex items-center justify-center bg-gray-200/20 dark:bg-gray-700/20 animate-pulse rounded-2xl z-10">
+                 {/* Skeleton loader visível apenas se não estiver no cache */}
+             </div>
+        )}
+        <img 
+            src={src} 
+            alt={alt} 
+            className={`block max-w-full h-auto rounded-2xl transition-opacity duration-300 ${status === 'loading' ? 'opacity-0' : 'opacity-100'}`}
+            style={style} 
+            {...rest} 
+            onError={handleError}
+            onLoad={handleLoad}
+            loading="lazy"
+            decoding="async"
+        />
     </div>
-  ) : (
-    <img src={src} alt={alt} className={className} style={style} {...rest} onError={handleError} />
   )
 }

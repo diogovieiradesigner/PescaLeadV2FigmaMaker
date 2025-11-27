@@ -5,16 +5,36 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Theme } from '../hooks/useTheme';
 import { CRMLead } from '../types/crm';
 
+interface ColumnState {
+  leads: CRMLead[];
+  total?: number;
+  hasMore?: boolean;
+  loading?: boolean;
+}
+
 interface KanbanBoardProps {
   columns: KanbanColumnType[];
+  columnStates?: { [columnId: string]: ColumnState };
   onLeadMove: (leadId: string, targetColumnId: string) => void;
   onLeadMoveWithPosition: (leadId: string, targetColumnId: string, targetIndex: number) => void;
   onAddCard: (columnId: string) => void;
   onLeadClick: (lead: CRMLead) => void;
+  onLoadMore?: (columnId: string) => void;
+  onDeleteLead?: (leadId: string) => void;
   theme: Theme;
 }
 
-export function KanbanBoard({ columns, onLeadMove, onLeadMoveWithPosition, onAddCard, onLeadClick, theme }: KanbanBoardProps) {
+export function KanbanBoard({ 
+  columns, 
+  columnStates,
+  onLeadMove, 
+  onLeadMoveWithPosition, 
+  onAddCard, 
+  onLeadClick, 
+  onLoadMore,
+  onDeleteLead,
+  theme 
+}: KanbanBoardProps) {
   const isDark = theme === 'dark';
   
   return (
@@ -23,19 +43,28 @@ export function KanbanBoard({ columns, onLeadMove, onLeadMoveWithPosition, onAdd
         isDark ? 'bg-true-black' : 'bg-light-bg'
       }`}>
         <div className="flex gap-4 h-[calc(100vh-200px)] pb-4">
-          {columns.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              id={column.id}
-              title={column.title}
-              leads={column.leads}
-              onDrop={onLeadMove}
-              onDropAtPosition={onLeadMoveWithPosition}
-              onAddCard={onAddCard}
-              onLeadClick={onLeadClick}
-              theme={theme}
-            />
-          ))}
+          {columns.map((column) => {
+            const columnState = columnStates?.[column.id];
+            
+            return (
+              <KanbanColumn
+                key={column.id}
+                id={column.id}
+                title={column.title}
+                leads={column.leads}
+                total={columnState?.total}
+                hasMore={columnState?.hasMore}
+                loading={columnState?.loading}
+                onDrop={onLeadMove}
+                onDropAtPosition={onLeadMoveWithPosition}
+                onAddCard={onAddCard}
+                onLeadClick={onLeadClick}
+                onLoadMore={onLoadMore}
+                onDeleteLead={onDeleteLead}
+                theme={theme}
+              />
+            );
+          })}
         </div>
       </div>
     </DndProvider>

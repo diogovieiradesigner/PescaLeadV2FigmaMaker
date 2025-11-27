@@ -1,0 +1,40 @@
+-- =====================================================
+-- CRON JOB: consume-enrichment-queue
+-- =====================================================
+-- 
+-- DESCRIÇÃO:
+--   Consome mensagens da fila PGMQ de enriquecimento e processa
+--
+-- SCHEDULE: 
+--   */20 * * * * (A cada 20 minutos) - Dashboard atual
+--   '30 seconds' - Migração SQL sugere 30 segundos
+--
+-- COMANDO:
+--   SELECT consume_enrichment_queue();
+--
+-- FUNÇÃO SQL CHAMADA:
+--   consume_enrichment_queue() - Definida em sql-migrations/03-google-maps-queue.sql
+--
+-- O QUE FAZ:
+--   1. Lê mensagens da fila PGMQ 'enrichment_queue'
+--   2. Chama APIs de enriquecimento (Whois, CNPJ, etc)
+--   3. Atualiza lead_extraction_staging com dados enriquecidos
+--   4. Atualiza status_enrichment para 'completed' ou 'error'
+--   5. Deleta mensagem da fila após processar
+--
+-- DEPENDÊNCIAS:
+--   - Tabela: lead_extraction_staging
+--   - PGMQ Extension
+--   - Função: consume_enrichment_queue()
+--   - APIs: WHOIS, CNPJ
+--
+-- STATUS ATUAL:
+--   ✅ FUNCIONANDO (Succeeded no Dashboard)
+--
+-- OBSERVAÇÃO:
+--   ⚠️ Schedule diferente entre Dashboard (20 min) e migração SQL (30 seg)
+--   Recomendado: 30 segundos para processar fila mais rápido
+--
+-- =====================================================
+
+SELECT consume_enrichment_queue();

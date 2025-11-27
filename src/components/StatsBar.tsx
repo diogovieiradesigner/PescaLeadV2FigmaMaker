@@ -12,6 +12,9 @@ interface StatsBarProps {
 export function StatsBar({ totalDeals, totalValue, activeLeads, conversionRate, theme }: StatsBarProps) {
   const isDark = theme === 'dark';
   
+  // Debug log
+  console.log('[STATS BAR] Received props:', { totalDeals, totalValue, activeLeads, conversionRate });
+  
   const stats = [
     {
       icon: Target,
@@ -21,7 +24,7 @@ export function StatsBar({ totalDeals, totalValue, activeLeads, conversionRate, 
     {
       icon: DollarSign,
       label: 'Valor do Pipeline',
-      value: `$${(totalValue / 1000).toFixed(0)}K`,
+      value: `R$ ${totalValue.toLocaleString('pt-BR')}`,
     },
     {
       icon: Users,

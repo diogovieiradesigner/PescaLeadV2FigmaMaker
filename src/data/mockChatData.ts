@@ -14,6 +14,8 @@ export const mockConversations: Conversation[] = [
     channel: 'whatsapp',
     totalMessages: 3,
     lastUpdate: '13:00',
+    tags: ['Empresa', 'SaaS'],
+    leadId: '1',
     messages: [
       {
         id: 'm1',

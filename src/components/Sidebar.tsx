@@ -1,6 +1,9 @@
-import { Home, Target, Settings, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { Home, Target, MessageSquare, ChevronLeft, ChevronRight, Download, Megaphone, Bot } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Theme } from '../hooks/useTheme';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import IconografiaPescaLead from '../imports/IconografiaPescaLead';
+import LogoPescaLeadBranca from '../imports/LogoPescaLeadBranca';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -14,7 +17,9 @@ const navItems = [
   { icon: Home, label: 'Dashboard', active: false, view: 'dashboard' },
   { icon: Target, label: 'Pipeline', active: true, view: 'pipeline' },
   { icon: MessageSquare, label: 'Chat', active: false, view: 'chat' },
-  { icon: Settings, label: 'Configurações', active: false, view: 'settings' },
+  { icon: Download, label: 'Extração', active: false, view: 'extraction' },
+  { icon: Megaphone, label: 'Campanha', active: false, view: 'campaign' },
+  { icon: Bot, label: 'Atendimento de I.A', active: false, view: 'ai-service' },
 ];
 
 export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChange }: SidebarProps) {
@@ -32,7 +37,7 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
       }`}
     >
       {/* Logo */}
-      <div className={`h-16 flex items-center px-6 border-b ${
+      <div className={`h-16 flex items-center justify-between px-6 border-b ${
         isDark ? 'border-white/[0.08]' : 'border-border-light'
       }`}>
         {!isCollapsed ? (
@@ -40,20 +45,33 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="flex items-center gap-2"
+            className="flex items-center justify-start pl-1"
           >
-            <div className="w-8 h-8 rounded-lg bg-[#0169D9] flex items-center justify-center">
-              <Target className="w-5 h-5 text-white" />
+            <div className={`h-8 w-40 relative ${!isDark ? '[&_p]:!text-[#0F172A]' : ''}`}>
+              <LogoPescaLeadBranca />
             </div>
-            <span className={isDark ? 'text-white' : 'text-text-primary-light'}>
-              CRM Pro
-            </span>
           </motion.div>
         ) : (
-          <div className="w-8 h-8 rounded-lg bg-[#0169D9] flex items-center justify-center">
-            <Target className="w-5 h-5 text-white" />
+          <div className="w-8 h-8">
+            <IconografiaPescaLead />
           </div>
         )}
+        
+        {/* Toggle Button */}
+        <button
+          onClick={onToggle}
+          className={`p-1.5 rounded-lg transition-colors ${
+            isDark 
+              ? 'hover:bg-white/[0.05] text-white/50 hover:text-white/70' 
+              : 'hover:bg-light-elevated-hover text-text-secondary-light hover:text-text-primary-light'
+          }`}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="w-4 h-4" />
+          ) : (
+            <ChevronLeft className="w-4 h-4" />
+          )}
+        </button>
       </div>
 
       {/* Navigation */}
@@ -73,14 +91,19 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
             onClick={() => onViewChange(item.view)}
           >
             {currentView === item.view && (
-              <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0169D9] rounded-r" />
+              <motion.div 
+                layoutId="activeIndicator"
+                className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0169D9] rounded-r" 
+              />
             )}
-            <item.icon className="w-5 h-5" />
+            <item.icon className="w-5 h-5 flex-shrink-0" />
             {!isCollapsed && (
               <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ delay: 0.1, duration: 0.2 }}
+                className="whitespace-nowrap overflow-hidden"
               >
                 {item.label}
               </motion.span>
@@ -89,21 +112,14 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
         ))}
       </nav>
 
-      {/* Toggle Button */}
-      <button
-        onClick={onToggle}
-        className={`absolute -right-3 top-20 w-6 h-6 border rounded-full flex items-center justify-center transition-colors z-10 ${
-          isDark
-            ? 'bg-elevated border-white/[0.08] hover:bg-white/[0.05]'
-            : 'bg-light-elevated border-border-light hover:bg-light-elevated-hover'
-        }`}
-      >
-        {isCollapsed ? (
-          <ChevronRight className={`w-4 h-4 ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`} />
-        ) : (
-          <ChevronLeft className={`w-4 h-4 ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`} />
-        )}
-      </button>
+      {/* Workspace Switcher - Bottom */}
+      {!isCollapsed && (
+        <div className={`p-3 border-t ${
+          isDark ? 'border-white/[0.08]' : 'border-border-light'
+        }`}>
+          <WorkspaceSwitcher theme={theme} />
+        </div>
+      )}
     </motion.aside>
   );
 }

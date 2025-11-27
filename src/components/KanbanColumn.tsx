@@ -3,21 +3,42 @@ import { KanbanCard } from './KanbanCard';
 import { CRMLead } from '../types/crm';
 import { useDrop, useDrag } from 'react-dnd';
 import { Theme } from '../hooks/useTheme';
-import { useRef } from 'react';
+import { useRef, useEffect, useCallback, memo } from 'react';
+import { useThrottle } from '../hooks/useDebouncedDrag';
 
 interface KanbanColumnProps {
   id: string;
   title: string;
   leads: CRMLead[];
+  total?: number;
+  hasMore?: boolean;
+  loading?: boolean;
   onDrop: (leadId: string, columnId: string) => void;
   onDropAtPosition: (leadId: string, columnId: string, index: number) => void;
   onAddCard: (columnId: string) => void;
   onLeadClick: (lead: CRMLead) => void;
+  onLoadMore?: (columnId: string) => void;
+  onDeleteLead?: (leadId: string) => void;
   theme: Theme;
 }
 
-export function KanbanColumn({ id, title, leads, onDrop, onDropAtPosition, onAddCard, onLeadClick, theme }: KanbanColumnProps) {
+function KanbanColumnComponent({ 
+  id, 
+  title, 
+  leads, 
+  total,
+  hasMore,
+  loading,
+  onDrop, 
+  onDropAtPosition, 
+  onAddCard, 
+  onLeadClick, 
+  onLoadMore,
+  onDeleteLead,
+  theme 
+}: KanbanColumnProps) {
   const isDark = theme === 'dark';
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   const [{ isOver, canDrop }, drop] = useDrop({
     accept: 'LEAD',
@@ -31,7 +52,30 @@ export function KanbanColumn({ id, title, leads, onDrop, onDropAtPosition, onAdd
     }),
   });
 
+  // Intersection Observer for infinite scroll
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!onLoadMore || !hasMore || loading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          onLoadMore(id);
+        }
+      },
+      { threshold: 0.1, root: scrollContainerRef.current }
+    );
+
+    if (loadMoreTriggerRef.current) {
+      observer.observe(loadMoreTriggerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [id, onLoadMore, hasMore, loading]);
+
   const isActive = isOver && canDrop;
+  const displayTotal = total !== undefined ? total : leads.length;
 
   return (
     <div className="flex flex-col h-full min-w-[280px] w-[280px]">
@@ -41,12 +85,12 @@ export function KanbanColumn({ id, title, leads, onDrop, onDropAtPosition, onAdd
           <h3 className={`text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
             {title}
           </h3>
-          <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+          <span className={`px-1.5 py-0.5 rounded-full text-xs ${ 
             isDark 
               ? 'bg-white/[0.05] text-white/50' 
               : 'bg-light-elevated text-text-secondary-light'
           }`}>
-            {leads.length}
+            {displayTotal}
           </span>
         </div>
         <button
@@ -63,7 +107,10 @@ export function KanbanColumn({ id, title, leads, onDrop, onDropAtPosition, onAdd
 
       {/* Column Content */}
       <div
-        ref={drop}
+        ref={(node) => {
+          drop(node);
+          scrollContainerRef.current = node;
+        }}
         className={`flex-1 rounded-xl p-2 border transition-all duration-200 overflow-y-auto ${
           isActive
             ? 'border-[#0169D9] bg-[#0169D9]/5'
@@ -81,11 +128,27 @@ export function KanbanColumn({ id, title, leads, onDrop, onDropAtPosition, onAdd
               columnId={id}
               onDropAtPosition={onDropAtPosition}
               onLeadClick={onLeadClick}
+              onDeleteLead={onDeleteLead}
               theme={theme} 
             />
           ))}
           
-          {leads.length === 0 && (
+          {/* Load More Trigger */}
+          {hasMore && (
+            <div ref={loadMoreTriggerRef} className="py-2">
+              {loading ? (
+                <div className={`text-center text-xs ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
+                  Carregando...
+                </div>
+              ) : (
+                <div className={`text-center text-xs ${isDark ? 'text-white/20' : 'text-text-secondary-light'}`}>
+                  Role para carregar mais
+                </div>
+              )}
+            </div>
+          )}
+          
+          {leads.length === 0 && !loading && (
             <div className={`text-center py-8 text-xs ${
               isDark ? 'text-white/20' : 'text-text-secondary-light'
             }`}>
@@ -104,11 +167,15 @@ interface DraggableCardWithDropZoneProps {
   columnId: string;
   onDropAtPosition: (leadId: string, columnId: string, index: number) => void;
   onLeadClick: (lead: CRMLead) => void;
+  onDeleteLead?: (leadId: string) => void;
   theme: Theme;
 }
 
-function DraggableCardWithDropZone({ lead, index, columnId, onDropAtPosition, onLeadClick, theme }: DraggableCardWithDropZoneProps) {
+const DraggableCardWithDropZone = memo(function DraggableCardWithDropZone({ lead, index, columnId, onDropAtPosition, onLeadClick, onDeleteLead, theme }: DraggableCardWithDropZoneProps) {
   const ref = useRef<HTMLDivElement>(null);
+
+  // 🔥 OTIMIZAÇÃO: Throttle do onDropAtPosition para reduzir chamadas durante drag
+  const throttledDropAtPosition = useThrottle(onDropAtPosition, 16); // ~60fps
 
   const [{ isDragging }, drag] = useDrag({
     type: 'LEAD',
@@ -161,8 +228,9 @@ function DraggableCardWithDropZone({ lead, index, columnId, onDropAtPosition, on
         return;
       }
 
+      // 🔥 OTIMIZAÇÃO: Usar versão throttled para reduzir chamadas
       // Time to actually perform the action
-      onDropAtPosition(item.id, hoverColumnId, hoverIndex);
+      throttledDropAtPosition(item.id, hoverColumnId, hoverIndex);
 
       // Note: we're mutating the monitor item here!
       // Generally it's better to avoid mutations,
@@ -185,7 +253,31 @@ function DraggableCardWithDropZone({ lead, index, columnId, onDropAtPosition, on
       style={{ opacity: isDragging ? 0.5 : 1 }}
       className="relative"
     >
-      <KanbanCard lead={lead} isDragging={isDragging} onClick={() => onLeadClick(lead)} theme={theme} />
+      <KanbanCard lead={lead} isDragging={isDragging} onClick={() => onLeadClick(lead)} onDelete={onDeleteLead} theme={theme} />
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Only re-render if lead ID, index, or theme changes
+  return (
+    prevProps.lead.id === nextProps.lead.id &&
+    prevProps.index === nextProps.index &&
+    prevProps.columnId === nextProps.columnId &&
+    prevProps.theme === nextProps.theme
+  );
+});
+
+// Memoize column to prevent re-render when other columns change
+export const KanbanColumn = memo(KanbanColumnComponent, (prevProps, nextProps) => {
+  // Re-render only if this column's data changes
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.title === nextProps.title &&
+    prevProps.leads.length === nextProps.leads.length &&
+    prevProps.total === nextProps.total &&
+    prevProps.hasMore === nextProps.hasMore &&
+    prevProps.loading === nextProps.loading &&
+    prevProps.theme === nextProps.theme &&
+    // Deep compare lead IDs to detect if leads changed
+    prevProps.leads.every((lead, idx) => lead.id === nextProps.leads[idx]?.id)
+  );
+});

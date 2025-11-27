@@ -1,0 +1,32 @@
+-- =====================================================
+-- CRON JOB: process-enrichment-queue
+-- =====================================================
+-- 
+-- DESCRIÇÃO:
+--   Enfileira leads prontos para enriquecimento na fila PGMQ
+--
+-- SCHEDULE: 
+--   */1 * * * * (A cada 1 minuto)
+--
+-- COMANDO:
+--   SELECT enqueue_enrichment_leads();
+--
+-- FUNÇÃO SQL CHAMADA:
+--   enqueue_enrichment_leads() - Definida em sql-migrations/03-google-maps-queue.sql
+--
+-- O QUE FAZ:
+--   1. Busca leads com status_extraction = 'google_fetched'
+--   2. Enfileira na fila PGMQ 'enrichment_queue'
+--   3. Atualiza status_enrichment para 'queued'
+--
+-- DEPENDÊNCIAS:
+--   - Tabela: lead_extraction_staging
+--   - PGMQ Extension
+--   - Função: enqueue_enrichment_leads()
+--
+-- STATUS ATUAL:
+--   ✅ FUNCIONANDO (Succeeded no Dashboard)
+--
+-- =====================================================
+
+SELECT enqueue_enrichment_leads();

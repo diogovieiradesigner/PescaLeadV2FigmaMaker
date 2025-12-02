@@ -1,6 +1,3 @@
-# Configuração Nixpacks para deploy no Coolify
-# Projeto: React + Vite
-
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 

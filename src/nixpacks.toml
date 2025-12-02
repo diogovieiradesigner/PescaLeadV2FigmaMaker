@@ -2,7 +2,7 @@
 # Este arquivo força o Nixpacks a usar Node.js em vez de Deno
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm-9_x"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm ci --legacy-peer-deps"]

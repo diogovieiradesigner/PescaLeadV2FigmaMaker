@@ -1,17 +1,33 @@
 # Configuração Nixpacks para Pesca Lead CRM
 # Este arquivo força o Nixpacks a usar Node.js em vez de Deno
+# Cache busted: 2024-12-02T14:18:00Z
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
+nixLibs = []
+nixOverlays = []
+nixpkgsArchive = "5148520bfab61f99fd25fb9ff7bfbb50dad3c9db"
+cmds = [
+  "export PATH=/root/.nix-profile/bin:$PATH",
+  "which node || echo 'Node not found'",
+  "which npm || echo 'NPM not found'"
+]
 
 [phases.install]
-cmds = ["npm ci --legacy-peer-deps"]
+cmds = [
+  "export PATH=/root/.nix-profile/bin:$PATH",
+  "npm ci --legacy-peer-deps"
+]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = [
+  "export PATH=/root/.nix-profile/bin:$PATH",
+  "npm run build"
+]
 
 [start]
-cmd = "npx serve dist -s -l 3000"
+cmd = "bash start.sh"
 
 [variables]
 NODE_ENV = "production"
+PATH = "/root/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

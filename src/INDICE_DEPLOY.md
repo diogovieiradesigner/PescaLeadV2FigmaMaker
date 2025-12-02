@@ -1,6 +1,12 @@
 # 📚 Índice de Documentação - Deploy Coolify
 
-## ⚡ **ERRO: "npm: command not found"?** → Leia [FIX_AGORA.md](./FIX_AGORA.md)
+## 🔥 **URGENTE: Leia isto PRIMEIRO!**
+
+### **Erro atual: "cat: can't open Dockerfile"**
+📄 **[FIX_DOCKERFILE_PASTA.md](./FIX_DOCKERFILE_PASTA.md)** ⭐ **RESOLVER AGORA!**
+
+### **Erro anterior: "npm: command not found"**
+📄 **[FIX_AGORA.md](./FIX_AGORA.md)**
 
 ---
 

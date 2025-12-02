@@ -9,7 +9,8 @@ description: CRM com Agentes de IA para WhatsApp
 
 # Configuração do build
 build:
-  method: nixpacks
+  method: dockerfile
+  dockerfile: Dockerfile
   context: .
   
 # Rede e portas

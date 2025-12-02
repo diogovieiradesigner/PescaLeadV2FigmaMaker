@@ -1,6 +1,16 @@
 # 📚 Índice de Documentação - Deploy Coolify
 
+## ⚡ **ERRO: "npm: command not found"?** → Leia [FIX_AGORA.md](./FIX_AGORA.md)
+
+---
+
 ## 🚀 Início Rápido (Escolha um)
+
+### 0. **URGENTE: Erro "npm: command not found"** 🔥
+📄 **[FIX_AGORA.md](./FIX_AGORA.md)** ⭐ **LEIA ISTO PRIMEIRO!**
+- Erro resolvido em 2 minutos
+- 2 soluções prontas
+- Dockerfile vs Nixpacks
 
 ### 1. **Super Rápido (5 minutos)** ⚡
 📄 **[DEPLOY_AGORA.md](./DEPLOY_AGORA.md)**
@@ -24,14 +34,25 @@
 
 ## 🔧 Quando Algo Der Errado
 
-### 1. **Erros Comuns (Olhe AQUI primeiro!)** ❌
+### 1. **Erro "npm: command not found"** 🔥
+📄 **[FIX_AGORA.md](./FIX_AGORA.md)** ⭐ **COMECE AQUI!**
+- Solução em 2 minutos
+- Dockerfile ou Nixpacks
+- Ambas as soluções prontas
+
+### 2. **Nixpacks vs Dockerfile (Comparação)** 📊
+📄 **[SOLUCAO_NIXPACKS_VS_DOCKERFILE.md](./SOLUCAO_NIXPACKS_VS_DOCKERFILE.md)**
+- Comparação detalhada
+- Qual escolher e por quê
+- Instruções para ambos
+
+### 3. **Erros Comuns (Outros erros)** ❌
 📄 **[ERROS_COMUNS.md](./ERROS_COMUNS.md)**
 - 15+ erros mais comuns
 - Soluções rápidas
 - Checklist de verificação
-- **LEIA ISTO SE ALGO FALHAR**
 
-### 2. **Debug Avançado** 🔍
+### 4. **Debug Avançado** 🔍
 📄 **[DEBUG_DEPLOY.md](./DEBUG_DEPLOY.md)**
 - Comandos Docker
 - Logs detalhados

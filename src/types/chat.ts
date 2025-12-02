@@ -20,6 +20,7 @@ export interface Message {
   status?: MessageStatus; // Status de envio da mensagem
   conversationId?: string; // ID da conversa
   sender?: 'agent' | 'contact'; // Quem enviou
+  pipelineId?: string; // ✅ ID do pipeline de IA (para logs RAG, tools, guardrails)
 }
 
 export interface Conversation {

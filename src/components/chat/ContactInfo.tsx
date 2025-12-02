@@ -192,7 +192,7 @@ export function ContactInfo({
   const isDark = theme === 'dark';
   const [isHumanAttendant, setIsHumanAttendant] = useState(true);
   const [showPipelineData, setShowPipelineData] = useState(false);
-  const [width, setWidth] = useState(320); // Largura inicial (w-80 = 320px)
+  const [width, setWidth] = useState(400); // Largura inicial aumentada (era 320px)
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -203,8 +203,8 @@ export function ContactInfo({
   // ✅ Estado para controlar o modal de adicionar lead
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
 
-  const MIN_WIDTH = 280; // Largura mínima
-  const MAX_WIDTH = 500; // Largura máxima
+  const MIN_WIDTH = 320; // Largura mínima aumentada (era 280px)
+  const MAX_WIDTH = 650; // Largura máxima aumentada (era 500px)
 
   // ✅ Sincronizar estado local com a conversa quando ela mudar de ID ou attendantType
   useEffect(() => {
@@ -339,7 +339,7 @@ export function ContactInfo({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6 space-y-6">
         {/* Avatar and Name */}
         <div className="text-center">
           <div

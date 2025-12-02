@@ -206,21 +206,54 @@ async function handleIncomingMessage(payload: any) {
           
           if (mediaData && mediaData.base64) {
             console.log(`[UAZAPI-WEBHOOK] ✅ Media fetched successfully (${mediaData.base64.length} chars)`);
-            console.log(`[UAZAPI-WEBHOOK] ✅ MIME type from API: ${mediaData.mimetype}`);
             
-            // ✅ Usar mimetype retornado pela API (para áudios, será audio/mpeg após conversão)
-            const finalMimeType = mediaData.mimetype;
+            // ✅ Calcular tamanho estimado do arquivo em MB
+            const estimatedSizeMB = (mediaData.base64.length * 0.75) / (1024 * 1024); // base64 é ~33% maior que binário
+            console.log(`[UAZAPI-WEBHOOK] Estimated file size: ${estimatedSizeMB.toFixed(2)} MB`);
             
-            // Upload para Storage
-            await ensureBucketExists();
-            const { signedUrl } = await uploadMedia(
-              `data:${finalMimeType};base64,${mediaData.base64}`,
-              finalMimeType,
-              `uazapi-${messageId}`
-            );
-            
-            mediaUrl = signedUrl;
-            console.log('[UAZAPI-WEBHOOK] ✅ Media uploaded to Storage successfully');
+            // ✅ Se arquivo for muito grande (>10MB), usar thumbnail
+            if (estimatedSizeMB > 10 && contentData.JPEGThumbnail) {
+              console.warn(`[UAZAPI-WEBHOOK] ⚠️ File too large (${estimatedSizeMB.toFixed(2)} MB), using thumbnail instead`);
+              
+              await ensureBucketExists();
+              const { signedUrl } = await uploadMedia(
+                `data:image/jpeg;base64,${contentData.JPEGThumbnail}`,
+                'image/jpeg',
+                `uazapi-${messageId}-thumb`
+              );
+              mediaUrl = signedUrl;
+              console.log('[UAZAPI-WEBHOOK] ✅ Thumbnail uploaded to Storage successfully');
+            } else {
+              // Arquivo dentro do limite - fazer upload normal
+              await ensureBucketExists();
+              
+              try {
+                const { signedUrl } = await uploadMedia(
+                  `data:${mimeType};base64,${mediaData.base64}`,
+                  mimeType,
+                  `uazapi-${messageId}`
+                );
+                
+                mediaUrl = signedUrl;
+                console.log('[UAZAPI-WEBHOOK] ✅ Media uploaded to Storage successfully');
+              } catch (uploadError) {
+                // Se falhar no upload (ex: arquivo excedeu limite), tentar thumbnail
+                console.error('[UAZAPI-WEBHOOK] Upload failed, trying thumbnail:', uploadError);
+                
+                if (contentData.JPEGThumbnail) {
+                  console.log('[UAZAPI-WEBHOOK] Using JPEGThumbnail as fallback');
+                  const { signedUrl } = await uploadMedia(
+                    `data:image/jpeg;base64,${contentData.JPEGThumbnail}`,
+                    'image/jpeg',
+                    `uazapi-${messageId}-thumb`
+                  );
+                  mediaUrl = signedUrl;
+                  console.log('[UAZAPI-WEBHOOK] ✅ Thumbnail uploaded to Storage successfully');
+                } else {
+                  throw uploadError; // Sem thumbnail, re-throw o erro
+                }
+              }
+            }
           } else {
             console.warn('[UAZAPI-WEBHOOK] Failed to fetch media, trying fallback to thumbnail...');
             

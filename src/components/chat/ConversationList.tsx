@@ -21,6 +21,7 @@ interface ConversationListProps {
   loadMore?: () => void;
   hasMore?: boolean;
   totalConversations?: number;
+  isSearching?: boolean; // ✅ Novo prop para indicar busca em andamento
 }
 
 const statusLabels: Record<ConversationStatus, string> = {
@@ -49,15 +50,12 @@ export function ConversationList({
   loadMore,
   hasMore,
   totalConversations = 0,
+  isSearching = false, // ✅ Novo prop
 }: ConversationListProps) {
   const isDark = theme === 'dark';
   const [width, setWidth] = useState(320); // Largura inicial (w-80 = 320px)
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // 🔍 Estado local para busca com debounce
-  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const MIN_WIDTH = 280; // Largura mínima
   const MAX_WIDTH = 500; // Largura máxima
@@ -73,11 +71,6 @@ export function ConversationList({
     e.preventDefault();
     setIsResizing(true);
   };
-
-  // 🔄 Sincronizar com searchQuery externo (quando limpar busca por fora)
-  useEffect(() => {
-    setLocalSearchQuery(searchQuery);
-  }, [searchQuery]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -107,23 +100,6 @@ export function ConversationList({
     };
   }, [isResizing]);
 
-  // ⏱️ Debounce: Aguarda 300ms após parar de digitar para buscar
-  useEffect(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    debounceTimerRef.current = setTimeout(() => {
-      onSearchChange(localSearchQuery);
-    }, 300);
-
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, [localSearchQuery, onSearchChange]);
-
   return (
     <div
       ref={containerRef}
@@ -152,14 +128,20 @@ export function ConversationList({
           <input
             type="text"
             placeholder="Buscar conversas..."
-            value={localSearchQuery}
-            onChange={(e) => setLocalSearchQuery(e.target.value)}
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
             className={`w-full border text-sm pl-9 pr-3 py-1.5 rounded-lg focus:outline-none focus:border-[#0169D9] transition-all ${
               isDark
                 ? 'bg-elevated border-white/[0.08] text-white placeholder-white/40'
                 : 'bg-light-elevated border-border-light text-text-primary-light placeholder-text-secondary-light'
             }`}
           />
+          {/* ✅ Indicador de busca */}
+          {isSearching && searchQuery && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="w-4 h-4 border-2 border-[#0169D9] border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -175,7 +157,20 @@ export function ConversationList({
       </div>
 
       {/* Conversation List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {/* ✅ Mensagem quando não houver resultados */}
+        {!isSearching && conversations.length === 0 && searchQuery && (
+          <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+            <MessageSquare className={`w-12 h-12 mb-3 ${isDark ? 'text-white/20' : 'text-gray-300'}`} />
+            <p className={`text-sm mb-1 ${isDark ? 'text-white/60' : 'text-gray-600'}`}>
+              Nenhuma conversa encontrada
+            </p>
+            <p className={`text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+              Tente buscar por outro nome ou telefone
+            </p>
+          </div>
+        )}
+        
         {conversations.map((conversation) => (
           <button
             key={conversation.id}

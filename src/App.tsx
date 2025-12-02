@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { KanbanBoard } from './components/KanbanBoard';
@@ -17,6 +18,7 @@ import { ExtractionView } from './components/ExtractionView';
 import { ExtractionProgress } from './components/ExtractionProgress';
 import { CampaignView } from './components/CampaignView';
 import { AIServiceView } from './components/AIServiceView';
+import { AgentLogsView } from './components/AgentLogsView';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -26,9 +28,20 @@ import { useKanbanRealtime } from './hooks/useKanbanRealtime';
 import { useSettingsData } from './hooks/useSettingsData';
 import { toast } from 'sonner';
 
+// Create QueryClient instance outside component to avoid recreating on every render
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
 function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken } = useAuth();
-  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress'>('dashboard');
+  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs'>('dashboard');
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
   const [isAddFunnelModalOpen, setIsAddFunnelModalOpen] = useState(false);
@@ -279,6 +292,73 @@ function AppContent() {
       toast.error('Erro ao deletar lead. Tente novamente.');
     }
   }, [refetchFunnel, selectedLead]);
+
+  const handleDeleteAllLeads = useCallback(async (columnId: string) => {
+    try {
+      // Encontrar a coluna e seus leads
+      const column = columns.find(col => col.id === columnId);
+      if (!column) {
+        toast.error('Coluna não encontrada');
+        return;
+      }
+
+      // Buscar o estado da coluna para pegar o total real (incluindo os não carregados)
+      const columnState = columnLeadsState[columnId];
+      const totalLeads = columnState?.total || column.leads.length;
+
+      if (totalLeads === 0) {
+        toast.info('Não há leads para deletar nesta coluna');
+        return;
+      }
+
+      // Se o lead selecionado está na coluna sendo deletada, fechar o modal
+      if (selectedLead && column.leads.some(lead => lead.id === selectedLead.id)) {
+        setIsEditLeadModalOpen(false);
+        setSelectedLead(null);
+      }
+
+      // Mostrar loading toast
+      const loadingToast = toast.loading(`Deletando ${totalLeads} lead${totalLeads > 1 ? 's' : ''}...`);
+
+      // Buscar TODOS os IDs dos leads da coluna (não apenas os carregados)
+      const { getLeadsByColumn } = await import('./services/leads-service');
+      const { leads: allLeadsInColumn, error: fetchError } = await getLeadsByColumn(columnId);
+
+      if (fetchError || !allLeadsInColumn) {
+        toast.dismiss(loadingToast);
+        toast.error('Erro ao buscar leads da coluna');
+        return;
+      }
+
+      const leadIds = allLeadsInColumn.map(lead => lead.id);
+      console.log(`[APP] Deletando ${leadIds.length} leads da coluna ${column.title}`);
+
+      // Deletar todos os leads em paralelo
+      const { hardDeleteLead } = await import('./services/leads-service');
+      const deletePromises = leadIds.map(leadId => hardDeleteLead(leadId));
+      const results = await Promise.allSettled(deletePromises);
+
+      // Contar sucessos e falhas
+      const successCount = results.filter(r => r.status === 'fulfilled' && !r.value.error).length;
+      const failureCount = results.length - successCount;
+
+      toast.dismiss(loadingToast);
+
+      if (failureCount > 0) {
+        console.warn(`[APP] ${failureCount} leads falharam ao deletar`);
+        toast.warning(`${successCount} leads deletados. ${failureCount} falharam.`);
+      } else {
+        console.log(`[APP] ${successCount} leads deletados com sucesso`);
+        toast.success(`${successCount} lead${successCount > 1 ? 's' : ''} deletado${successCount > 1 ? 's' : ''} com sucesso!`);
+      }
+
+      // Recarregar o funil após deletar
+      await refetchFunnel();
+    } catch (error) {
+      console.error('[APP] Erro ao deletar leads da coluna:', error);
+      toast.error('Erro ao deletar leads. Tente novamente.');
+    }
+  }, [columns, columnLeadsState, refetchFunnel, selectedLead]);
 
   const handleAddCard = useCallback((columnId: string) => {
     setSelectedColumnId(columnId);
@@ -712,14 +792,28 @@ function AppContent() {
         ) : currentView === 'extraction-progress' ? (
           <ExtractionProgress 
             theme={theme} 
+            onThemeToggle={toggleTheme}
             runId={extractionRunId}
             onBack={() => setCurrentView('extraction')}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
           />
         ) : currentView === 'campaign' ? (
-          <CampaignView theme={theme} />
+          <CampaignView 
+            theme={theme}
+            onThemeToggle={toggleTheme}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
+          />
         ) : currentView === 'ai-service' ? (
           <AIServiceView 
             theme={theme} 
+            onThemeToggle={toggleTheme}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
+            onNavigateToLogs={() => setCurrentView('agent-logs')}
+          />
+        ) : currentView === 'agent-logs' ? (
+          <AgentLogsView 
+            theme={theme} 
+            onBack={() => setCurrentView('ai-service')} 
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
           />
@@ -763,6 +857,7 @@ function AppContent() {
                 onLeadClick={handleLeadClick}
                 onLoadMore={handleLoadMore}
                 onDeleteLead={handleDeleteLead}
+                onDeleteAllLeads={handleDeleteAllLeads}
                 theme={theme}
               />
             ) : (
@@ -849,7 +944,9 @@ export default function App() {
   return (
     <AuthProvider>
       <AuthWrapper theme={theme}>
-        <AppContent />
+        <QueryClientProvider client={queryClient}>
+          <AppContent />
+        </QueryClientProvider>
       </AuthWrapper>
     </AuthProvider>
   );

@@ -3,8 +3,7 @@ import { Theme } from '../hooks/useTheme';
 import { supabase } from '../utils/supabase/client';
 import { 
   cancelExtractionRun,
-  getExtractionStatistics,
-  getExtractionMetricsCard
+  getExtractionAnalytics
 } from '../services/extraction-service';
 import { 
   Loader2, 
@@ -13,28 +12,203 @@ import {
   XCircle, 
   ArrowLeft, 
   X,
-  ChevronDown,
-  ChevronUp,
-  TrendingUp,
   Clock,
-  Target,
-  Zap
+  Zap,
+  Search,
+  MapPin,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
+import { Separator } from './ui/separator';
+import { ProfileMenu } from './ProfileMenu';
+import { PieChart, Pie, BarChart, Bar, Cell, ResponsiveContainer, Legend, Tooltip, XAxis, YAxis } from 'recharts';
+
+import { cn } from './ui/utils';
 
 interface ExtractionProgressProps {
   theme: Theme;
+  onThemeToggle: () => void;
   runId: string | null;
   onBack?: () => void;
+  onNavigateToSettings?: () => void;
 }
 
-export function ExtractionProgress({ theme, runId, onBack }: ExtractionProgressProps) {
+// Donut Chart Component with Hover
+interface DonutChartProps {
+  data: Array<{ name: string; value: number }>;
+  title: string;
+  colors: string[];
+  category: string;
+}
+
+function DonutChart({ data, title, colors, category, isDark }: DonutChartProps & { isDark: boolean }) {
+  const [hoveredItem, setHoveredItem] = useState<{ name: string; value: number } | null>(null);
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+
+  return (
+    <Card className={cn(
+      isDark 
+        ? "bg-gradient-to-br from-zinc-900/50 to-zinc-950 border border-zinc-800/50" 
+        : "bg-white border border-zinc-200"
+    )}>
+      <CardContent className="pt-6 pb-6">
+        <div className="flex items-center justify-between mb-6">
+          <h4 className={cn(
+            "text-xs font-medium",
+            isDark ? "text-zinc-400" : "text-zinc-600"
+          )}>{title}</h4>
+        </div>
+        <div className="relative flex items-center justify-center" style={{ height: '200px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={80}
+                strokeWidth={0}
+                onMouseEnter={(_, index) => setHoveredItem(data[index])}
+                onMouseLeave={() => setHoveredItem(null)}
+              >
+                {data.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={colors[index % colors.length]}
+                    style={{ cursor: 'pointer', transition: 'opacity 0.2s' }}
+                    opacity={hoveredItem ? (hoveredItem.name === entry.name ? 1 : 0.5) : 1}
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
+            <div className={cn(
+              "text-3xl font-bold transition-all duration-200",
+              isDark ? "text-white" : "text-zinc-900"
+            )}>
+              {hoveredItem ? hoveredItem.value : total}
+            </div>
+            <div className={cn(
+              "text-xs transition-all duration-200",
+              isDark ? "text-zinc-500" : "text-zinc-600"
+            )}>
+              {hoveredItem ? hoveredItem.name : category}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Animated counter component
+function AnimatedCounter({ value, duration = 1000 }: { value: number; duration?: number }) {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    let startTime: number;
+    let animationFrame: number;
+
+    const animate = (currentTime: number) => {
+      if (!startTime) startTime = currentTime;
+      const progress = Math.min((currentTime - startTime) / duration, 1);
+      
+      // Easing function for smooth animation
+      const easeOutQuad = (t: number) => t * (2 - t);
+      const easedProgress = easeOutQuad(progress);
+      
+      setDisplayValue(Math.floor(easedProgress * value));
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
+    };
+  }, [value, duration]);
+
+  return <>{displayValue}</>;
+}
+
+// Animated progress bar component
+function AnimatedProgressBar({ percentage, className, isDark = true }: { percentage: number; className?: string; isDark?: boolean }) {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    // Small delay to ensure animation starts from 0
+    const timer = setTimeout(() => {
+      setWidth(percentage);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [percentage]);
+
+  return (
+    <div className={cn(
+      "relative h-2 w-full rounded-full overflow-hidden",
+      isDark 
+        ? "bg-zinc-900" 
+        : "bg-white border border-zinc-300"
+    )}>
+      <div 
+        className={cn(
+          "absolute top-0 left-0 h-full transition-all duration-1000 ease-out", 
+          isDark ? "bg-white" : "bg-zinc-900",
+          className
+        )}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
+// Mini progress bar for metric cards
+function MiniProgressBar({ percentage, isDark }: { percentage: number; isDark: boolean }) {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setWidth(percentage);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [percentage]);
+
+  return (
+    <div className={cn(
+      "relative h-[2px] w-16 rounded-full overflow-hidden",
+      isDark ? "bg-zinc-800" : "bg-zinc-200"
+    )}>
+      <div 
+        className={cn(
+          "absolute top-0 left-0 h-full transition-all duration-1000 ease-out",
+          isDark ? "bg-zinc-600" : "bg-zinc-400"
+        )}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
+export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavigateToSettings }: ExtractionProgressProps) {
   const isDark = theme === 'dark';
 
-  const [statistics, setStatistics] = useState<any>(null);
-  const [metricsCards, setMetricsCards] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showTimeline, setShowTimeline] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
   // Buscar dados iniciais
@@ -45,9 +219,9 @@ export function ExtractionProgress({ theme, runId, onBack }: ExtractionProgressP
 
   // Realtime para atualizar progresso
   useEffect(() => {
-    if (!runId || !statistics?.run_info) return;
+    if (!runId || !analytics?.run) return;
     
-    const status = statistics.run_info.status;
+    const status = analytics.run.status;
     if (status === 'completed' || status === 'failed' || status === 'cancelled') return;
 
     const channel = supabase
@@ -70,13 +244,13 @@ export function ExtractionProgress({ theme, runId, onBack }: ExtractionProgressP
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [runId, statistics?.run_info?.status]);
+  }, [runId, analytics?.run?.status]);
 
   // Polling de fallback (caso Realtime não funcione)
   useEffect(() => {
-    if (!runId || !statistics?.run_info) return;
+    if (!runId || !analytics?.run) return;
     
-    const status = statistics.run_info.status;
+    const status = analytics.run.status;
     if (status === 'completed' || status === 'failed' || status === 'cancelled') return;
 
     const interval = setInterval(() => {
@@ -84,31 +258,71 @@ export function ExtractionProgress({ theme, runId, onBack }: ExtractionProgressP
     }, 3000); // Poll a cada 3 segundos
 
     return () => clearInterval(interval);
-  }, [runId, statistics?.run_info?.status]);
+  }, [runId, analytics?.run?.status]);
 
   const fetchData = async () => {
     if (!runId) return;
 
     try {
-      setLoading(true);
+      // Don't set loading to true on subsequent updates to avoid flashing
+      if (!analytics) setLoading(true);
 
-      const [stats, metrics] = await Promise.all([
-        getExtractionStatistics(runId),
-        getExtractionMetricsCard(runId)
-      ]);
-
-      setStatistics(stats);
-      setMetricsCards(metrics);
-    } catch (error) {
-      console.error('Erro ao buscar dados:', error);
-      toast.error('Erro ao carregar progresso');
+      const data = await getExtractionAnalytics({ runId });
+      setAnalytics(data);
+      
+      console.log('📊 Analytics carregado:', data);
+      console.log('📞 Contatos:', data?.contatos);
+      console.log('📈 Run:', data?.run);
+    } catch (error: any) {
+      console.error('❌ Erro ao buscar dados:', error);
+      
+      // Erro específico da função RPC
+      if (error?.message?.includes('lead_stats') || error?.message?.includes('get_extraction_analytics') || error?.code === '42P01') {
+        toast.error('Erro: Função RPC precisa ser corrigida no Supabase. Veja o console.', {
+          duration: 8000
+        });
+        
+        // Log visual detalhado no console
+        console.log('\n');
+        console.log('%c╔════════════════════════════════════════════════════════════════╗', 'color: #ef4444; font-weight: bold');
+        console.log('%c║  ❌ ERRO: Função RPC não configurada                          ║', 'color: #ef4444; font-weight: bold');
+        console.log('%c╚════════════════════════════════════════════════════════════════╝', 'color: #ef4444; font-weight: bold');
+        console.log('\n');
+        
+        console.log('%c📋 PROBLEMA DETECTADO:', 'color: #f97316; font-weight: bold; font-size: 14px');
+        console.log('%c   A função RPC "get_extraction_analytics" está tentando acessar', 'color: #a8a29e');
+        console.log('%c   a tabela "lead_stats" que NÃO EXISTE no banco de dados.', 'color: #a8a29e');
+        console.log('\n');
+        
+        console.log('%c✅ SOLUÇÃO RÁPIDA:', 'color: #14b8a6; font-weight: bold; font-size: 14px');
+        console.log('%c   1. Abra: %c/SUPABASE_RPC_FIX.md', 'color: #a8a29e', 'color: #14b8a6; font-weight: bold');
+        console.log('%c   2. Acesse o SQL Editor no Supabase Dashboard', 'color: #a8a29e');
+        console.log('%c   3. Execute o SQL de correção fornecido', 'color: #a8a29e');
+        console.log('%c   4. Recarregue esta página', 'color: #a8a29e');
+        console.log('\n');
+        
+        console.log('%c📚 DOCUMENTAÇÃO:', 'color: #a855f7; font-weight: bold; font-size: 14px');
+        console.log('%c   • Overview:  %cREADME_ERRO_RPC.md', 'color: #a8a29e', 'color: #a855f7; font-weight: bold');
+        console.log('%c   • Fix SQL:   %cSUPABASE_RPC_FIX.md', 'color: #a8a29e', 'color: #a855f7; font-weight: bold');
+        console.log('\n');
+        
+        console.log('%c🔍 ERRO ORIGINAL:', 'color: #71717a; font-weight: bold; font-size: 12px');
+        console.log('%c   Code:    ' + (error?.code || 'N/A'), 'color: #71717a; font-size: 11px');
+        console.log('%c   Message: ' + (error?.message || 'N/A'), 'color: #71717a; font-size: 11px');
+        console.log('\n');
+        
+        console.log('%c═══════════════════════════════════════════════════════════════', 'color: #27272a');
+        console.log('\n');
+      } else {
+        toast.error('Erro ao carregar progresso');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancel = async () => {
-    if (!runId || !statistics) return;
+    if (!runId || !analytics) return;
 
     try {
       setCancelling(true);
@@ -124,394 +338,982 @@ export function ExtractionProgress({ theme, runId, onBack }: ExtractionProgressP
   };
 
   const getStatusConfig = () => {
-    if (!statistics?.run_info) return null;
+    if (!analytics?.run) return null;
 
     const statusMap = {
       pending: { 
         icon: Clock, 
-        text: '⏳ Aguardando...', 
-        description: 'A extração vai começar em breve',
-        color: 'bg-gray-500/10 text-gray-500', 
-        iconClass: '' 
+        text: 'Aguardando', 
+        variant: 'secondary' as const,
+        color: 'text-gray-500'
       },
       running: { 
         icon: Zap, 
-        text: '🚀 Buscando leads...', 
-        description: 'Estamos trabalhando para você',
-        color: 'bg-blue-500/10 text-blue-500', 
-        iconClass: 'animate-pulse' 
+        text: 'Em andamento', 
+        variant: 'default' as const,
+        color: 'text-blue-500'
       },
       completed: { 
         icon: CheckCircle, 
-        text: '✅ Pronto!', 
-        description: 'Extração concluída com sucesso',
-        color: 'bg-green-500/10 text-green-500', 
-        iconClass: '' 
+        text: 'Concluído', 
+        variant: 'default' as const,
+        color: 'text-green-500'
       },
       failed: { 
         icon: XCircle, 
-        text: '❌ Algo deu errado', 
-        description: 'A extração encontrou um problema',
-        color: 'bg-red-500/10 text-red-500', 
-        iconClass: '' 
+        text: 'Falhou', 
+        variant: 'destructive' as const,
+        color: 'text-red-500'
       },
       cancelled: { 
         icon: AlertCircle, 
-        text: '⚠️ Cancelado', 
-        description: 'Você cancelou esta extração',
-        color: 'bg-yellow-500/10 text-yellow-500', 
-        iconClass: '' 
+        text: 'Cancelado', 
+        variant: 'destructive' as const,
+        color: 'text-yellow-500'
       },
       partial: { 
         icon: AlertCircle, 
-        text: '⚠️ Parcialmente concluído', 
-        description: 'Alguns leads foram extraídos',
-        color: 'bg-yellow-500/10 text-yellow-500', 
-        iconClass: '' 
+        text: 'Parcial', 
+        variant: 'secondary' as const,
+        color: 'text-yellow-500'
       }
     };
 
-    return statusMap[statistics.run_info.status as keyof typeof statusMap] || statusMap.pending;
+    return statusMap[analytics.run.status as keyof typeof statusMap] || statusMap.pending;
   };
 
-  if (loading && !statistics) {
+  if (loading && !analytics) {
     return (
-      <div className={`h-screen flex items-center justify-center ${
-        isDark ? 'bg-true-black' : 'bg-light-bg'
-      }`}>
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-[#0169D9] mx-auto mb-4" />
-          <p className={`text-sm ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-            Carregando detalhes...
-          </p>
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground text-sm">Carregando detalhes da extração...</p>
         </div>
       </div>
     );
   }
 
-  if (!statistics) {
+  if (!analytics && !loading) {
     return (
-      <div className={`h-screen flex flex-col items-center justify-center ${
-        isDark ? 'bg-true-black' : 'bg-light-bg'
-      }`}>
-        <XCircle className="w-16 h-16 text-red-500 mb-4" />
-        <h2 className={`text-xl mb-2 ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-          Extração não encontrada
-        </h2>
-        <p className={`text-sm mb-6 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-          Não conseguimos encontrar os dados desta extração
-        </p>
+      <div className={cn("h-full flex flex-col items-center justify-center space-y-4 p-8", isDark ? "bg-black text-white" : "bg-white")}>
+        <XCircle className="w-12 h-12 text-destructive" />
+        <div className="text-center max-w-2xl">
+          <h2 className="text-xl font-semibold">Erro ao Carregar Analytics</h2>
+          <p className={cn("text-sm mt-2", isDark ? "text-zinc-400" : "text-muted-foreground")}>
+            A função RPC <code className="px-2 py-1 bg-zinc-900 rounded text-teal-400">get_extraction_analytics</code> não está configurada corretamente no Supabase.
+          </p>
+          
+          <div className={cn("mt-6 p-4 rounded-lg border text-left text-sm space-y-3", isDark ? "bg-zinc-950 border-zinc-800" : "bg-zinc-50 border-zinc-200")}>
+            <p className="font-semibold text-orange-500">⚠️ Problema Detectado:</p>
+            <p className={isDark ? "text-zinc-300" : "text-zinc-700"}>
+              A função está tentando acessar a tabela <code className="px-1.5 py-0.5 bg-red-950 text-red-400 rounded text-xs">lead_stats</code> que não existe.
+            </p>
+            
+            <div className="pt-3 border-t border-zinc-800">
+              <p className="font-semibold text-teal-400 mb-2">✅ Como Corrigir:</p>
+              <ol className={cn("list-decimal list-inside space-y-1.5", isDark ? "text-zinc-400" : "text-zinc-600")}>
+                <li>Abra o arquivo <code className="px-1.5 py-0.5 bg-zinc-900 text-teal-400 rounded text-xs">/SUPABASE_RPC_FIX.md</code></li>
+                <li>Acesse o <strong>SQL Editor</strong> no Supabase Dashboard</li>
+                <li>Execute o SQL de correção fornecido</li>
+                <li>Recarregue esta página</li>
+              </ol>
+            </div>
+            
+            <div className="pt-3 border-t border-zinc-800">
+              <p className={cn("text-xs", isDark ? "text-zinc-500" : "text-zinc-500")}>
+                💡 <strong>Dica:</strong> Pressione <kbd className="px-2 py-0.5 bg-zinc-800 rounded border border-zinc-700">F12</kbd> e veja o Console para detalhes completos.
+              </p>
+            </div>
+          </div>
+        </div>
         {onBack && (
-          <button
+          <Button
+            variant="outline"
             onClick={onBack}
-            className="px-4 py-2 bg-[#0169D9] text-white rounded-lg hover:bg-[#0159c9] transition-all"
+            className={cn("mt-4", isDark && "border-zinc-800 hover:bg-zinc-900")}
           >
-            Voltar para extrações
-          </button>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Voltar
+          </Button>
         )}
       </div>
     );
   }
 
-  const runInfo = statistics.run_info;
+  const runInfo = analytics.run;
   const statusConfig = getStatusConfig();
+  const StatusIcon = statusConfig?.icon || Clock;
+
+  const containerClass = isDark ? "bg-black text-white" : "bg-white text-zinc-950";
 
   return (
-    <div className={`h-screen flex flex-col ${isDark ? 'bg-true-black' : 'bg-light-bg'}`}>
-      {/* Header */}
-      <div className={`border-b shrink-0 ${
-        isDark ? 'bg-true-black border-white/[0.08]' : 'bg-white border-border-light'
-      }`}>
-        <div className="max-w-5xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={onBack}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
-                isDark ? 'hover:bg-white/[0.05] text-white/70' : 'hover:bg-light-elevated text-text-secondary-light'
-              }`}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Voltar
-            </button>
+    <div className={cn("h-screen w-full flex flex-col overflow-hidden", containerClass)}>
+      {/* Header Section */}
+      <div className={cn(
+        "shrink-0 h-16 border-b flex items-center justify-between px-6 transition-colors",
+        isDark 
+          ? "bg-black border-white/[0.08]" 
+          : "bg-white border-zinc-200"
+      )}>
+        <div className="flex items-center gap-4">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={onBack} 
+            className={cn("h-8 w-8", isDark && "hover:bg-white/10 text-white")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold tracking-tight">Detalhes da Extração</h1>
+            <div className={cn("h-4 w-px", isDark ? "bg-white/10" : "bg-zinc-200")} />
+            <div className={cn("flex items-center gap-2 text-sm", isDark ? "text-zinc-400" : "text-muted-foreground")}>
+              <Search className="h-3.5 w-3.5" />
+              <span className="font-medium">{runInfo.search_term}</span>
+              <span className="opacity-50">•</span>
+              <MapPin className="h-3.5 w-3.5" />
+              <span>{runInfo.location}</span>
+            </div>
+          </div>
+        </div>
 
+        <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {statusConfig && (
+              <Badge 
+                variant={statusConfig.variant === 'default' && runInfo.status === 'completed' ? 'default' : 'secondary'} 
+                className={cn(
+                  "px-3 py-1 text-sm font-medium gap-1.5", 
+                  isDark && statusConfig.variant === 'secondary' && "bg-white/10 text-white hover:bg-white/20"
+                )}
+              >
+                <StatusIcon className="h-3.5 w-3.5" />
+                {statusConfig.text}
+              </Badge>
+            )}
+            
             {runInfo.status === 'running' && (
-              <button
+              <Button 
+                variant="destructive" 
+                size="sm" 
                 onClick={handleCancel}
                 disabled={cancelling}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all disabled:opacity-50"
+                className="gap-2"
               >
-                {cancelling ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Cancelando...
-                  </>
-                ) : (
-                  <>
-                    <X className="w-4 h-4" />
-                    Cancelar Extração
-                  </>
-                )}
-              </button>
+                {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                Cancelar
+              </Button>
             )}
+          </div>
+
+          <div className={cn("h-6 w-px", isDark ? "bg-white/10" : "bg-zinc-200")} />
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onThemeToggle}
+              className={cn("h-9 w-9", isDark ? "hover:bg-white/10 text-white/70 hover:text-white" : "hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900")}
+            >
+              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+            
+            <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} />
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-          {/* Header Card */}
-          <div className={`rounded-xl border p-6 ${
-            isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-border-light'
-          }`}>
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex-1">
-                <h1 className={`text-2xl mb-2 ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                  {runInfo.search_term} em {runInfo.location}
-                </h1>
-                <p className={`text-sm ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                  Iniciada em {new Date(runInfo.started_at || runInfo.created_at).toLocaleString('pt-BR', {
-                    day: '2-digit',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                  {runInfo.duration_formatted && ` • Duração: ${runInfo.duration_formatted}`}
-                </p>
-              </div>
-              
-              {statusConfig && (
-                <div className={`inline-flex flex-col items-end gap-1`}>
-                  <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${statusConfig.color}`}>
-                    <statusConfig.icon className={`w-5 h-5 ${statusConfig.iconClass}`} />
-                    <span className="font-medium">{statusConfig.text}</span>
-                  </div>
-                  <p className={`text-xs ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
-                    {statusConfig.description}
-                  </p>
-                </div>
+      {/* Main Content */}
+      <div className="flex-1 p-6 overflow-hidden">
+        <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
+          {/* Left Column - Main Stats */}
+          <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-6 overflow-y-auto pr-2 scrollbar-thin">
+            {/* Progress Card */}
+            <Card 
+              className={cn(
+                "rounded-xl",
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
               )}
+              style={{
+                borderRadius: '0.75rem',
+              }}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className={cn(
+                  "text-xs font-medium uppercase tracking-wider",
+                  isDark ? "text-zinc-500" : "text-zinc-600"
+                )}>
+                  Progresso Geral
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="flex items-end justify-between">
+                    <div className="space-y-1">
+                      <p className={cn(
+                        "text-5xl font-bold tracking-tight",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={runInfo.created_quantity || 0} />
+                      </p>
+                      <p className={cn(
+                        "text-sm",
+                        isDark ? "text-zinc-500" : "text-zinc-600"
+                      )}>
+                        de {runInfo.target_quantity || 0} leads capturados
+                      </p>
+                    </div>
+                    <div className="text-right mb-2">
+                      <p className={cn(
+                        "text-4xl font-bold",
+                        isDark ? "text-zinc-700" : "text-zinc-300"
+                      )}>
+                        <AnimatedCounter value={runInfo.success_rate || 0} />%
+                      </p>
+                    </div>
+                  </div>
+                  <AnimatedProgressBar percentage={runInfo.success_rate || 0} isDark={isDark} />
+                  <div className={cn(
+                    "flex justify-between text-xs font-mono",
+                    isDark ? "text-zinc-600" : "text-zinc-500"
+                  )}>
+                    <span>Início: {new Date(runInfo.started_at || runInfo.created_at).toLocaleString('pt-BR')}</span>
+                    {runInfo.duration_formatted && <span>Duração: {runInfo.duration_formatted}</span>}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Cards Principais - Duplicados e Filtrados */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Duplicados Removidos */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-orange-950/20 via-zinc-950 to-black border border-orange-900/30" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={cn(
+                          "text-base font-semibold uppercase",
+                          isDark ? "text-orange-400" : "text-orange-600"
+                        )}>Duplicados Removidos</span>
+                      </div>
+                      <p className={cn(
+                        "text-xs",
+                        isDark ? "text-zinc-500" : "text-zinc-600"
+                      )}>Leads que já existiam na base</p>
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-3 mb-4">
+                    <span className={cn(
+                      "text-5xl font-bold",
+                      isDark ? "text-orange-500" : "text-orange-600"
+                    )}>
+                      <AnimatedCounter value={analytics.run?.duplicates_skipped || 0} />
+                    </span>
+                    <div className={cn(
+                      "text-sm",
+                      isDark ? "text-zinc-500" : "text-zinc-700"
+                    )}>
+                      <div>de {(analytics.run?.found_quantity || 0)} encontrados</div>
+                      <div className="text-xs">
+                        {analytics.run?.found_quantity ? 
+                          `${Math.round((analytics.run.duplicates_skipped / analytics.run.found_quantity) * 100)}% duplicados` 
+                          : '0%'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "h-2 rounded-full overflow-hidden",
+                    isDark ? "bg-zinc-900" : "bg-orange-200"
+                  )}>
+                    <div 
+                      className="h-full bg-orange-500 transition-all duration-1000"
+                      style={{ 
+                        width: analytics.run?.found_quantity ? 
+                          `${Math.round((analytics.run.duplicates_skipped / analytics.run.found_quantity) * 100)}%` 
+                          : '0%'
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Filtrados */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-red-950/20 via-zinc-950 to-black border border-red-900/30" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={cn(
+                          "text-base font-semibold uppercase",
+                          isDark ? "text-red-400" : "text-red-600"
+                        )}>Rejeitados por Filtros</span>
+                      </div>
+                      <p className={cn(
+                        "text-xs",
+                        isDark ? "text-zinc-500" : "text-zinc-600"
+                      )}>Leads que não passaram nos critérios</p>
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-3 mb-4">
+                    <span className={cn(
+                      "text-5xl font-bold",
+                      isDark ? "text-red-500" : "text-red-600"
+                    )}>
+                      <AnimatedCounter value={analytics.run?.filtered_out || 0} />
+                    </span>
+                    <div className={cn(
+                      "text-sm",
+                      isDark ? "text-zinc-500" : "text-zinc-700"
+                    )}>
+                      <div>de {(analytics.run?.found_quantity || 0)} encontrados</div>
+                      <div className="text-xs">
+                        {analytics.run?.found_quantity ? 
+                          `${Math.round((analytics.run.filtered_out / analytics.run.found_quantity) * 100)}% rejeitados` 
+                          : '0%'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "h-2 rounded-full overflow-hidden",
+                    isDark ? "bg-zinc-900" : "bg-red-200"
+                  )}>
+                    <div 
+                      className="h-full bg-red-500 transition-all duration-1000"
+                      style={{ 
+                        width: analytics.run?.found_quantity ? 
+                          `${Math.round((analytics.run.filtered_out / analytics.run.found_quantity) * 100)}%` 
+                          : '0%'
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-            {/* Progress Bar com mensagem motivacional */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Target className={`w-4 h-4 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`} />
-                  <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-                    {runInfo.captured} de {runInfo.target} leads capturados
-                  </span>
-                </div>
-                <span className={`font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                  {runInfo.taxa_sucesso.toFixed(1)}%
-                </span>
-              </div>
-              <div className={`h-3 rounded-full overflow-hidden ${
-                isDark ? 'bg-white/[0.05]' : 'bg-gray-200'
-              }`}>
-                <div
-                  className="h-full bg-gradient-to-r from-[#0169D9] to-blue-400 transition-all duration-500 relative overflow-hidden"
-                  style={{ width: `${Math.min(100, runInfo.taxa_sucesso)}%` }}
-                >
-                  {runInfo.status === 'running' && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-                  )}
-                </div>
-              </div>
-              {runInfo.status === 'running' && (
-                <p className={`text-xs mt-2 text-center ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
-                  Estamos trabalhando duro para encontrar os melhores leads para você! 💪
-                </p>
-              )}
-              {runInfo.status === 'completed' && (
-                <p className={`text-xs mt-2 text-center ${isDark ? 'text-green-400' : 'text-green-600'}`}>
-                  Extração concluída com sucesso! Seus leads estão prontos. 🎉
-                </p>
-              )}
-            </div>
-
-            {/* Métricas em Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {metricsCards.map((metric, index) => (
-                <div
-                  key={index}
-                  className={`p-4 rounded-lg border transition-all hover:scale-105 ${
-                    isDark 
-                      ? 'bg-white/[0.02] border-white/[0.05] hover:bg-white/[0.04]' 
-                      : 'bg-light-elevated border-border-light hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xl">{metric.metric_icon}</span>
-                    <p className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                      {metric.metric_name}
-                    </p>
+            {/* Seção: Dados de Contato */}
+            <div className="space-y-4">
+              <h3 className={cn(
+                "text-base font-semibold uppercase tracking-wider",
+                isDark ? "text-zinc-400" : "text-zinc-700"
+              )}>
+                Dados de Contato
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* ========== PRIMEIRA LINHA ========== */}
+                {/* Com Telefone */}
+                <Card className={cn(
+                  isDark 
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                    : "bg-white border border-zinc-200"
+                )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Com Telefone</span>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <p className={`text-2xl font-medium ${
-                      metric.metric_value > 0 
-                        ? isDark ? 'text-white' : 'text-text-primary-light'
-                        : isDark ? 'text-white/30' : 'text-text-secondary-light'
-                    }`}>
-                      {metric.metric_value}
-                    </p>
-                    {metric.metric_percentage < 100 && (
-                      <span className={`text-xs ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
-                        {metric.metric_percentage.toFixed(0)}%
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.telefone?.com || 0} />
                       </span>
-                    )}
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.telefone?.percentual || 0} isDark={isDark} />
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Telefone Fixo */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Telefone Fixo</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.tipo_telefone?.fixo || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.tipo_telefone?.fixo && analytics.contatos?.telefone?.com ? Math.round((analytics.contatos.tipo_telefone.fixo / analytics.contatos.telefone.com) * 100) : 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* WhatsApp Pendente */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">WhatsApp Pendente</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-zinc-500" : "text-zinc-600"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.whatsapp?.pendente || 0} />
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* ========== SEGUNDA LINHA: WEBSITES ========== */}
+              {/* Com Website */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Com Website</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.website?.com || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.website?.percentual || 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Sites .br */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Sites .br</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.website?.brasileiro || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.website?.brasileiro && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.brasileiro / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Sites Internacionais */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Sites Internacionais</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.website?.internacional || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.website?.internacional && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.internacional / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* ========== GRUPO EMAIL ========== */}
+              {/* Email */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Com Email</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.email?.com || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.email?.percentual || 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* ========== GRUPO CNPJ ========== */}
+              {/* CNPJ */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Com CNPJ</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.cnpj?.com || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.cnpj?.percentual || 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* ========== GRUPO LOCALIZAÇÃO ========== */}
+              {/* Com Endereço */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Com Endereço</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.localizacao?.com_endereco || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.localizacao?.com_endereco && analytics.contatos?.total ? Math.round((analytics.contatos.localizacao.com_endereco / analytics.contatos.total) * 100) : 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+              </div>
+            </div>
+
+            {/* Seção: Gráficos de Distribuição */}
+            {analytics.graficos && (
+              <div className="space-y-4">
+                <h3 className={cn(
+                  "text-base font-semibold uppercase tracking-wider",
+                  isDark ? "text-zinc-400" : "text-zinc-700"
+                )}>
+                  Gráficos de Distribuição
+                </h3>
+
+                {/* Grid de Gráficos de Pizza */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
+                  {/* Pizza: Contatos */}
+                  {analytics.graficos.pizza_contatos && analytics.graficos.pizza_contatos.length > 0 && (
+                    <DonutChart 
+                      data={analytics.graficos.pizza_contatos}
+                      title="Contatos"
+                      colors={['#14b8a6', '#f97316', '#a855f7', '#22c55e']}
+                      category="Contatos"
+                      isDark={isDark}
+                    />
+                  )}
+
+                  {/* Pizza: WhatsApp */}
+                  {analytics.graficos.pizza_whatsapp && analytics.graficos.pizza_whatsapp.length > 0 && (
+                    <DonutChart 
+                      data={analytics.graficos.pizza_whatsapp}
+                      title="WhatsApp"
+                      colors={['#22c55e', '#ef4444', '#52525b']}
+                      category="WhatsApp"
+                      isDark={isDark}
+                    />
+                  )}
+
+                  {/* Pizza: Website */}
+                  {analytics.graficos.pizza_website && analytics.graficos.pizza_website.length > 0 && (
+                    <DonutChart 
+                      data={analytics.graficos.pizza_website}
+                      title="Websites"
+                      colors={['#22c55e', '#3b82f6', '#52525b']}
+                      category="Websites"
+                      isDark={isDark}
+                    />
+                  )}
+
+                  {/* Pizza: Qualidade */}
+                  {analytics.graficos.pizza_qualidade && analytics.graficos.pizza_qualidade.length > 0 && (
+                    <DonutChart 
+                      data={analytics.graficos.pizza_qualidade}
+                      title="Qualidade"
+                      colors={['#22c55e', '#84cc16', '#facc15', '#f97316', '#ef4444']}
+                      category="Qualidade"
+                      isDark={isDark}
+                    />
+                  )}
+
                 </div>
-              ))}
+              </div>
+            )}
+
+            {/* Seção Qualidade e Enriquecimento */}
+            <div className="space-y-4">
+              {/* Score de Qualidade */}
+              {analytics.qualidade && (
+                <Card className={cn(
+                  isDark 
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className={cn(
+                        "text-lg font-semibold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>Score de Qualidade</h3>
+                      <div className="flex items-center gap-1">
+                        {[...Array(5)].map((_, i) => (
+                          <span key={i} className={cn(
+                            "text-lg",
+                            i < (analytics.qualidade?.estrelas || 0) 
+                              ? 'text-yellow-500' 
+                              : isDark ? 'text-zinc-700' : 'text-zinc-300'
+                          )}>
+                            ★
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <div className={cn(
+                          "text-sm mb-1",
+                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        )}>Classificação</div>
+                        <div className={cn(
+                          "text-xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>{analytics.qualidade?.classificacao || '-'}</div>
+                      </div>
+                      <div>
+                        <div className={cn(
+                          "text-sm mb-1",
+                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        )}>Score Médio</div>
+                        <div className={cn(
+                          "text-xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>{analytics.qualidade?.score_medio || 0}%</div>
+                      </div>
+                      <div>
+                        <div className={cn(
+                          "text-sm mb-1",
+                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        )}>Excelente</div>
+                        <div className={cn(
+                          "text-xl font-bold",
+                          isDark ? "text-green-500" : "text-green-600"
+                        )}>
+                          <AnimatedCounter value={analytics.qualidade?.distribuicao?.excelente || 0} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className={cn(
+                          "text-sm mb-1",
+                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        )}>Alta</div>
+                        <div className={cn(
+                          "text-xl font-bold",
+                          isDark ? "text-lime-500" : "text-lime-600"
+                        )}>
+                          <AnimatedCounter value={analytics.qualidade?.distribuicao?.alta || 0} />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Status de Enriquecimento */}
+              {analytics.enriquecimento && (
+                <Card className={cn(
+                  isDark 
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <h3 className={cn(
+                      "text-lg font-semibold mb-4",
+                      isDark ? "text-white" : "text-zinc-900"
+                    )}>Status de Enriquecimento</h3>
+                    <div className="space-y-3">
+                      {/* Scraping */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={cn(
+                            "text-sm",
+                            isDark ? "text-zinc-400" : "text-zinc-600"
+                          )}>Scraping</span>
+                          <span className={cn(
+                            "text-sm",
+                            isDark ? "text-white" : "text-zinc-900"
+                          )}>{analytics.enriquecimento?.scraping?.taxa_sucesso || 0}%</span>
+                        </div>
+                        <div className={cn(
+                          "h-2 rounded-full overflow-hidden",
+                          isDark ? "bg-zinc-900" : "bg-zinc-200"
+                        )}>
+                          <div className="h-full flex">
+                            <div 
+                              className="bg-green-500" 
+                              style={{ width: `${analytics.enriquecimento?.scraping?.sucesso && analytics.contatos?.total ? (analytics.enriquecimento.scraping.sucesso / analytics.contatos.total) * 100 : 0}%` }}
+                            />
+                            <div 
+                              className="bg-red-500" 
+                              style={{ width: `${analytics.enriquecimento?.scraping?.erro && analytics.contatos?.total ? (analytics.enriquecimento.scraping.erro / analytics.contatos.total) * 100 : 0}%` }}
+                            />
+                            <div 
+                              className={cn(isDark ? "bg-zinc-600" : "bg-zinc-400")}
+                              style={{ width: `${analytics.enriquecimento?.scraping?.pendente && analytics.contatos?.total ? (analytics.enriquecimento.scraping.pendente / analytics.contatos.total) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs">
+                          <span className={cn(isDark ? "text-green-500" : "text-green-600")}>✓ {analytics.enriquecimento?.scraping?.sucesso || 0}</span>
+                          <span className={cn(isDark ? "text-red-500" : "text-red-600")}>✗ {analytics.enriquecimento?.scraping?.erro || 0}</span>
+                          <span className={cn(isDark ? "text-zinc-500" : "text-zinc-600")}>⏳ {analytics.enriquecimento?.scraping?.pendente || 0}</span>
+                        </div>
+                      </div>
+
+                      {/* WHOIS */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={cn(
+                            "text-sm",
+                            isDark ? "text-zinc-400" : "text-zinc-600"
+                          )}>WHOIS</span>
+                          <span className={cn(
+                            "text-sm",
+                            isDark ? "text-white" : "text-zinc-900"
+                          )}>{analytics.enriquecimento?.whois?.taxa_sucesso || 0}%</span>
+                        </div>
+                        <div className={cn(
+                          "h-2 rounded-full overflow-hidden",
+                          isDark ? "bg-zinc-900" : "bg-zinc-200"
+                        )}>
+                          <div 
+                            className="h-full bg-blue-500" 
+                            style={{ width: `${analytics.enriquecimento?.whois?.taxa_sucesso || 0}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs">
+                          <span className={cn(isDark ? "text-blue-500" : "text-blue-600")}>✓ {analytics.enriquecimento?.whois?.sucesso || 0}</span>
+                          <span className={cn(isDark ? "text-zinc-500" : "text-zinc-600")}>⏳ {analytics.enriquecimento?.whois?.pendente || 0}</span>
+                        </div>
+                      </div>
+
+                      {/* Migração */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={cn(
+                            "text-sm",
+                            isDark ? "text-zinc-400" : "text-zinc-600"
+                          )}>Migração para CRM</span>
+                          <span className={cn(
+                            "text-sm",
+                            isDark ? "text-white" : "text-zinc-900"
+                          )}>{analytics.enriquecimento?.migracao?.taxa || 0}%</span>
+                        </div>
+                        <div className={cn(
+                          "h-2 rounded-full overflow-hidden",
+                          isDark ? "bg-zinc-900" : "bg-zinc-200"
+                        )}>
+                          <div 
+                            className="h-full bg-purple-500" 
+                            style={{ width: `${analytics.enriquecimento?.migracao?.taxa || 0}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs">
+                          <span className={cn(isDark ? "text-purple-500" : "text-purple-600")}>✓ {analytics.enriquecimento?.migracao?.migrado || 0}</span>
+                          <span className={cn(isDark ? "text-zinc-500" : "text-zinc-600")}>⏳ {analytics.enriquecimento?.migracao?.pendente || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
 
-          {/* Resumo de Qualidade */}
-          {statistics.metrics && (
-            <div className={`rounded-xl border p-6 ${
-              isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-border-light'
-            }`}>
-              <div className="flex items-center gap-2 mb-4">
-                <TrendingUp className={`w-5 h-5 ${isDark ? 'text-white' : 'text-text-primary-light'}`} />
-                <h2 className={`font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                  Qualidade dos Leads
-                </h2>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-white/[0.02]' : 'bg-light-elevated'}`}>
-                  <p className={`text-xs mb-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                    🏢 Empresas Identificadas
-                  </p>
-                  <p className={`text-xl font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                    {statistics.metrics.com_cnpj || 0}
-                  </p>
-                  <p className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
-                    {statistics.metrics.percentuais?.com_cnpj?.toFixed(1) || 0}% do total
-                  </p>
+          {/* Right Column - Timeline */}
+          <div className="lg:col-span-5 xl:col-span-4 flex flex-col overflow-hidden">
+            <Card 
+              className={cn(
+                "flex-1 flex flex-col overflow-hidden rounded-xl",
+                isDark 
+                  ? "bg-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}
+              style={{
+                borderRadius: '0.75rem',
+              }}
+            >
+              <CardHeader className={cn(
+                "pb-4 shrink-0 border-b",
+                isDark ? "border-zinc-900" : "border-zinc-200"
+              )}>
+                <div className="flex items-center justify-between">
+                  <CardTitle className={cn(
+                    "text-base font-semibold",
+                    isDark ? "text-white" : "text-zinc-900"
+                  )}>
+                    Atividade
+                  </CardTitle>
+                  <Badge variant="outline" className={cn(
+                    "font-normal",
+                    isDark 
+                      ? "bg-zinc-900 border-zinc-800 text-zinc-500" 
+                      : "bg-zinc-100 border-zinc-300 text-zinc-600"
+                  )}>
+                    {analytics.timeline?.length || 0} eventos
+                  </Badge>
                 </div>
-
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-white/[0.02]' : 'bg-light-elevated'}`}>
-                  <p className={`text-xs mb-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                    📧 Com Email Disponível
-                  </p>
-                  <p className={`text-xl font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                    {statistics.metrics.com_email || 0}
-                  </p>
-                  <p className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
-                    {statistics.metrics.percentuais?.com_email?.toFixed(1) || 0}% do total
-                  </p>
-                </div>
-
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-white/[0.02]' : 'bg-light-elevated'}`}>
-                  <p className={`text-xs mb-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                    📱 Com WhatsApp
-                  </p>
-                  <p className={`text-xl font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                    {statistics.metrics.com_whatsapp || 0}
-                  </p>
-                  <p className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
-                    {statistics.metrics.percentuais?.com_whatsapp?.toFixed(1) || 0}% do total
-                  </p>
-                </div>
-
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-white/[0.02]' : 'bg-light-elevated'}`}>
-                  <p className={`text-xs mb-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                    🌐 Com Site
-                  </p>
-                  <p className={`text-xl font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                    {statistics.metrics.com_website || 0}
-                  </p>
-                  <p className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
-                    {statistics.metrics.percentuais?.com_website?.toFixed(1) || 0}% do total
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Timeline (Collapsible) */}
-          {statistics.timeline && statistics.timeline.length > 0 && (
-            <div className={`rounded-xl border ${
-              isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-border-light'
-            }`}>
-              <button
-                onClick={() => setShowTimeline(!showTimeline)}
-                className={`w-full px-6 py-4 flex items-center justify-between transition-colors ${
-                  isDark ? 'hover:bg-white/[0.02]' : 'hover:bg-light-elevated'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Clock className={`w-5 h-5 ${isDark ? 'text-white' : 'text-text-primary-light'}`} />
-                  <h2 className={`font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                    O que aconteceu? ({statistics.timeline.length} eventos)
-                  </h2>
-                </div>
-                {showTimeline ? (
-                  <ChevronUp className={`w-5 h-5 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`} />
-                ) : (
-                  <ChevronDown className={`w-5 h-5 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`} />
-                )}
-              </button>
-
-              {showTimeline && (
-                <div className="px-6 pb-6 space-y-3 max-h-96 overflow-y-auto">
-                  {statistics.timeline.map((event: any, index: number) => {
-                    const levelColors = {
-                      info: isDark ? 'text-blue-400 bg-blue-500/10' : 'text-blue-600 bg-blue-500/10',
-                      success: isDark ? 'text-green-400 bg-green-500/10' : 'text-green-600 bg-green-500/10',
-                      warning: isDark ? 'text-yellow-400 bg-yellow-500/10' : 'text-yellow-600 bg-yellow-500/10',
-                      error: isDark ? 'text-red-400 bg-red-500/10' : 'text-red-600 bg-red-500/10'
-                    };
-
-                    const colorClass = levelColors[event.level as keyof typeof levelColors] || levelColors.info;
-
-                    return (
-                      <div
-                        key={index}
-                        className={`p-4 rounded-lg border ${
-                          isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-light-elevated border-border-light'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span className="text-xl">{event.icon}</span>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded ${colorClass}`}>
-                                {event.step}
-                              </span>
-                              <span className={`text-xs ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
+              </CardHeader>
+              <div className="flex-1 overflow-y-auto scrollbar-thin">
+                <div className="p-6 space-y-8">
+                  {analytics.timeline && analytics.timeline.length > 0 ? (
+                    analytics.timeline.map((event: any, index: number) => {
+                      const isError = event.level === 'error';
+                      const isSuccess = event.level === 'success';
+                      
+                      return (
+                        <div key={index} className="relative pl-6">
+                          {/* Line connecting dots */}
+                          {index !== analytics.timeline.length - 1 && (
+                            <div className={cn(
+                              "absolute left-[5px] top-2 h-[calc(100%+2rem)] w-[1px]",
+                              isDark ? "bg-zinc-800" : "bg-zinc-300"
+                            )} />
+                          )}
+                          
+                          {/* Dot */}
+                          <div className={cn(
+                            "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full border-2",
+                            isDark ? 'bg-black' : 'bg-white',
+                            isError ? 'border-red-500' : 
+                            isSuccess ? 'border-green-500' : 
+                            'border-green-500'
+                          )} />
+                          
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={cn(
+                                "text-xs font-mono",
+                                isDark ? "text-zinc-500" : "text-zinc-600"
+                              )}>
                                 {event.timestamp}
                               </span>
+                              <Badge 
+                                variant="secondary" 
+                                className={cn(
+                                  "text-[10px] px-2 h-5 font-medium tracking-wide uppercase",
+                                  isDark 
+                                    ? "bg-zinc-900 text-zinc-500 border-zinc-800 hover:bg-zinc-800" 
+                                    : "bg-zinc-100 text-zinc-600 border-zinc-300 hover:bg-zinc-200"
+                                )}
+                              >
+                                {event.step}
+                              </Badge>
                             </div>
-                            <p className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                            <p className={cn(
+                              "text-sm leading-relaxed",
+                              isError 
+                                ? (isDark ? 'text-red-400' : 'text-red-600')
+                                : (isDark ? 'text-zinc-400' : 'text-zinc-700')
+                            )}>
                               {event.message}
                             </p>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    <div className={cn(
+                      "text-center py-8 text-sm",
+                      isDark ? "text-zinc-600" : "text-zinc-500"
+                    )}>
+                      Nenhuma atividade registrada ainda.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Actions */}
-          {(runInfo.status === 'completed' || runInfo.status === 'failed' || runInfo.status === 'cancelled') && onBack && (
-            <div className="flex items-center justify-center gap-4 pt-4">
-              <button
-                onClick={onBack}
-                className={`px-8 py-3 rounded-lg transition-all font-medium ${
-                  isDark 
-                    ? 'bg-white/[0.05] text-white hover:bg-white/[0.08]'
-                    : 'bg-light-elevated text-text-primary-light hover:bg-gray-200'
-                }`}
-              >
-                Voltar para Extrações
-              </button>
-            </div>
-          )}
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

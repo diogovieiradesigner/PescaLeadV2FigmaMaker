@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { fetchAgents } from '../services/chat-service';
 import { DbUser } from '../types/database-chat';
 import { ConversationFiltersState } from './chat/ConversationFilters';
+import { useDebounce } from '../hooks/useDebounce'; // ✅ Importar hook de debounce
 
 interface ChatViewProps {
   theme: Theme;
@@ -37,6 +38,9 @@ export function ChatView({
   const [searchQuery, setSearchQuery] = useState('');
   const [dbAgents, setDbAgents] = useState<DbUser[]>([]);
   
+  // ✅ Debounce do searchQuery para evitar muitas requisições
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
+  
   // ✅ Estado para filtros
   const [filters, setFilters] = useState<ConversationFiltersState>({
     assignees: ['all'],
@@ -45,7 +49,7 @@ export function ChatView({
     attendantTypes: ['all'],
   });
 
-  // Hook de chat com Supabase
+  // Hook de chat com Supabase (agora com searchQuery)
   const {
     conversations,
     loading,
@@ -64,6 +68,7 @@ export function ChatView({
     totalConversations,
   } = useChatData({
     workspaceId: currentWorkspace?.id || null,
+    searchQuery: debouncedSearchQuery, // ✅ Passar searchQuery com debounce
   });
 
   // Carregar agentes do banco (membros do workspace)
@@ -73,31 +78,25 @@ export function ChatView({
     }
   }, [currentWorkspace?.id]);
 
-  // Selecionar primeira conversa quando carregadas
+  // ✅ Selecionar primeira conversa APENAS na carga inicial (não durante busca/filtros)
   useEffect(() => {
-    if (conversations.length > 0 && !selectedConversationId) {
+    if (conversations.length > 0 && !selectedConversationId && !loading) {
       setSelectedConversationId(conversations[0].id);
     }
-  }, [conversations, selectedConversationId]);
+  }, [conversations.length, selectedConversationId, loading]); // ✅ Usar .length ao invés do array completo
 
+  // ✅ Buscar conversa selecionada na lista COMPLETA (não apenas na filtrada)
+  // Isso permite manter o chat aberto mesmo se ele não aparecer nos filtros/busca
   const selectedConversation = useMemo(
     () => conversations.find((c) => c.id === selectedConversationId) || null,
     [conversations, selectedConversationId]
   );
 
+  // ✅ Filtros locais (exceto busca que agora é no backend)
   const filteredConversations = useMemo(() => {
     let result = conversations;
 
-    // Aplicar filtro de busca
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (conv) =>
-          conv.contactName.toLowerCase().includes(query) ||
-          conv.contactPhone.toLowerCase().includes(query) ||
-          conv.lastMessage.toLowerCase().includes(query)
-      );
-    }
+    // ✅ REMOVIDO: Filtro de busca local (agora é feito no backend via useChatData)
 
     // Aplicar filtro de atendentes
     if (!filters.assignees.includes('all')) {
@@ -130,7 +129,7 @@ export function ChatView({
     }
 
     return result;
-  }, [conversations, searchQuery, filters]);
+  }, [conversations, filters]); // ✅ Removido searchQuery das dependências
 
   const handleSendMessage = async (messageData: Omit<Message, 'id' | 'timestamp' | 'type'>) => {
     if (!selectedConversationId) return;
@@ -293,6 +292,7 @@ export function ChatView({
             loadMore={loadMore}
             hasMore={hasMore}
             totalConversations={totalConversations}
+            isSearching={loading} // ✅ Passar estado de loading
           />
           <ChatArea
             conversation={selectedConversation}

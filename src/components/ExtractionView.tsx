@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { useExtractionData } from '../hooks/useExtractionData';
-import { CheckCircle, AlertCircle, XCircle, ChevronDown, ChevronUp, History, Lightbulb, Clock, Play, Trash2, Save, Loader2, Sun, Moon, Bell, Eye } from 'lucide-react';
+import { CheckCircle, AlertCircle, XCircle, History, Clock, Play, Trash2, Save, Loader2, Sun, Moon, Bell, Eye } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { ProfileMenu } from './ProfileMenu';
 import { supabase } from '../utils/supabase/client';
@@ -34,21 +34,6 @@ interface FunnelColumn {
   funnel_id: string;
 }
 
-const icpExamples = [
-  {
-    title: "E-commerce de Moda",
-    content: "Empresas de e-commerce no segmento de moda feminina, com faturamento entre R$ 500k e R$ 5M/ano, localizadas em São Paulo ou Rio de Janeiro. Devem ter presença ativa no Instagram (mínimo 10k seguidores), utilizar plataformas como Shopify ou Vtex, e demonstrar interesse em automação de marketing e atendimento ao cliente via WhatsApp."
-  },
-  {
-    title: "SaaS B2B",
-    content: "Startups de tecnologia B2B SaaS em estágio de crescimento (Série A ou B), com equipe de 10-50 funcionários, foco em ferramentas de produtividade ou marketing, presença no LinkedIn com posts regulares sobre tecnologia, e que recentemente levantaram investimento (últimos 12 meses)."
-  },
-  {
-    title: "Clínicas Médicas",
-    content: "Clínicas médicas particulares especializadas em estética ou odontologia, com 3-10 profissionais, localizadas em bairros nobres de capitais brasileiras, que já utilizam redes sociais para divulgação (Instagram/Facebook), possuem site próprio, e demonstram interesse em melhorar agendamento online e comunicação com pacientes."
-  }
-];
-
 export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onNavigateToProgress }: ExtractionViewProps) {
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
@@ -64,7 +49,6 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   } = useExtractionData(currentWorkspace?.id || '');
 
   // Estado do formulário
-  const [extractionMode, setExtractionMode] = useState<'ia' | 'manual'>('manual');
   const [extractionName, setExtractionName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [location, setLocation] = useState('');
@@ -72,7 +56,6 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   const [isActive, setIsActive] = useState(false);
   const [dailyQuantity, setDailyQuantity] = useState(50);
   const [extractionTime, setExtractionTime] = useState('14:30');
-  const [icp, setIcp] = useState('');
   
   // Funil e Coluna
   const [funnelId, setFunnelId] = useState('');
@@ -90,8 +73,6 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   const [expandToState, setExpandToState] = useState(false);
   
   // UI States
-  const [showExamples, setShowExamples] = useState(false);
-  const [showRecentICPs, setShowRecentICPs] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState<string | null>(null);
@@ -179,7 +160,6 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     setIsActive(extraction.is_active);
     setDailyQuantity(extraction.target_quantity);
     setExtractionTime(extraction.schedule_time || '14:30');
-    setIcp(extraction.prompt || '');
     setRequireWebsite(extraction.require_website);
     setRequirePhone(extraction.require_phone);
     setRequireEmail(extraction.require_email);
@@ -188,7 +168,6 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     setExpandToState(extraction.expand_state_search || false);
     setFunnelId(extraction.funnel_id || '');
     setColumnId(extraction.column_id || '');
-    setExtractionMode(extraction.extraction_mode || 'manual');
   };
 
   // Salvar/Atualizar extração
@@ -212,17 +191,10 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
       return;
     }
 
-    // Validação condicional baseada no modo
-    if (extractionMode === 'manual') {
-      if (!searchTerm || !location) {
-        toast.error('Preencha os campos obrigatórios: Termo de Busca e Localização');
-        return;
-      }
-    } else if (extractionMode === 'ia') {
-      if (!icp) {
-        toast.error('Preencha o Perfil do Cliente Ideal (ICP)');
-        return;
-      }
+    // Validação dos campos obrigatórios de busca manual
+    if (!searchTerm || !location) {
+      toast.error('Preencha os campos obrigatórios: Termo de Busca e Localização');
+      return;
     }
 
     try {
@@ -231,29 +203,29 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
       const data = {
         workspace_id: currentWorkspace.id,
         extraction_name: extractionName,
-        search_term: extractionMode === 'manual' ? searchTerm : '',
-        location: extractionMode === 'manual' ? location : '',
-        niche: extractionMode === 'manual' ? niche : '',
-        prompt: icp,
+        search_term: searchTerm,
+        location: location,
+        niche: niche,
+        prompt: '', // Não usamos mais ICP
         target_quantity: dailyQuantity,
         is_active: isActive,
         schedule_time: extractionTime,
-        require_website: extractionMode === 'manual' ? requireWebsite : false,
-        require_phone: extractionMode === 'manual' ? requirePhone : false,
-        require_email: extractionMode === 'manual' ? requireEmail : false,
-        min_reviews: extractionMode === 'manual' ? minReviews : 0,
-        min_rating: extractionMode === 'manual' ? minRating : 0,
-        expand_state_search: extractionMode === 'manual' ? expandToState : false,
+        require_website: requireWebsite,
+        require_phone: requirePhone,
+        require_email: requireEmail,
+        min_reviews: minReviews,
+        min_rating: minRating,
+        expand_state_search: expandToState,
         funnel_id: funnelId,
         column_id: columnId,
-        extraction_mode: extractionMode
+        extraction_mode: 'manual' // Sempre manual agora
       };
 
       if (selectedExtractionId) {
         await updateExtraction(selectedExtractionId, data);
         
-        // Salvar termo no histórico se estiver em modo manual
-        if (extractionMode === 'manual' && searchTerm && searchTermInputRef.current) {
+        // Salvar termo no histórico
+        if (searchTerm && searchTermInputRef.current) {
           await searchTermInputRef.current.saveToHistory();
         }
         
@@ -262,8 +234,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
         const newExtraction = await createExtraction(data);
         setSelectedExtractionId(newExtraction.id);
         
-        // Salvar termo no histórico se estiver em modo manual
-        if (extractionMode === 'manual' && searchTerm && searchTermInputRef.current) {
+        // Salvar termo no histórico
+        if (searchTerm && searchTermInputRef.current) {
           await searchTermInputRef.current.saveToHistory();
         }
         
@@ -470,45 +442,24 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
         <div className="max-w-6xl mx-auto space-y-6">
           {/* Configuration Card */}
-          <div className={`rounded-lg border overflow-hidden ${
-            isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-border-light'
+          <div className={`overflow-hidden ${
+            isDark ? 'bg-elevated' : 'bg-white'
           }`}>
-            <div className={`px-6 py-3.5 border-b flex items-center justify-between ${
+            <div className={`px-6 py-3.5 border-b flex items-center justify-between bg-black ${
               isDark ? 'border-white/[0.08]' : 'border-border-light'
             }`}>
               <h2 className={isDark ? 'text-white' : 'text-text-primary-light'}>
                 Configuração da Extração
               </h2>
               
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                  <label className={`text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
-                    Tipo:
-                  </label>
-                  <select
-                    value={extractionMode}
-                    onChange={(e) => setExtractionMode(e.target.value as 'ia' | 'manual')}
-                    className={`px-3 py-1.5 text-sm rounded-lg border transition-all ${
-                      isDark 
-                        ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' 
-                        : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'
-                    } focus:outline-none`}
-                  >
-                    <option value="manual">Extração Manual</option>
-                    <option value="ia">Extração por I.A</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className={`text-sm ${
-                    isDark ? 'text-white/60' : 'text-text-secondary-light'
-                  }`}>
-                    {isActive ? 'Ativo' : 'Inativo'}
-                  </span>
-                  <button
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${isDark ? 'text-white/60' : 'text-text-secondary-light'}`}>
+                  {isActive ? 'Ativo' : 'Inativo'}
+                </span>
+                <button
                   onClick={handleToggleActive}
                   disabled={!selectedExtractionId}
                   className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -522,9 +473,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                 </button>
               </div>
             </div>
-          </div>
 
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 bg-black">
               {/* Nome da Extração (sempre visível) */}
               <div>
                 <label className={`block mb-2 text-sm ${
@@ -538,237 +488,146 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                   onChange={(e) => setExtractionName(e.target.value)}
                   onKeyDown={handleSelectAll}
                   placeholder="Ex: Clínicas Médicas SP"
-                  className={`w-full px-4 py-2 rounded-lg border transition-all ${
+                  className={`w-full px-4 py-2 border-b transition-all ${
                     isDark 
-                      ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' 
-                      : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'
+                      ? 'bg-black border-white/[0.2] text-white focus:bg-black focus:border-[#0169D9]' 
+                      : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
                   } focus:outline-none`}
                 />
               </div>
 
-              {/* Campos condicionais baseados no modo */}
-              {extractionMode === 'manual' ? (
-                <>
-                  {/* MODO MANUAL: 2 Caixas Lado a Lado */}
-                  <div className="grid grid-cols-2 gap-6">
-                    {/* Seção 1: Parâmetros de Busca */}
-                    <div className={`p-5 rounded-lg border ${isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-light-elevated border-border-light'}`}>
-                      <h3 className={`mb-4 font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                        Parâmetros de Busca
-                      </h3>
-                      <div className="space-y-4">
-                        <div>
-                          <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
-                            Termo de Busca *
-                          </label>
-                          <SearchTermInput
-                            value={searchTerm}
-                            onChange={setSearchTerm}
-                            onKeyDown={handleSelectAll}
-                            workspaceId={currentWorkspace?.id || ''}
-                            extractionId={selectedExtractionId || undefined}
-                            isDark={isDark}
-                            placeholder="Ex: clínicas médicas"
-                            ref={searchTermInputRef}
-                          />
-                        </div>
-
-                        <div>
-                          <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
-                            Localização *
-                          </label>
-                          <LocationSearchInput
-                            value={location}
-                            onChange={(val) => setLocation(normalizeLocation(val))}
-                            isDark={isDark}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Seção 2: Filtros de Qualificação */}
-                    <div className={`p-5 rounded-lg border ${isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-light-elevated border-border-light'}`}>
-                      <h3 className={`mb-4 font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                        Filtros de Qualificação
-                      </h3>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
-                              Mínimo de Avaliações
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={minReviews}
-                              onChange={(e) => setMinReviews(parseInt(e.target.value) || 0)}
-                              onKeyDown={handleSelectAll}
-                              className={`w-full px-4 py-2 rounded-lg border transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none`}
-                              placeholder="0"
-                            />
-                          </div>
-
-                          <div>
-                            <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
-                              Mínimo de estrelas
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max="5"
-                              step="0.1"
-                              value={minRating}
-                              onChange={(e) => setMinRating(parseFloat(e.target.value) || 0)}
-                              onKeyDown={handleSelectAll}
-                              className={`w-full px-4 py-2 rounded-lg border transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none`}
-                              placeholder="0.0"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={requireWebsite}
-                              onChange={(e) => setRequireWebsite(e.target.checked)}
-                              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-                            />
-                            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-                              Apenas com Website
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={requirePhone}
-                              onChange={(e) => setRequirePhone(e.target.checked)}
-                              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-                            />
-                            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-                              Apenas com Telefone
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={requireEmail}
-                              onChange={(e) => setRequireEmail(e.target.checked)}
-                              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-                            />
-                            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-                              Apenas com E-mail
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={expandToState}
-                              onChange={(e) => setExpandToState(e.target.checked)}
-                              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-                            />
-                            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-                              Expandir busca para todo o estado
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* MODO I.A: ICP Field */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className={`text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                        Perfil do Cliente Ideal (ICP) *
+              {/* MODO MANUAL: 2 Caixas Lado a Lado */}
+              <div className="grid grid-cols-2 gap-6">
+                {/* Seção 1: Parâmetros de Busca */}
+                <div>
+                  <h3 className={`mb-4 font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                    Parâmetros de Busca
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+                        Termo de Busca *
                       </label>
-                      <button
-                        onClick={() => setShowExamples(!showExamples)}
-                        className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all ${
-                          showExamples
-                            ? 'bg-[#0169D9] text-white'
-                            : isDark 
-                              ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white/70' 
-                              : 'bg-light-elevated hover:bg-gray-100 text-text-primary-light'
-                        }`}
-                      >
-                        <Lightbulb className="w-4 h-4" />
-                        Exemplos
-                        {showExamples ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
+                      <SearchTermInput
+                        value={searchTerm}
+                        onChange={setSearchTerm}
+                        onKeyDown={handleSelectAll}
+                        workspaceId={currentWorkspace?.id || ''}
+                        extractionId={selectedExtractionId || undefined}
+                        isDark={isDark}
+                        placeholder="Ex: clínicas médicas"
+                        ref={searchTermInputRef}
+                      />
                     </div>
 
-                    {showExamples && (
-                      <div className={`mb-3 p-4 rounded-lg border ${
-                        isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-light-elevated border-border-light'
-                      }`}>
-                        <h4 className={`text-sm mb-3 ${
-                          isDark ? 'text-white/70' : 'text-text-primary-light'
-                        }`}>
-                          Exemplos de ICPs bem detalhados:
-                        </h4>
-                        <div className="space-y-3">
-                          {icpExamples.map((example, index) => (
-                            <div key={index} className={`p-3 rounded-lg cursor-pointer hover:opacity-80 transition-opacity ${
-                              isDark ? 'bg-white/[0.03]' : 'bg-white'
-                            }`}
-                            onClick={() => {
-                              setIcp(example.content);
-                              setShowExamples(false);
-                            }}
-                            >
-                              <h5 className={`text-sm mb-1 flex items-center gap-2 ${
-                                isDark ? 'text-white' : 'text-text-primary-light'
-                              }`}>
-                                <span className={`text-xs px-2 py-0.5 rounded ${
-                                  isDark ? 'bg-white/[0.1] text-white/50' : 'bg-gray-100 text-gray-600'
-                                }`}>
-                                  {index + 1}
-                                </span>
-                                {example.title}
-                              </h5>
-                              <p className={`text-sm leading-relaxed ${
-                                isDark ? 'text-white/60' : 'text-text-secondary-light'
-                              }`}>
-                                {example.content}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <textarea
-                      value={icp}
-                      onChange={(e) => setIcp(e.target.value)}
-                      onKeyDown={handleSelectAll}
-                      placeholder="Descreva detalhadamente o perfil do seu cliente ideal. Inclua: setor, tamanho da empresa, localização, faturamento, características do decisor, sinais de interesse, canais de comunicação, dores e necessidades específicas..."
-                      rows={6}
-                      className={`w-full px-4 py-3 rounded-lg border transition-all resize-y ${
-                        isDark 
-                          ? 'bg-white/[0.03] border-white/[0.08] text-white placeholder:text-white/30 focus:border-[#0169D9]' 
-                          : 'bg-white border-border-light text-text-primary-light placeholder:text-text-secondary-light/50 focus:border-[#0169D9]'
-                      } focus:outline-none`}
-                    />
-                    <div className={`mt-2 flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
-                      isDark ? 'bg-white/[0.03] text-white/50' : 'bg-light-elevated text-text-secondary-light'
-                    }`}>
-                      <Lightbulb className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-yellow-500" />
-                      <p>
-                        Quanto mais detalhado, melhores serão os resultados. A I.A usará essas informações para encontrar leads qualificados.
-                      </p>
+                    <div>
+                      <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+                        Localização *
+                      </label>
+                      <LocationSearchInput
+                        value={location}
+                        onChange={(val) => setLocation(normalizeLocation(val))}
+                        isDark={isDark}
+                      />
                     </div>
                   </div>
-                </>
-              )}
+                </div>
+
+                {/* Seção 2: Filtros de Qualificação */}
+                <div>
+                  <h3 className={`mb-4 font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                    Filtros de Qualificação
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+                          Mínimo de Avaliações
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={minReviews}
+                          onChange={(e) => setMinReviews(parseInt(e.target.value) || 0)}
+                          onKeyDown={handleSelectAll}
+                          className={`w-full px-4 py-2 border-b transition-all ${isDark ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none`}
+                          placeholder="0"
+                        />
+                      </div>
+
+                      <div>
+                        <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+                          Mínimo de estrelas
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="5"
+                          step="0.1"
+                          value={minRating}
+                          onChange={(e) => setMinRating(parseFloat(e.target.value) || 0)}
+                          onKeyDown={handleSelectAll}
+                          className={`w-full px-4 py-2 border-b transition-all ${isDark ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none`}
+                          placeholder="0.0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={requireWebsite}
+                          onChange={(e) => setRequireWebsite(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
+                        />
+                        <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                          Apenas com Website
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={requirePhone}
+                          onChange={(e) => setRequirePhone(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
+                        />
+                        <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                          Apenas com Telefone
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={requireEmail}
+                          onChange={(e) => setRequireEmail(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
+                        />
+                        <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                          Apenas com E-mail
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={expandToState}
+                          onChange={(e) => setExpandToState(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
+                        />
+                        <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                          Expandir busca para todo o estado
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* Seção de Destino (sempre visível) */}
-              <div className={`p-5 rounded-lg border ${isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-light-elevated border-border-light'}`}>
+              <div>
                 <h3 className={`mb-4 font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
                   Destino dos Leads
                 </h3>
@@ -781,7 +640,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                       value={funnelId}
                       onChange={(e) => handleFunnelChange(e.target.value)}
                       disabled={loadingFunnels}
-                      className={`w-full px-4 py-2 rounded-lg border transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
+                      className={`w-full px-4 py-2 border-b transition-all ${isDark ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       <option value="">Selecione um funil</option>
                       {funnels.map(funnel => (
@@ -800,7 +659,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                       value={columnId}
                       onChange={(e) => setColumnId(e.target.value)}
                       disabled={!funnelId || columns.length === 0}
-                      className={`w-full px-4 py-2 rounded-lg border transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
+                      className={`w-full px-4 py-2 border-b transition-all ${isDark ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'} focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       <option value="">Selecione uma coluna</option>
                       {columns.map(column => (
@@ -827,7 +686,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                       value={dailyQuantity}
                       onChange={(e) => handleQuantityChange(e.target.value)}
                       onKeyDown={handleSelectAll}
-                      className={isDark ? 'w-32 px-4 py-2 rounded-lg border transition-all bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9] focus:outline-none' : 'w-32 px-4 py-2 rounded-lg border transition-all bg-white border-border-light text-text-primary-light focus:border-[#0169D9] focus:outline-none'}
+                      className={isDark ? 'w-32 px-4 py-2 border-b transition-all bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] focus:outline-none' : 'w-32 px-4 py-2 border border-border-light transition-all bg-white text-text-primary-light focus:border-[#0169D9] focus:outline-none'}
                     />
                     <span className={isDark ? 'text-sm text-white/60' : 'text-sm text-text-secondary-light'}>
                       leads/dia
@@ -846,7 +705,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                         type="time"
                         value={extractionTime}
                         onChange={(e) => setExtractionTime(e.target.value)}
-                        className={isDark ? 'w-40 pl-10 pr-4 py-2 rounded-lg border transition-all bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9] focus:outline-none' : 'w-40 pl-10 pr-4 py-2 rounded-lg border transition-all bg-white border-border-light text-text-primary-light focus:border-[#0169D9] focus:outline-none'}
+                        className={isDark ? 'w-40 pl-10 pr-4 py-2 border-b transition-all bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] focus:outline-none' : 'w-40 pl-10 pr-4 py-2 border border-border-light transition-all bg-white text-text-primary-light focus:border-[#0169D9] focus:outline-none'}
                       />
                     </div>
                     <span className={isDark ? 'text-sm text-white/60' : 'text-sm text-text-secondary-light'}>

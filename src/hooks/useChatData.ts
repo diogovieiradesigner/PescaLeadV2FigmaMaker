@@ -24,9 +24,10 @@ import { projectId, publicAnonKey } from '../utils/supabase/info.tsx'; // ✅ Im
 
 interface UseChatDataProps {
   workspaceId: string | null;
+  searchQuery?: string; // ✅ Novo parâmetro de busca
 }
 
-export function useChatData({ workspaceId }: UseChatDataProps) {
+export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +54,8 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
         setLoading(true);
         setError(null);
         
-        // Carregar contagem total apenas no reset inicial
-        fetchConversationCount(workspaceId).then(setTotalConversations).catch(console.error);
+        // Carregar contagem total apenas no reset inicial (com filtro de busca)
+        fetchConversationCount(workspaceId, searchQuery).then(setTotalConversations).catch(console.error);
       }
 
       // Se for reset, busca página 1. Se não, busca a próxima página baseada no estado atual
@@ -63,7 +64,8 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
       
       const currentPage = reset ? 1 : page;
       
-      const data = await fetchConversations(workspaceId, currentPage, PAGE_SIZE);
+      // ✅ Passar searchQuery para a função de busca
+      const data = await fetchConversations(workspaceId, currentPage, PAGE_SIZE, searchQuery);
       
       if (data.length < PAGE_SIZE) {
         setHasMore(false);
@@ -74,11 +76,19 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
       setConversations((prev) => {
         if (reset) return data;
         
-        // Filtrar duplicatas (caso o realtime tenha adicionado algo que veio na paginação)
-        const newIds = new Set(data.map(c => c.id));
-        const uniquePrev = prev.filter(c => !newIds.has(c.id));
+        // ✅ Filtrar duplicatas de forma mais robusta
+        // Criar um Map com todas as conversas (prev + data), usando o ID como chave
+        // Isso garante que cada ID apareça apenas uma vez
+        const conversationMap = new Map<string, Conversation>();
         
-        return [...uniquePrev, ...data];
+        // Primeiro adicionar as conversas antigas (preservar ordem)
+        prev.forEach(c => conversationMap.set(c.id, c));
+        
+        // Depois adicionar/sobrescrever com as novas (atualiza dados)
+        data.forEach(c => conversationMap.set(c.id, c));
+        
+        // Converter Map de volta para array
+        return Array.from(conversationMap.values());
       });
 
       if (reset) {
@@ -93,11 +103,19 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, page]);
+  }, [workspaceId, page, searchQuery]);
 
   useEffect(() => {
     loadConversations(true);
   }, [workspaceId]); // Apenas workspaceId como dependência para carga inicial
+
+  // ✅ Reset quando searchQuery mudar
+  useEffect(() => {
+    if (workspaceId) {
+      setPage(1);
+      loadConversations(true);
+    }
+  }, [searchQuery]); // Resetar busca quando query mudar
 
   // ============================================
   // PROFILE PICTURE SYNC
@@ -231,14 +249,32 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
         },
         async (payload) => {
           console.log('✅ [REALTIME] Conversation change detected:', payload.eventType, payload);
+          console.log('📊 [REALTIME] Payload workspace_id:', payload.new?.workspace_id || payload.old?.workspace_id);
+          console.log('📊 [REALTIME] Current workspace_id:', workspaceId);
 
           if (payload.eventType === 'INSERT') {
             // Nova conversa criada
+            console.log('➕ [REALTIME] NEW CONVERSATION INSERTED!');
+            console.log('   Conversation ID:', payload.new.id);
+            console.log('   Workspace ID:', payload.new.workspace_id);
+            console.log('   Contact Name:', payload.new.contact_name);
+            
             setTotalConversations(prev => prev + 1);
             const newConversation = await fetchConversation(payload.new.id);
             if (newConversation) {
               console.log('✅ [REALTIME] Adding new conversation:', newConversation.contactName);
-              setConversations((prev) => [newConversation, ...prev]);
+              setConversations((prev) => {
+                // ✅ SEGURANÇA: Verificar se já existe antes de adicionar
+                const exists = prev.some(c => c.id === newConversation.id);
+                if (exists) {
+                  console.warn('⚠️ [REALTIME] Conversation already exists, skipping INSERT:', newConversation.id);
+                  return prev;
+                }
+                console.log('🎉 [REALTIME] Conversation added to state! Total:', prev.length + 1);
+                return [newConversation, ...prev];
+              });
+            } else {
+              console.error('❌ [REALTIME] Failed to fetch new conversation details');
             }
           } else if (payload.eventType === 'UPDATE') {
             // Conversa atualizada
@@ -268,12 +304,15 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           console.log('✅ [REALTIME] Conversations channel CONNECTED!');
+          console.log('📡 [REALTIME] Listening for changes in workspace:', workspaceId);
         } else if (status === 'CHANNEL_ERROR') {
-          console.log('⚠️ [REALTIME] Conversations channel error (silent):', err?.message || '');
+          console.error('❌ [REALTIME] Conversations channel error:', err?.message || '', err);
         } else if (status === 'TIMED_OUT') {
-          console.log('⏱️ [REALTIME] Conversations channel timeout');
+          console.error('⏱️ [REALTIME] Conversations channel timeout - connection failed');
         } else if (status === 'CLOSED') {
           console.log('🔌 [REALTIME] Conversations channel closed');
+        } else {
+          console.log('🔄 [REALTIME] Conversations channel status:', status);
         }
       });
 
@@ -307,6 +346,7 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
           if (updatedConversation && updatedConversation.workspaceId === workspaceId) {
             console.log('✅ [REALTIME] Updating conversation with new message:', updatedConversation.contactName);
             setConversations((prev) => {
+              // ✅ Filtrar TODAS as ocorrências (caso haja duplicatas)
               const filtered = prev.filter((c) => c.id !== conversationId);
               // ✅ Preservar avatar da conversa anterior se existir
               const previousConv = prev.find((c) => c.id === conversationId);
@@ -314,7 +354,19 @@ export function useChatData({ workspaceId }: UseChatDataProps) {
                 ...updatedConversation,
                 avatar: previousConv?.avatar || updatedConversation.avatar,
               };
-              return [conversationWithAvatar, ...filtered];
+              // ✅ Adicionar no início e garantir unicidade
+              const newList = [conversationWithAvatar, ...filtered];
+              
+              // ✅ DEDUPLICAÇÃO FINAL: Remover qualquer duplicata por ID
+              const seen = new Set<string>();
+              return newList.filter(conv => {
+                if (seen.has(conv.id)) {
+                  console.warn('⚠️ [REALTIME] Duplicate conversation detected and removed:', conv.id);
+                  return false;
+                }
+                seen.add(conv.id);
+                return true;
+              });
             });
           } else {
             console.log('⚠️ [REALTIME] Message belongs to different workspace, ignoring');

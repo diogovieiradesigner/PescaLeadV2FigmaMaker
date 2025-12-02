@@ -154,7 +154,7 @@ export function InstanceModal({ theme, instance, inboxes, onClose, onSave }: Ins
   // QR Code View
   if (qrCode) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div
           className={`w-full max-w-md rounded-lg shadow-xl overflow-hidden ${
             isDark ? 'bg-elevated' : 'bg-light-elevated'
@@ -215,7 +215,7 @@ export function InstanceModal({ theme, instance, inboxes, onClose, onSave }: Ins
   const webhookUrl = `${SUPABASE_URL}/functions/v1/make-server-e4f9d774/webhook/uazapi`;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div
         className={`w-full max-w-md rounded-lg shadow-xl ${
           isDark ? 'bg-elevated' : 'bg-light-elevated'

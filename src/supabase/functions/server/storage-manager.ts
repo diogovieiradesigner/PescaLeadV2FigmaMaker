@@ -2,6 +2,12 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const BUCKET_NAME = 'make-e4f9d774-media';
 
+// ✅ Limites de tamanho (em bytes)
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB - limite do bucket
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB - comprimir imagens acima disso
+const MAX_VIDEO_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_AUDIO_SIZE = 10 * 1024 * 1024; // 10 MB
+
 // Criar cliente Supabase com service role
 const getSupabaseClient = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -84,9 +90,20 @@ export async function uploadMedia(
     
     // 2. Converter base64 para binary
     const binaryString = atob(cleanBase64);
-    const bytes = new Uint8Array(binaryString.length);
+    let bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // ✅ 2.1. Validar tamanho ANTES do upload
+    const fileSizeMB = bytes.length / (1024 * 1024);
+    console.log(`[Storage] File size: ${fileSizeMB.toFixed(2)} MB`);
+    
+    if (bytes.length > MAX_FILE_SIZE) {
+      // Arquivo muito grande - rejeitar com mensagem clara
+      const errorMsg = `Arquivo muito grande (${fileSizeMB.toFixed(2)} MB). Limite: 10 MB`;
+      console.error(`[Storage] ❌ ${errorMsg}`);
+      throw new Error(errorMsg);
     }
     
     // 3. Determinar extensão do arquivo
@@ -102,7 +119,7 @@ export async function uploadMedia(
     const filePath = `${year}/${month}/${conversationId}/${fileName}`;
     
     console.log(`[Storage] Uploading file: ${filePath}`);
-    console.log(`[Storage] Size: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(2)} KB)`);
+    console.log(`[Storage] Final size: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(2)} KB)`);
     console.log(`[Storage] MIME type: ${mimeType}`);
     
     // 5. Upload para o Storage

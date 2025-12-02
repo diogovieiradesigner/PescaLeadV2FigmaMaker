@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Database,
   Plus,
@@ -11,21 +11,21 @@ import {
   Image as ImageIcon,
   X,
   Trash2,
-  Key,
   Inbox,
   Users,
   Save,
   Loader2,
   CheckCircle2,
   AlertCircle,
+  GripVertical,
 } from 'lucide-react';
+import { AIModelSelect } from './AIModelSelect';
 import { supabase } from '../utils/supabase/client';
 import { toast } from 'sonner@2.0.3';
 import {
   fetchAIAgent,
   createAIAgent,
   updateAIAgent,
-  maskApiKey,
   type AIAgent,
   type SpecialistAgent,
   type BehaviorConfig,
@@ -41,11 +41,14 @@ import {
   type AttendantConfig,
 } from '../services/ai-agent-attendants-service';
 import { RagKnowledgeBase } from './RagKnowledgeBase';
+import { CodeTextarea } from './CodeTextarea';
 
 interface AgentConfigFormProps {
   isDark: boolean;
   agentId?: string | null; // null = criar novo, string = editar existente
   onSaved?: (agentId: string) => void;
+  onHasChanges?: (hasChanges: boolean) => void; // Notificar quando houver mudanças
+  onSaveRef?: (saveFunction: () => Promise<void>) => void; // Expor função de salvar
 }
 
 interface InboxItem {
@@ -61,7 +64,7 @@ interface AttendantItem {
   avatar?: string;
 }
 
-export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormProps) {
+export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSaveRef }: AgentConfigFormProps) {
   // Estados do formulário
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,19 +72,15 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
 
   // Configurações Básicas
   const [agentName, setAgentName] = useState('Atendente Virtual');
-  const [apiKey, setApiKey] = useState('');
-  const [apiKeyMasked, setApiKeyMasked] = useState('');
   const [model, setModel] = useState('gpt-4o');
   const [isActive, setIsActive] = useState(true);
+  const [defaultAttendantType, setDefaultAttendantType] = useState<'ai' | 'human'>('ai');
   const [systemPrompt, setSystemPrompt] = useState(
     'Você é um assistente virtual especialista em triagem de leads. Seu objetivo é qualificar clientes potenciais e agendar reuniões. Seja cordial, direto e profissional. Use o conhecimento fornecido para responder com precisão.'
   );
 
   // Agentes Especialistas
-  const [specialistAgents, setSpecialistAgents] = useState<SpecialistAgent[]>([
-    { id: crypto.randomUUID(), name: 'Especialista em Produtos', description: 'Conhecimento profundo sobre catálogo e especificações técnicas' },
-    { id: crypto.randomUUID(), name: 'Especialista em Vendas', description: 'Técnicas de negociação e fechamento de contratos' },
-  ]);
+  const [specialistAgents, setSpecialistAgents] = useState<SpecialistAgent[]>([]);
 
   // Behavior Config
   const [debounceSeconds, setDebounceSeconds] = useState(15);
@@ -112,6 +111,13 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
   useEffect(() => {
     loadInitialData();
   }, [agentId]);
+
+  // Notificar mudanças ao componente pai
+  useEffect(() => {
+    if (onHasChanges) {
+      onHasChanges(hasChanges);
+    }
+  }, [hasChanges, onHasChanges]);
 
   const loadInitialData = async () => {
     try {
@@ -224,14 +230,17 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
 
       // Configurações Básicas
       setAgentName(agent.name);
-      setApiKeyMasked(maskApiKey(agent.api_key_encrypted));
-      setApiKey(''); // Não carregar a key real por segurança
       setModel(agent.model);
       setIsActive(agent.is_active);
+      setDefaultAttendantType(agent.default_attendant_type || 'ai');
       setSystemPrompt(agent.system_prompt);
 
-      // Especialistas
-      setSpecialistAgents(agent.specialist_agents || []);
+      // Especialistas (garantir que todos tenham o campo type)
+      const specialists = (agent.specialist_agents || []).map(spec => ({
+        ...spec,
+        type: spec.type || 'custom' as 'inbound' | 'outbound' | 'custom'
+      }));
+      setSpecialistAgents(specialists);
 
       // Behavior Config
       const config = agent.behavior_config || DEFAULT_BEHAVIOR_CONFIG;
@@ -287,17 +296,12 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
         return;
       }
 
-      if (!agentId && !apiKey.trim()) {
-        toast.error('API Key é obrigatória');
-        return;
-      }
-
       const agentData = {
         workspace_id: workspaceId,
         name: agentName,
-        api_key_encrypted: apiKey || undefined, // Só atualizar se foi modificada
         model,
         is_active: isActive,
+        default_attendant_type: defaultAttendantType,
         system_prompt: systemPrompt,
         specialist_agents: specialistAgents,
         crm_auto_update: crmAutoUpdate,
@@ -362,26 +366,105 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
     }
   };
 
+  // ✅ Registrar a função de salvar para o componente pai
+  useEffect(() => {
+    if (onSaveRef) {
+      onSaveRef(handleSave);
+    }
+  }, [handleSave, onSaveRef]);
 
+
+
+  // Função para gerar function_key a partir do nome
+  const generateFunctionKey = (name: string): string => {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .replace(/[^a-z0-9]+/g, '_')     // Substitui caracteres especiais por _
+      .replace(/^_|_$/g, '');          // Remove _ no início/fim
+  };
 
   const addSpecialistAgent = () => {
+    const newId = crypto.randomUUID();
     setSpecialistAgents([
       ...specialistAgents,
-      { id: crypto.randomUUID(), name: '', description: '' },
+      { 
+        id: newId, 
+        name: '', 
+        description: '',
+        function_key: `specialist_${Date.now()}`,
+        extra_prompt: '',
+        is_active: true,
+        priority: specialistAgents.length,
+        type: 'custom',
+      },
     ]);
     setHasChanges(true);
   };
 
-  const updateSpecialistAgent = (id: string, field: keyof SpecialistAgent, value: string) => {
-    setSpecialistAgents(prev =>
-      prev.map(agent => (agent.id === id ? { ...agent, [field]: value } : agent))
-    );
+  const updateSpecialistAgent = (id: string, field: keyof SpecialistAgent, value: string | boolean | number) => {
+    setSpecialistAgents(prev => {
+      // Validação para tipos inbound/outbound
+      if (field === 'type' && (value === 'inbound' || value === 'outbound')) {
+        const existingAgent = prev.find(a => a.id !== id && a.type === value);
+        if (existingAgent) {
+          toast.error(`Já existe um agente do tipo "${value === 'inbound' ? 'Inbound' : 'Outbound'}". Apenas um agente de cada tipo é permitido.`);
+          return prev;
+        }
+      }
+
+      return prev.map(agent => {
+        if (agent.id === id) {
+          const updated = { ...agent, [field]: value };
+          
+          // Auto-gerar function_key quando o nome mudar (se estiver vazio ou gerado automaticamente)
+          if (field === 'name' && typeof value === 'string') {
+            if (!agent.function_key || agent.function_key.startsWith('specialist_')) {
+              updated.function_key = generateFunctionKey(value) || `specialist_${Date.now()}`;
+            }
+          }
+          
+          return updated;
+        }
+        return agent;
+      });
+    });
     setHasChanges(true);
   };
 
   const removeSpecialistAgent = (id: string) => {
-    setSpecialistAgents(prev => prev.filter(agent => agent.id !== id));
+    setSpecialistAgents(prev => {
+      const filtered = prev.filter(agent => agent.id !== id);
+      // Reajustar prioridades após remover
+      return filtered.map((agent, index) => ({ ...agent, priority: index }));
+    });
     setHasChanges(true);
+  };
+
+  const moveSpecialistAgent = (id: string, direction: 'up' | 'down') => {
+    setSpecialistAgents(prev => {
+      const index = prev.findIndex(a => a.id === id);
+      if (index === -1) return prev;
+      
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.length) return prev;
+      
+      const newList = [...prev];
+      [newList[index], newList[newIndex]] = [newList[newIndex], newList[index]];
+      
+      // Atualizar prioridades
+      return newList.map((agent, idx) => ({ ...agent, priority: idx }));
+    });
+    setHasChanges(true);
+  };
+
+  // Handler para permitir Command+A / Ctrl+A em inputs e textareas
+  const handleSelectAll = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+      e.preventDefault();
+      e.currentTarget.select();
+    }
   };
 
   if (loading) {
@@ -445,6 +528,7 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
               type="text"
               value={agentName}
               onChange={(e) => { setAgentName(e.target.value); setHasChanges(true); }}
+              onKeyDown={handleSelectAll}
               placeholder="Ex: Atendente Virtual"
               className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors ${
                 isDark
@@ -456,48 +540,13 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Chave API OpenRouter
-            </label>
-            <div className="relative">
-              <Key className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => { setApiKey(e.target.value); setHasChanges(true); }}
-                placeholder={apiKeyMasked || 'sk-or-v1-...'}
-                className={`w-full pl-10 pr-3 py-2 rounded-lg border outline-none transition-colors ${
-                  isDark
-                    ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
-                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
-                }`}
-              />
-            </div>
-            {apiKeyMasked && (
-              <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                Deixe em branco para manter a chave atual: {apiKeyMasked}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
               Modelo de IA
             </label>
-            <select
+            <AIModelSelect
               value={model}
-              onChange={(e) => { setModel(e.target.value); setHasChanges(true); }}
-              className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors ${
-                isDark
-                  ? 'bg-white/[0.05] border-white/[0.1] text-white focus:border-[#0169D9]'
-                  : 'bg-white border-gray-200 text-gray-900 focus:border-[#0169D9]'
-              }`}
-            >
-              <option value="gpt-4o">GPT-4o (Recomendado)</option>
-              <option value="gpt-4o-mini">GPT-4o Mini (Econômico)</option>
-              <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-              <option value="claude-3-haiku">Claude 3 Haiku (Rápido)</option>
-              <option value="gemini-pro">Gemini Pro</option>
-            </select>
+              onChange={(val) => { setModel(val); setHasChanges(true); }}
+              isDark={isDark}
+            />
           </div>
 
           <div className="flex items-center justify-between">
@@ -522,18 +571,37 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Tipo de Atendente Padrão
+            </label>
+            <p className={`text-xs mb-3 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+              Como novas conversas devem iniciar
+            </p>
+            <select
+              value={defaultAttendantType}
+              onChange={(e) => { setDefaultAttendantType(e.target.value as 'ai' | 'human'); setHasChanges(true); }}
+              className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors ${
+                isDark
+                  ? 'bg-white/[0.05] border-white/[0.1] text-white focus:border-[#0169D9]'
+                  : 'bg-white border-gray-200 text-gray-900 focus:border-[#0169D9]'
+              }`}
+            >
+              <option value="ai">I.A (Inteligência Artificial)</option>
+              <option value="human">Humano (Atendimento Manual)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
               Prompt Principal do Agente
             </label>
-            <textarea
+            <CodeTextarea
               value={systemPrompt}
-              onChange={(e) => { setSystemPrompt(e.target.value); setHasChanges(true); }}
+              onChange={(val) => { setSystemPrompt(val); setHasChanges(true); }}
+              onKeyDown={handleSelectAll}
               rows={10}
               placeholder="Você é um assistente virtual..."
-              className={`w-full px-3 py-2 rounded-lg border resize-y outline-none transition-colors ${
-                isDark
-                  ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
-                  : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
-              }`}
+              isDark={isDark}
+              label="Prompt Principal do Agente"
             />
           </div>
         </div>
@@ -556,50 +624,104 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
         </p>
 
         <div className="space-y-3 mb-4">
-          {specialistAgents.map((agent) => (
+          {specialistAgents.map((agent, index) => (
             <div
               key={agent.id}
-              className={`p-4 rounded-xl border ${isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-white border-gray-200'}`}
+              className={`pb-6 mb-6 border-b last:border-b-0 last:pb-0 last:mb-0 ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}
             >
-              <div className="flex items-start gap-3">
-                <GitBranch className={`w-5 h-5 mt-1 flex-shrink-0 ${isDark ? 'text-purple-400' : 'text-purple-600'}`} />
-
-                <div className="flex-1 space-y-3">
+              <div className="space-y-3">
+                {/* Nome + Tipo + Switcher + Delete (layout responsivo) */}
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
                   <input
                     type="text"
                     value={agent.name}
                     onChange={(e) => updateSpecialistAgent(agent.id, 'name', e.target.value)}
+                    onKeyDown={handleSelectAll}
                     placeholder="Nome do agente especialista"
-                    className={`w-full px-3 py-2 rounded-lg border text-sm font-medium outline-none transition-colors ${
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-lg border outline-none transition-colors ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
                         : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
                     }`}
                   />
 
-                  <textarea
-                    value={agent.description}
-                    onChange={(e) => updateSpecialistAgent(agent.id, 'description', e.target.value)}
-                    rows={2}
-                    placeholder="Descreva a expertise deste agente (ex: conhecimento sobre produtos, vendas, suporte técnico...)"
-                    className={`w-full px-3 py-2 rounded-lg border text-sm resize-y outline-none transition-colors ${
-                      isDark
-                        ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
-                        : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
-                    }`}
-                  />
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={agent.type || 'custom'}
+                      onChange={(e) => updateSpecialistAgent(agent.id, 'type', e.target.value)}
+                      className={`flex-1 lg:w-auto lg:min-w-[200px] px-3 py-2 rounded-lg border outline-none transition-colors ${
+                        isDark
+                          ? 'bg-white/[0.05] border-white/[0.1] text-white focus:border-[#0169D9]'
+                          : 'bg-white border-gray-200 text-gray-900 focus:border-[#0169D9]'
+                      }`}
+                      title="Tipo do especialista"
+                    >
+                      <option value="custom">Personalizado (temático)</option>
+                      <option value="inbound">Inbound (cliente iniciou)</option>
+                      <option value="outbound">Outbound (prospecção)</option>
+                    </select>
+                    
+                    {/* Toggle Switch */}
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={agent.is_active}
+                        onChange={(e) => updateSpecialistAgent(agent.id, 'is_active', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[#0169D9]"></div>
+                    </label>
+
+                    <button
+                      onClick={() => removeSpecialistAgent(agent.id)}
+                      className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                        isDark
+                          ? 'hover:bg-red-500/10 text-white/40 hover:text-red-400'
+                          : 'hover:bg-red-50 text-gray-400 hover:text-red-600'
+                      }`}
+                      title="Remover especialista"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => removeSpecialistAgent(agent.id)}
-                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
-                    isDark
-                      ? 'hover:bg-red-500/10 text-white/40 hover:text-red-400'
-                      : 'hover:bg-red-50 text-gray-400 hover:text-red-600'
-                  }`}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {/* Descrição (apenas para tipo custom) */}
+                {(agent.type === 'custom' || !agent.type) && (
+                  <div>
+                    <label className={`block text-xs mb-1.5 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                      Descrição (usada pelo orquestrador para escolher)
+                    </label>
+                    <textarea
+                      value={agent.description}
+                      onChange={(e) => updateSpecialistAgent(agent.id, 'description', e.target.value)}
+                      onKeyDown={handleSelectAll}
+                      rows={2}
+                      placeholder="Descreva quando este especialista deve ser acionado..."
+                      className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors resize-none ${
+                        isDark
+                          ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
+                      }`}
+                    />
+                  </div>
+                )}
+
+                {/* Extra Prompt */}
+                <div>
+                  <label className={`block text-xs mb-1.5 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                    Prompt Adicional do Especialista
+                  </label>
+                  <CodeTextarea
+                    value={agent.extra_prompt}
+                    onChange={(val) => updateSpecialistAgent(agent.id, 'extra_prompt', val)}
+                    onKeyDown={handleSelectAll}
+                    rows={6}
+                    placeholder="Prompt adicional que será concatenado ao system_prompt quando este especialista for selecionado..."
+                    isDark={isDark}
+                    label={`Extra Prompt do Agente: ${agent.name || 'Especialista'}`}
+                  />
+                </div>
               </div>
             </div>
           ))}
@@ -779,25 +901,23 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
                       <label className={`block text-xs font-medium mb-1 ${isDark ? 'text-white/70' : 'text-gray-700'}`}>
                         Quando acionar este atendente?
                       </label>
-                      <textarea
+                      <CodeTextarea
                         value={attendantConfigs[attendant.id]?.trigger_conditions || ''}
-                        onChange={(e) => {
+                        onChange={(val) => {
                           setAttendantConfigs({
                             ...attendantConfigs,
                             [attendant.id]: {
                               ...attendantConfigs[attendant.id],
-                              trigger_conditions: e.target.value,
+                              trigger_conditions: val,
                             },
                           });
                           setHasChanges(true);
                         }}
-                        rows={2}
+                        onKeyDown={handleSelectAll}
+                        rows={3}
                         placeholder="Ex: Quando o cliente perguntar sobre preços ou contratos"
-                        className={`w-full px-3 py-2 rounded-lg border text-xs resize-y outline-none transition-colors ${
-                          isDark
-                            ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
-                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
-                        }`}
+                        isDark={isDark}
+                        label={`Condições de Acionamento - ${attendant.name}`}
                       />
                     </div>
 
@@ -818,6 +938,7 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
                           });
                           setHasChanges(true);
                         }}
+                        onKeyDown={handleSelectAll}
                         placeholder="Mensagem de notificação interna"
                         className={`w-full px-3 py-2 rounded-lg border text-xs outline-none transition-colors ${
                           isDark
@@ -844,6 +965,7 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
                           });
                           setHasChanges(true);
                         }}
+                        onKeyDown={handleSelectAll}
                         placeholder="O que o cliente verá ao transferir"
                         className={`w-full px-3 py-2 rounded-lg border text-xs outline-none transition-colors ${
                           isDark
@@ -1131,19 +1253,17 @@ export function AgentConfigForm({ isDark, agentId, onSaved }: AgentConfigFormPro
             <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
               Prompt de Atualização
             </label>
-            <textarea
+            <CodeTextarea
               value={crmUpdatePrompt}
-              onChange={(e) => {
-                setCrmUpdatePrompt(e.target.value);
+              onChange={(val) => {
+                setCrmUpdatePrompt(val);
                 setHasChanges(true);
               }}
-              rows={4}
+              onKeyDown={handleSelectAll}
+              rows={6}
               placeholder="Instruções para extrair dados..."
-              className={`w-full px-3 py-2 rounded-lg border resize-y outline-none transition-colors ${
-                isDark
-                  ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
-                  : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
-              }`}
+              isDark={isDark}
+              label="Prompt de Atualização do CRM"
             />
           </div>
         )}

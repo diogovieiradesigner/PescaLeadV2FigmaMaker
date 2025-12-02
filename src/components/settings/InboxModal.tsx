@@ -80,7 +80,7 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div
         className={`w-full max-w-md rounded-lg shadow-xl ${
           isDark ? 'bg-elevated' : 'bg-light-elevated'

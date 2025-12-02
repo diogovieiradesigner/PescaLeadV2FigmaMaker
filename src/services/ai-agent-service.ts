@@ -30,6 +30,11 @@ export interface SpecialistAgent {
   id: string;
   name: string;
   description: string;
+  function_key: string;
+  extra_prompt: string;
+  is_active: boolean;
+  priority: number;
+  type: 'inbound' | 'outbound' | 'custom';
 }
 
 export interface BehaviorConfig {

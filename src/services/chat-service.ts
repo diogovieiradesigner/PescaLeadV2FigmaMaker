@@ -29,17 +29,27 @@ import { Conversation, Message } from '../types/chat';
 export async function fetchConversations(
   workspaceId: string,
   page: number = 1,
-  limit: number = 20
+  limit: number = 20,
+  searchQuery?: string // ✅ Novo parâmetro de busca
 ): Promise<Conversation[]> {
   try {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
     // Buscar conversas
-    const { data: conversations, error: convError } = await supabase
+    let query = supabase
       .from('conversations')
       .select('*')
       .eq('workspace_id', workspaceId)
+      .neq('channel', 'preview'); // ✅ Excluir conversas de preview do chat real
+
+    // ✅ Aplicar filtro de busca se existir
+    if (searchQuery && searchQuery.trim()) {
+      const search = `%${searchQuery.trim()}%`;
+      query = query.or(`contact_name.ilike.${search},contact_phone.ilike.${search}`);
+    }
+
+    const { data: conversations, error: convError } = await query
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false })
       .range(from, to);
@@ -140,12 +150,20 @@ export async function fetchConversations(
 /**
  * Busca a contagem total de conversas de um workspace
  */
-export async function fetchConversationCount(workspaceId: string): Promise<number> {
+export async function fetchConversationCount(workspaceId: string, searchQuery?: string): Promise<number> {
   try {
-    const { count, error } = await supabase
+    let query = supabase
       .from('conversations')
       .select('*', { count: 'exact', head: true })
       .eq('workspace_id', workspaceId);
+
+    // ✅ Aplicar filtro de busca se existir
+    if (searchQuery && searchQuery.trim()) {
+      const search = `%${searchQuery.trim()}%`;
+      query = query.or(`contact_name.ilike.${search},contact_phone.ilike.${search}`);
+    }
+
+    const { count, error } = await query;
 
     if (error) throw error;
     return count || 0;
@@ -169,7 +187,11 @@ export async function fetchConversation(
       .eq('id', conversationId)
       .single();
 
-    if (convError) throw convError;
+    if (convError) {
+      // Se não encontrar (PGRST116), retorna null
+      if (convError.code === 'PGRST116') return null;
+      throw convError;
+    }
     if (!conversation) return null;
 
     // Buscar mensagens

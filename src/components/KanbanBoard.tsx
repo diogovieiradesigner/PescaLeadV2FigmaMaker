@@ -21,6 +21,7 @@ interface KanbanBoardProps {
   onLeadClick: (lead: CRMLead) => void;
   onLoadMore?: (columnId: string) => void;
   onDeleteLead?: (leadId: string) => void;
+  onDeleteAllLeads?: (columnId: string) => void;
   theme: Theme;
 }
 
@@ -33,13 +34,14 @@ export function KanbanBoard({
   onLeadClick, 
   onLoadMore,
   onDeleteLead,
+  onDeleteAllLeads,
   theme 
 }: KanbanBoardProps) {
   const isDark = theme === 'dark';
   
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className={`flex-1 overflow-x-auto overflow-y-hidden p-4 transition-colors ${
+      <div className={`flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin p-4 transition-colors ${
         isDark ? 'bg-true-black' : 'bg-light-bg'
       }`}>
         <div className="flex gap-4 h-[calc(100vh-200px)] pb-4">
@@ -61,6 +63,7 @@ export function KanbanBoard({
                 onLeadClick={onLeadClick}
                 onLoadMore={onLoadMore}
                 onDeleteLead={onDeleteLead}
+                onDeleteAllLeads={onDeleteAllLeads}
                 theme={theme}
               />
             );

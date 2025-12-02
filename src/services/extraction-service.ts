@@ -534,39 +534,71 @@ export async function getExtractedLeads(runId: string, limit: number = 100): Pro
 // ============================================
 
 /**
- * Buscar estatísticas completas de uma extração específica
- * usando RPC get_extraction_statistics
+ * ✅ NOVA FUNÇÃO UNIFICADA - Buscar analytics completos de uma extração
+ * Substitui: get_extraction_statistics + get_extraction_metrics_card
+ * 
+ * Aceita 3 formas de chamada:
+ * - Por p_run_id (run específico)
+ * - Por p_workspace_id (mais recente do workspace)
+ * - Sem parâmetros (mais recente global)
  */
-export async function getExtractionStatistics(runId: string): Promise<any> {
+export async function getExtractionAnalytics(params?: { 
+  runId?: string;
+  workspaceId?: string;
+}): Promise<any> {
+  const rpcParams: any = {};
+  
+  if (params?.runId) {
+    rpcParams.p_run_id = params.runId;
+  } else if (params?.workspaceId) {
+    rpcParams.p_workspace_id = params.workspaceId;
+  }
+  // Se não passar nada, busca o mais recente
+
+  console.log('🔍 [getExtractionAnalytics] Chamando RPC com params:', rpcParams);
+
   const { data, error } = await supabase
-    .rpc('get_extraction_statistics', { 
-      p_run_id: runId 
-    });
+    .rpc('get_extraction_analytics', rpcParams);
 
   if (error) {
-    console.error('Error fetching extraction statistics:', error);
+    console.error('❌ [getExtractionAnalytics] Error:', error);
+    console.error('❌ [getExtractionAnalytics] Error code:', error.code);
+    console.error('❌ [getExtractionAnalytics] Error message:', error.message);
+    console.error('❌ [getExtractionAnalytics] Error details:', error.details);
+    console.error('❌ [getExtractionAnalytics] Error hint:', error.hint);
+    
+    // Se a função RPC não existir ou tiver problema de schema
+    if (error.code === '42P01' || error.code === '42883') {
+      throw new Error(
+        `A função RPC 'get_extraction_analytics' ou a tabela 'lead_stats' não existe no Supabase.\n\n` +
+        `Por favor, certifique-se de que:\n` +
+        `1. A função RPC 'get_extraction_analytics' foi criada no Supabase\n` +
+        `2. Todas as tabelas necessárias existem (lead_extraction_runs, leads, etc.)\n` +
+        `3. A função não referencia tabelas inexistentes como 'lead_stats'\n\n` +
+        `Erro original: ${error.message}`
+      );
+    }
+    
     throw error;
   }
 
+  console.log('✅ [getExtractionAnalytics] Data received:', data);
   return data;
 }
 
 /**
- * Buscar métricas simplificadas para cards
- * usando RPC get_extraction_metrics_card
+ * @deprecated Use getExtractionAnalytics instead
+ */
+export async function getExtractionStatistics(runId: string): Promise<any> {
+  return getExtractionAnalytics({ runId });
+}
+
+/**
+ * @deprecated Use getExtractionAnalytics instead
  */
 export async function getExtractionMetricsCard(runId: string): Promise<any[]> {
-  const { data, error } = await supabase
-    .rpc('get_extraction_metrics_card', { 
-      p_run_id: runId 
-    });
-
-  if (error) {
-    console.error('Error fetching extraction metrics card:', error);
-    throw error;
-  }
-
-  return data || [];
+  const analytics = await getExtractionAnalytics({ runId });
+  return analytics?.contatos || [];
 }
 
 /**

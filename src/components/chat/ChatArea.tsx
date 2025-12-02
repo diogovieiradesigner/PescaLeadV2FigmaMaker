@@ -147,6 +147,11 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    // ✅ Permitir atalhos do sistema (Ctrl+A, Cmd+A, Ctrl+C, etc)
+    if (e.metaKey || e.ctrlKey) {
+      return; // Não interferir com atalhos do sistema
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -325,7 +330,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
 
   return (
     <div
-      className={`flex-1 flex flex-col h-full min-h-0 transition-colors ${
+      className={`flex flex-col h-full min-h-0 w-full transition-colors ${
         isDark ? 'bg-true-black' : 'bg-light-bg'
       }`}
     >
@@ -403,7 +408,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
 
       {/* Messages */}
       <div 
-        className={`flex-1 overflow-y-auto px-6 py-4 space-y-4 relative ${
+        className={`flex-1 overflow-y-auto scrollbar-thin px-6 py-4 space-y-4 relative ${
           isDragging ? 'ring-2 ring-[#0169D9] ring-inset' : ''
         }`}
         onDragOver={handleDragOver}
@@ -423,15 +428,24 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
           </div>
         )}
 
-        {conversation.messages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            isDark={isDark}
-            onDeleteMessage={onDeleteMessage}
-            onExpandImage={handleExpandImage}
-          />
-        ))}
+        {conversation.messages.map((message, index) => {
+          // ✅ Verificar se esta mensagem é a última do grupo com o mesmo pipelineId
+          const isLastInPipelineGroup = message.pipelineId ? 
+            index === conversation.messages.length - 1 || 
+            conversation.messages[index + 1]?.pipelineId !== message.pipelineId
+            : true;
+          
+          return (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isDark={isDark}
+              onDeleteMessage={onDeleteMessage}
+              onExpandImage={handleExpandImage}
+              showPipeline={isLastInPipelineGroup}
+            />
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -516,7 +530,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
             placeholder="Digite uma mensagem..."
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             disabled={isRecording}
             className={`flex-1 border px-4 py-2 rounded-lg transition-all focus:outline-none focus:border-[#0169D9] ${
               isDark
@@ -551,7 +565,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
       {/* ✅ Modal de Imagem Expandida */}
       {expandedImage && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200"
           onClick={() => setExpandedImage(null)}
         >
           <button

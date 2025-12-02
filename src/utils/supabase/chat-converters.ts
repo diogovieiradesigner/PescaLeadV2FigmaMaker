@@ -25,6 +25,7 @@ export function dbMessageToFrontend(dbMessage: DbMessage): Message {
     }),
     createdAt: dbMessage.created_at, // ✅ Timestamp completo para ordenação
     read: dbMessage.is_read,
+    pipelineId: dbMessage.pipeline_id, // ✅ ID do pipeline de IA
   };
 }
 

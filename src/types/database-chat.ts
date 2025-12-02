@@ -44,6 +44,7 @@ export interface DbMessage {
   media_duration?: number; // for audio
   is_read: boolean;
   sent_by?: string; // user_id (quem enviou)
+  pipeline_id?: string; // ✅ ID do pipeline de IA
   created_at: string;
 }
 

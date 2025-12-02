@@ -690,7 +690,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  isDark ? 'bg-true-black' : 'bg-gray-50'
               }`}>
                  {activeTab === 'chat' && (
-                    <div className={`absolute inset-0 flex flex-col ${
+                    <div className={`w-full h-full flex flex-col ${
                       isDark ? 'bg-true-black' : 'bg-light-bg'
                     }`}>
                        {conversation ? (
@@ -1189,7 +1189,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
            </div>
 
            {/* Right Column - Sidebar */}
-           <div className={`w-80 flex-shrink-0 border-l overflow-y-auto ${
+           <div className={`w-80 flex-shrink-0 border-l overflow-y-auto scrollbar-thin ${
               isDark ? 'border-white/[0.08] bg-elevated' : 'border-border-light bg-white'
            }`}>
               <div className="p-6 space-y-6">

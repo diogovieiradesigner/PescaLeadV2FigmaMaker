@@ -111,15 +111,6 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
           </button>
         ))}
       </nav>
-
-      {/* Workspace Switcher - Bottom */}
-      {!isCollapsed && (
-        <div className={`p-3 border-t ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
-        }`}>
-          <WorkspaceSwitcher theme={theme} />
-        </div>
-      )}
     </motion.aside>
   );
 }

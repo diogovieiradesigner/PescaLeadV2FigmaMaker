@@ -204,18 +204,28 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
 
       console.log('[KANBAN] Carregados mais', newLeads.length, 'leads');
 
-      // Atualizar estado
-      setColumnLeadsState(prev => ({
-        ...prev,
-        [columnId]: {
-          ...prev[columnId],
-          leads: [...prev[columnId].leads, ...newLeads],
-          offset: prev[columnId].offset + newLeads.length,
-          total,
-          hasMore: prev[columnId].offset + newLeads.length < total,
-          loading: false,
-        },
-      }));
+      // Atualizar estado e filtrar duplicatas
+      setColumnLeadsState(prev => {
+        // ✅ Filtrar duplicatas antes de adicionar
+        const existingIds = new Set(prev[columnId].leads.map(l => l.id));
+        const uniqueNewLeads = newLeads.filter(lead => !existingIds.has(lead.id));
+        
+        if (uniqueNewLeads.length < newLeads.length) {
+          console.warn(`⚠️ [KANBAN] Removidas ${newLeads.length - uniqueNewLeads.length} duplicatas ao carregar mais leads`);
+        }
+
+        return {
+          ...prev,
+          [columnId]: {
+            ...prev[columnId],
+            leads: [...prev[columnId].leads, ...uniqueNewLeads],
+            offset: prev[columnId].offset + newLeads.length,
+            total,
+            hasMore: prev[columnId].offset + newLeads.length < total,
+            loading: false,
+          },
+        };
+      });
 
     } catch (error: any) {
       console.error('[KANBAN] Failed to load more leads:', error);
@@ -440,25 +450,31 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
     setColumnLeadsState(prev => {
       const newState = { ...prev };
       
-      // Find and remove from source column
+      // ✅ DEDUPLICAÇÃO: Primeiro remover o lead de TODAS as colunas (caso esteja duplicado)
       for (const columnId in newState) {
-        const leadIndex = newState[columnId].leads.findIndex(l => l.id === leadId);
+        newState[columnId] = {
+          ...newState[columnId],
+          leads: newState[columnId].leads.filter(l => l.id !== leadId),
+        };
+      }
+      
+      // Find lead data from original state
+      for (const columnId in prev) {
+        const leadIndex = prev[columnId].leads.findIndex(l => l.id === leadId);
         if (leadIndex !== -1) {
           fromColumnId = columnId;
-          movedLead = { ...newState[columnId].leads[leadIndex] };
+          movedLead = { ...prev[columnId].leads[leadIndex] };
           
-          const newLeads = [...newState[columnId].leads];
-          newLeads.splice(leadIndex, 1);
+          // Atualizar total da coluna de origem
           newState[columnId] = {
             ...newState[columnId],
-            leads: newLeads,
-            total: newState[columnId].total - 1,
+            total: Math.max(0, prev[columnId].total - 1),
           };
           break;
         }
       }
 
-      // Add to target column
+      // Add to target column at position
       if (movedLead && newState[toColumnId]) {
         const newLeads = [...newState[toColumnId].leads];
         newLeads.splice(toPosition, 0, movedLead);

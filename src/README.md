@@ -5,6 +5,25 @@
 [![Deploy](https://img.shields.io/badge/Deploy-Coolify-blue)](./DEPLOY_COOLIFY.md)
 [![License](https://img.shields.io/badge/License-Proprietary-red)]()
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-green)]()
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-green)]()
+[![Build](https://img.shields.io/badge/Build-Nixpacks-purple)]()
+
+---
+
+## 🚀 Quick Start - Deploy em 5 Minutos
+
+```bash
+# 1. Clone e commit
+git add .
+git commit -m "fix: configuração Nixpacks"
+git push
+
+# 2. Coolify → Clear Build Cache (OBRIGATÓRIO!)
+
+# 3. Coolify → Force Rebuild & Deploy
+```
+
+📖 **Guia completo**: [QUICK_FIX_AGORA.md](./QUICK_FIX_AGORA.md) | [README_DEPLOY_FINAL.md](./README_DEPLOY_FINAL.md)
 
 ---
 

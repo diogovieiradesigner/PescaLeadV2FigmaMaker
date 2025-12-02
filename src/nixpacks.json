@@ -1,0 +1,24 @@
+{
+  "providers": ["node"],
+  "phases": {
+    "setup": {
+      "nixPkgs": ["nodejs_20"],
+      "nixLibs": [],
+      "nixOverlays": [],
+      "nixpkgsArchive": "5148520bfab61f99fd25fb9ff7bfbb50dad3c9db"
+    },
+    "install": {
+      "cmds": [
+        "npm ci --legacy-peer-deps"
+      ]
+    },
+    "build": {
+      "cmds": [
+        "npm run build"
+      ]
+    }
+  },
+  "start": {
+    "cmd": "npx serve dist -s -l 3000"
+  }
+}

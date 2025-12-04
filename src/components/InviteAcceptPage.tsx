@@ -20,9 +20,9 @@ export function InviteAcceptPage() {
   // Processar convite pendente após login
   useEffect(() => {
     if (user && !code) {
-      const pendingInvite = localStorage.getItem('pendingInvite');
+      const pendingInvite = localStorage.getItem('pending_invite');
       if (pendingInvite) {
-        localStorage.removeItem('pendingInvite');
+        localStorage.removeItem('pending_invite');
         navigate(`/invite/${pendingInvite}`);
       }
     }
@@ -38,7 +38,7 @@ export function InviteAcceptPage() {
 
       if (!user) {
         // Redirecionar para login com redirect de volta
-        localStorage.setItem('pendingInvite', code);
+        localStorage.setItem('pending_invite', code);
         navigate('/');
         return;
       }

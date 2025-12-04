@@ -23,14 +23,13 @@ import { AIServiceView } from './components/AIServiceView';
 import { AgentLogsView } from './components/AgentLogsView';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
 import { AuthWrapper } from './components/auth/AuthWrapper';
-import { AudioManagerProvider } from './contexts/AudioManagerContext'; // ✅ IMPORTAR PROVIDER
+import { AudioManagerProvider } from './contexts/AudioManagerContext';
 import { useKanbanData } from './hooks/useKanbanData';
 import { useKanbanRealtime } from './hooks/useKanbanRealtime';
 import { useSettingsData } from './hooks/useSettingsData';
 import { toast } from 'sonner';
-import { Toaster } from './components/ui/sonner';
 
 // Create QueryClient instance outside component to avoid recreating on every render
 const queryClient = new QueryClient({
@@ -131,7 +130,7 @@ function AppContent() {
       if (!user) {
         // Usuário não logado: salvar para processar depois
         console.log('💾 Usuário não logado, salvando convite...');
-        localStorage.setItem('pendingInvite', inviteCode);
+        localStorage.setItem('pending_invite', inviteCode);
         toast.info('Faça login para aceitar o convite');
       } else if (accessToken) {
         // Usuário logado: processar convite
@@ -147,11 +146,11 @@ function AppContent() {
   // Processar convite pendente após login
   useEffect(() => {
     const processPendingInvite = async () => {
-      const pendingInvite = localStorage.getItem('pendingInvite');
+      const pendingInvite = localStorage.getItem('pending_invite');
       
       if (pendingInvite && user && accessToken && !isProcessingInvite) {
         console.log('🎯 Processando convite pendente após login:', pendingInvite);
-        localStorage.removeItem('pendingInvite');
+        localStorage.removeItem('pending_invite');
         setIsProcessingInvite(true);
         
         try {
@@ -1170,15 +1169,12 @@ export default function App() {
   const { theme } = useTheme();
   
   return (
-    <AuthProvider>
-      <AuthWrapper theme={theme}>
-        <QueryClientProvider client={queryClient}>
-          <AudioManagerProvider>
-            <AppContent />
-            <Toaster />
-          </AudioManagerProvider>
-        </QueryClientProvider>
-      </AuthWrapper>
-    </AuthProvider>
+    <AuthWrapper theme={theme}>
+      <QueryClientProvider client={queryClient}>
+        <AudioManagerProvider>
+          <AppContent />
+        </AudioManagerProvider>
+      </QueryClientProvider>
+    </AuthWrapper>
   );
 }

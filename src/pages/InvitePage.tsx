@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { UserPlus, Building2, Shield, ArrowRight, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -8,49 +8,77 @@ import { useAuth } from '../contexts/AuthContext';
 import { InvalidInvitePage } from './InvalidInvitePage';
 import IconografiaPescaLead from '../imports/IconografiaPescaLead';
 import { toast } from 'sonner';
-import { processPendingInvite } from '../hooks/useInvite';
+import { acceptInvite } from '../services/inviteService';
 
 export function InvitePage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, refreshWorkspaces, switchWorkspace } = useAuth();
   const { invite, loading, error } = useInvite(code);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const processedRef = useRef(false); // Evitar processamento duplo
 
-  // Se já está logado, processar convite automaticamente
-  useEffect(() => {
-    if (user && accessToken && code && invite) {
-      console.log('[INVITE PAGE] Usuário já logado, processando convite...');
-      
-      const process = async () => {
-        const result = await processPendingInvite(user.id, accessToken);
-        
-        if (result.success && result.workspace_id) {
-          toast.success('Convite aceito com sucesso!');
-          navigate('/');
-          // O AuthContext vai trocar para o workspace automaticamente
-        } else {
-          toast.error(result.error || 'Erro ao aceitar convite');
-        }
-      };
-      
-      process();
-    }
-  }, [user, accessToken, code, invite, navigate]);
-
-  // Salvar código ao carregar
+  // Salvar código PRIMEIRO (antes de qualquer processamento)
   useEffect(() => {
     if (code) {
+      console.log('[INVITE PAGE] Salvando código no localStorage:', code);
       savePendingInvite(code);
     }
   }, [code]);
 
-  // Loading
-  if (loading) {
+  // Se já está logado, processar convite automaticamente
+  // FIX: Usar o código diretamente do URL, não do localStorage
+  useEffect(() => {
+    if (user && accessToken && code && invite && !isProcessing && !processedRef.current) {
+      console.log('[INVITE PAGE] Usuário já logado, processando convite diretamente...');
+      processedRef.current = true; // Marcar como processando
+      setIsProcessing(true);
+
+      const process = async () => {
+        try {
+          // FIX: Usar acceptInvite diretamente com o código do URL
+          const result = await acceptInvite(code, user.id, accessToken);
+
+          if (result.success && result.workspace_id) {
+            toast.success('Convite aceito com sucesso!');
+
+            // Atualizar workspaces
+            if (refreshWorkspaces) {
+              await refreshWorkspaces();
+            }
+
+            // Trocar para o novo workspace
+            if (switchWorkspace) {
+              await switchWorkspace(result.workspace_id);
+            }
+
+            navigate('/');
+          } else {
+            toast.error(result.error || 'Erro ao aceitar convite');
+            processedRef.current = false; // Permitir retry
+          }
+        } catch (err: any) {
+          console.error('[INVITE PAGE] Erro ao processar convite:', err);
+          toast.error('Erro ao processar convite');
+          processedRef.current = false; // Permitir retry
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      process();
+    }
+  }, [user, accessToken, code, invite, navigate, refreshWorkspaces, switchWorkspace, isProcessing]);
+
+  // Loading (carregando dados do convite OU processando aceite)
+  if (loading || isProcessing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-950 via-zinc-900 to-black">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-zinc-400">Carregando convite...</p>
+          <p className="text-zinc-400">
+            {isProcessing ? 'Processando seu convite...' : 'Carregando convite...'}
+          </p>
         </div>
       </div>
     );
@@ -61,13 +89,13 @@ export function InvitePage() {
     return <InvalidInvitePage message={error || undefined} />;
   }
 
-  // Se usuário já está logado, mostrar processando
-  if (user) {
+  // Se usuário já está logado e já processamos, apenas aguarde o redirect
+  if (user && processedRef.current) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-950 via-zinc-900 to-black">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-white font-semibold mb-2">Processando seu convite...</p>
+          <p className="text-white font-semibold mb-2">Redirecionando...</p>
           <p className="text-zinc-400 text-sm">Aguarde um momento</p>
         </div>
       </div>

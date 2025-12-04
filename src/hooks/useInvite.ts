@@ -8,12 +8,15 @@ const PENDING_INVITE_KEY = 'pending_invite';
  */
 export function useInvite(inviteCode?: string) {
   const [invite, setInvite] = useState<InviteData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // FIX: Começa como true para evitar flash de erro
   const [error, setError] = useState<string | null>(null);
 
   // Buscar dados do convite
   useEffect(() => {
-    if (!inviteCode) return;
+    if (!inviteCode) {
+      setLoading(false); // Se não tem código, para de carregar
+      return;
+    }
 
     const loadInvite = async () => {
       setLoading(true);

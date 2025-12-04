@@ -21,9 +21,12 @@ interface FollowUpCategory {
 interface FollowUpCategoriesManagerProps {
   isDark: boolean;
   agentId: string; // Novo prop para identificar o agente
+  workspaceId: string | null; // ✅ WORKSPACE ID
+  refreshTrigger?: number; // Trigger externo para forçar reload
+  onCategoryChanged?: () => void; // ✅ Callback para notificar mudanças
 }
 
-export function FollowUpCategoriesManager({ isDark, agentId }: FollowUpCategoriesManagerProps) {
+export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refreshTrigger, onCategoryChanged }: FollowUpCategoriesManagerProps) {
   const [categories, setCategories] = useState<FollowUpCategory[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<FollowUpCategory | null>(null);
@@ -45,7 +48,7 @@ export function FollowUpCategoriesManager({ isDark, agentId }: FollowUpCategorie
   useEffect(() => {
     loadCategories();
     loadFollowUpMode();
-  }, []);
+  }, [refreshTrigger]);
 
   const loadCategories = async () => {
     try {
@@ -148,16 +151,30 @@ export function FollowUpCategoriesManager({ isDark, agentId }: FollowUpCategorie
 
         if (error) throw error;
       } else {
-        // Create
+        // Create - ✅ ADICIONAR workspace_id
+        if (!workspaceId) {
+          alert('Workspace não identificado. Faça login novamente.');
+          return;
+        }
+
         const { error } = await supabase
           .from('follow_up_categories')
-          .insert([formData]);
+          .insert([{
+            ...formData,
+            workspace_id: workspaceId, // ✅ OBRIGATÓRIO
+          }]);
 
         if (error) throw error;
       }
 
       await loadCategories();
       handleCloseModal();
+      
+      // ✅ Notificar mudança para sincronizar com FollowUpModelsManager
+      console.log('[FollowUpCategoriesManager] Notificando mudança de categorias');
+      if (onCategoryChanged) {
+        onCategoryChanged();
+      }
     } catch (error) {
       console.error('Error saving category:', error);
       alert('Erro ao salvar categoria. Verifique o console.');
@@ -175,6 +192,9 @@ export function FollowUpCategoriesManager({ isDark, agentId }: FollowUpCategorie
 
       if (error) throw error;
       await loadCategories();
+      if (onCategoryChanged) {
+        onCategoryChanged();
+      }
     } catch (error) {
       console.error('Error deleting category:', error);
       alert('Erro ao excluir categoria. Pode haver modelos vinculados.');
@@ -424,7 +444,7 @@ export function FollowUpCategoriesManager({ isDark, agentId }: FollowUpCategorie
             <button
               onClick={handleCloseModal}
               className={cn(
-                "px-4 py-2 text-sm transition-colors",
+                "px-4 py-2 text-sm transition-colors rounded-lg",
                 isDark
                   ? "text-white/70 hover:bg-white/[0.05]"
                   : "text-zinc-600 hover:bg-zinc-100"
@@ -435,7 +455,7 @@ export function FollowUpCategoriesManager({ isDark, agentId }: FollowUpCategorie
             <button
               onClick={handleSave}
               disabled={!formData.name || !formData.ai_instructions}
-              className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white text-sm transition-colors rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {editingCategory ? 'Salvar Alterações' : 'Criar Categoria'}
             </button>

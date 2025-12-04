@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Plus, GripVertical, Edit2 } from 'lucide-react';
+import { X, Plus, GripVertical, Trash2 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 
 interface FunnelColumn {
@@ -11,18 +11,22 @@ interface EditFunnelModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (funnelName: string, columns: FunnelColumn[]) => void;
+  onDeleteFunnel?: () => void;
   theme: Theme;
   currentFunnelName: string;
   currentColumns: FunnelColumn[];
+  currentRole?: string;
 }
 
 export function EditFunnelModal({ 
   isOpen, 
   onClose, 
-  onSave, 
+  onSave,
+  onDeleteFunnel,
   theme,
   currentFunnelName,
   currentColumns,
+  currentRole,
 }: EditFunnelModalProps) {
   const [funnelName, setFunnelName] = useState('');
   const [columns, setColumns] = useState<FunnelColumn[]>([]);
@@ -53,6 +57,10 @@ export function EditFunnelModal({
     setColumns(columns.map((col) => (col.id === id ? { ...col, name } : col)));
   };
 
+  const handleRemoveColumn = (id: string) => {
+    setColumns(columns.filter((col) => col.id !== id));
+  };
+
   const handleSave = () => {
     if (!funnelName.trim()) {
       alert('Por favor, insira um nome para o funil');
@@ -68,6 +76,8 @@ export function EditFunnelModal({
     onSave(funnelName, columns);
   };
 
+  const canDelete = currentRole && ['admin', 'owner'].includes(currentRole);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -78,11 +88,11 @@ export function EditFunnelModal({
         onClick={onClose}
       />
 
-      {/* Modal */}
+      {/* Modal Container */}
       <div
         className={`relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border shadow-2xl transition-colors ${
           isDark
-            ? 'bg-elevated border-white/[0.08]'
+            ? 'bg-[#0A0A0A] border-white/[0.08]'
             : 'bg-white border-border-light'
         }`}
       >
@@ -108,7 +118,7 @@ export function EditFunnelModal({
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto max-h-[calc(90vh-140px)] px-6 py-5">
+        <div className="overflow-y-auto max-h-[calc(90vh-200px)] px-6 py-5">
           {/* Funnel Name */}
           <div className="mb-6">
             <label
@@ -176,21 +186,28 @@ export function EditFunnelModal({
                       value={column.name}
                       onChange={(e) => handleColumnNameChange(column.id, e.target.value)}
                       placeholder={`Nome da coluna ${index + 1}`}
-                      className={`w-full border px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none focus:border-[#0169D9] ${
+                      className={`w-full px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none ${
                         isDark
-                          ? 'bg-elevated border-white/[0.08] text-white placeholder-white/40'
-                          : 'bg-white border-border-light text-text-primary-light placeholder-text-secondary-light'
+                          ? 'bg-elevated text-white placeholder-white/40'
+                          : 'bg-white text-text-primary-light placeholder-text-secondary-light'
                       }`}
                     />
                   </div>
 
-                  <div
-                    className={`p-1.5 rounded-lg ${
-                      isDark ? 'text-white/30' : 'text-text-secondary-light'
+                  <button
+                    onClick={() => handleRemoveColumn(column.id)}
+                    disabled={columns.length <= 1}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      columns.length <= 1
+                        ? 'opacity-30 cursor-not-allowed'
+                        : isDark
+                        ? 'hover:bg-white/[0.05] text-white/50 hover:text-red-400'
+                        : 'hover:bg-light-elevated text-text-secondary-light hover:text-red-500'
                     }`}
+                    title={columns.length <= 1 ? 'O funil deve ter pelo menos uma coluna' : 'Remover coluna'}
                   >
-                    <Edit2 className="w-4 h-4" />
-                  </div>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -200,9 +217,40 @@ export function EditFunnelModal({
                 isDark ? 'text-white/40' : 'text-text-secondary-light'
               }`}
             >
-              Você pode editar nomes de colunas existentes e adicionar novas colunas ao funil.
+              {columns.length <= 1 
+                ? 'O funil deve ter pelo menos uma coluna.'
+                : 'Você pode editar nomes de colunas, adicionar novas ou remover colunas existentes. Se uma coluna tiver leads, eles serão migrados automaticamente.'
+              }
             </p>
           </div>
+
+          {/* Delete Funnel Section */}
+          {canDelete && onDeleteFunnel && (
+            <div className={`mt-6 p-4 rounded-lg border ${
+              isDark ? 'bg-red-500/5 border-red-500/20' : 'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex items-start gap-3">
+                <Trash2 className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-red-600 dark:text-red-500 mb-1">
+                    Zona de Perigo
+                  </h3>
+                  <p className={`text-sm mb-3 ${
+                    isDark ? 'text-white/50' : 'text-text-secondary-light'
+                  }`}>
+                    Deletar este funil irá migrar todos os leads para outro funil automaticamente.
+                  </p>
+                  <button
+                    onClick={onDeleteFunnel}
+                    className="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Deletar Funil
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

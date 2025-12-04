@@ -129,6 +129,9 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
   const [saving, setSaving] = useState(false);
   const saveFunction = useRef<(() => Promise<void>) | null>(null);
 
+  // Estado para sincronizar atualização de categorias entre componentes
+  const [categoriesRefreshTrigger, setCategoriesRefreshTrigger] = useState(0);
+
   // Função para verificar tabelas
   const checkTablesExistence = async () => {
     setCheckingTables(true);
@@ -347,7 +350,13 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
 
               {/* Follow-ups Management */}
               {existingAgentId && (
-                <FollowUpCategoriesManager isDark={isDark} agentId={existingAgentId} />
+                <FollowUpCategoriesManager 
+                  isDark={isDark} 
+                  agentId={existingAgentId} 
+                  workspaceId={workspaceId} 
+                  refreshTrigger={categoriesRefreshTrigger}
+                  onCategoryChanged={() => setCategoriesRefreshTrigger(prev => prev + 1)}
+                />
               )}
 
               <div className={cn(
@@ -355,7 +364,11 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
                 isDark ? "border-white/[0.08]" : "border-zinc-200"
               )} />
 
-              <FollowUpModelsManager isDark={isDark} />
+              <FollowUpModelsManager 
+                isDark={isDark} 
+                workspaceId={workspaceId} 
+                categoriesRefreshTrigger={categoriesRefreshTrigger}
+              />
             </>
           )}
         </div>
@@ -455,7 +468,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                 onClick={() => setShowResetMenu(false)}
               />
               <div className={`absolute right-0 top-full mt-2 w-64 rounded-lg shadow-lg border z-20 ${
-                isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-gray-200'
+                isDark ? 'bg-[#1C1C1E] border-white/[0.08]' : 'bg-white border-gray-200'
               }`}>
                 <button
                   onClick={() => {
@@ -600,7 +613,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
         </div>
 
         {/* Input */}
-        <div className={`px-6 py-4 border-t ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
+        <div className={`px-6 py-4 border-t ${isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'border-border-light'}`}>
           {/* Queue indicator */}
           {queueSize > 0 && (
             <div className={`mb-2 px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 ${
@@ -678,7 +691,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowTemplateModal(false)}>
           <div 
             className={`w-full max-w-2xl mx-4 rounded-xl shadow-2xl ${
-              isDark ? 'bg-elevated border border-white/[0.08]' : 'bg-white border border-gray-200'
+              isDark ? 'bg-[#1C1C1E] border border-white/[0.08]' : 'bg-white border border-gray-200'
             }`}
             onClick={(e) => e.stopPropagation()}
           >

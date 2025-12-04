@@ -152,12 +152,12 @@ function KanbanColumnComponent({
             drop(node);
             scrollContainerRef.current = node;
           }}
-          className={`flex-1 rounded-xl p-2 border transition-all duration-200 overflow-y-auto scrollbar-thin ${
+          className={`flex-1 rounded-xl p-2 transition-all duration-200 overflow-y-auto scrollbar-thin relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[1px] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[1px] ${
             isActive
-              ? 'border-[#0169D9] bg-[#0169D9]/5'
+              ? 'border border-[#0169D9] bg-[#0169D9]/5'
               : isDark
-              ? 'bg-elevated/50 border-white/[0.05]'
-              : 'bg-light-elevated border-border-light-elevated'
+              ? 'bg-elevated/50 border-t border-b border-white/[0.05] before:bg-gradient-to-b before:from-white/[0.05] before:to-transparent after:bg-gradient-to-b after:from-white/[0.05] after:to-transparent'
+              : 'bg-light-elevated border-t border-b border-border-light-elevated before:bg-gradient-to-b before:from-black/[0.1] before:to-transparent after:bg-gradient-to-b after:from-black/[0.1] after:to-transparent'
           }`}
         >
           <div className="space-y-2">

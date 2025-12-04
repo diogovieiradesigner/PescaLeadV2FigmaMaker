@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import { LeadsFilters } from '../types/leads.types';
 
 // Tipo de retorno baseado na documentação RPC
@@ -23,8 +23,6 @@ interface LeadsByChannel {
   }>;
 }
 
-const supabase = createClient();
-
 export function useLeadsByChannel(workspaceId: string, filters: LeadsFilters) {
   return useQuery<LeadsByChannel | null>({
     queryKey: ['leads-by-channel', workspaceId, filters],
@@ -42,7 +40,51 @@ export function useLeadsByChannel(workspaceId: string, filters: LeadsFilters) {
         throw error;
       }
 
-      return data;
+      // O RPC pode retornar arrays/objetos como strings JSON - fazer parse
+      let result = data as any;
+      
+      if (!result || typeof result !== 'object') {
+        console.warn('[useLeadsByChannel] Dados inválidos recebidos do RPC:', data);
+        return {
+          total: 0,
+          channels: {},
+          chart_data: []
+        };
+      }
+
+      // Parse de chart_data se vier como string
+      if (typeof result.chart_data === 'string') {
+        try {
+          result.chart_data = JSON.parse(result.chart_data);
+        } catch (e) {
+          console.error('[useLeadsByChannel] Erro ao fazer parse de chart_data:', e);
+          result.chart_data = [];
+        }
+      }
+      
+      // Parse de channels se vier como string
+      if (typeof result.channels === 'string') {
+        try {
+          result.channels = JSON.parse(result.channels);
+        } catch (e) {
+          console.error('[useLeadsByChannel] Erro ao fazer parse de channels:', e);
+          result.channels = {};
+        }
+      }
+
+      // Garantir que chart_data seja sempre um array
+      if (!Array.isArray(result.chart_data)) {
+        console.warn('[useLeadsByChannel] chart_data não é um array:', result.chart_data);
+        result.chart_data = [];
+      }
+      
+      // Garantir que channels seja um objeto
+      if (!result.channels || typeof result.channels !== 'object') {
+        console.warn('[useLeadsByChannel] channels não é um objeto:', result.channels);
+        result.channels = {};
+      }
+
+      return result as LeadsByChannel;
     },
     enabled: !!workspaceId,
     staleTime: 5 * 60 * 1000, // 5 minutos

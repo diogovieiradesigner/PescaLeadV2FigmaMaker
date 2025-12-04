@@ -23,6 +23,8 @@ export interface PipelineStep {
   errorMessage: string | null;
   model: string | null; // Modelo de IA usado no step
   config: any | null; // Configuração do step
+  inputData: any | null; // Dados de entrada do step
+  outputData: any | null; // Dados de saída do step
 }
 
 export interface PipelineInfo {
@@ -159,7 +161,9 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
               input_summary,
               output_summary,
               error_message,
-              config
+              config,
+              input_data,
+              output_data
             )
           )
         `)
@@ -231,7 +235,9 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
                 outputSummary: step.output_summary,
                 errorMessage: step.error_message,
                 model: step.config?.model || null, // Extrair modelo de config.model
-                config: step.config
+                config: step.config,
+                inputData: step.input_data || null,
+                outputData: step.output_data || null
               }))
             };
 

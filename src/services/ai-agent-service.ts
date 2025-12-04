@@ -1,14 +1,10 @@
 /**
- * Serviço para gerenciar Agentes de IA
- * 
- * IMPORTANTE: O banco já possui 22 colunas na tabela ai_agents.
- * Este serviço foi ajustado para usar apenas as colunas necessárias
- * para o frontend, sem quebrar a estrutura existente.
+ * AI Agent Service
+ * Gerencia agentes de IA (criação, leitura, atualização, exclusão)
+ * Lógica de negócio centralizada
  */
 
-import { createClient } from '../utils/supabase/client';
-
-const supabase = createClient();
+import { supabase } from '../utils/supabase/client';
 
 export interface AIAgent {
   id: string;
@@ -17,8 +13,10 @@ export interface AIAgent {
   api_key_encrypted: string;
   model: string;
   is_active: boolean;
+  default_attendant_type: 'ai' | 'human';
   system_prompt: string;
   specialist_agents: SpecialistAgent[];
+  orchestrator_enabled: boolean;
   crm_auto_update: boolean;
   crm_update_prompt: string | null;
   behavior_config: BehaviorConfig;
@@ -60,8 +58,10 @@ export interface CreateAIAgentData {
   api_key_encrypted: string;
   model: string;
   is_active: boolean;
+  default_attendant_type: 'ai' | 'human';
   system_prompt: string;
   specialist_agents?: SpecialistAgent[];
+  orchestrator_enabled?: boolean;
   crm_auto_update?: boolean;
   crm_update_prompt?: string | null;
   behavior_config?: Partial<BehaviorConfig>;
@@ -72,8 +72,10 @@ export interface UpdateAIAgentData {
   api_key_encrypted?: string;
   model?: string;
   is_active?: boolean;
+  default_attendant_type?: 'ai' | 'human';
   system_prompt?: string;
   specialist_agents?: SpecialistAgent[];
+  orchestrator_enabled?: boolean;
   crm_auto_update?: boolean;
   crm_update_prompt?: string | null;
   behavior_config?: Partial<BehaviorConfig>;

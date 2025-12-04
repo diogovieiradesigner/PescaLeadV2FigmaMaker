@@ -9,6 +9,7 @@ import { getLeadById } from '../../services/leads-service';
 import { CRMLead } from '../../utils/supabase/converters';
 import { AddLeadToKanbanModal } from './AddLeadToKanbanModal';
 import { updateConversation } from '../../services/chat-service';
+import { useLeadCustomFields } from '../../hooks/useLeadCustomFields'; // ✅ Lazy loading de custom fields
 
 // ✅ Tipos para campos JSONB
 interface EmailEntry {
@@ -200,6 +201,15 @@ export function ContactInfo({
   const [leadData, setLeadData] = useState<CRMLead | null>(null);
   const [loadingLead, setLoadingLead] = useState(false);
   
+  // ✅ LAZY LOADING: Custom fields carregam sob demanda (com cache - conversa reutiliza)
+  const { 
+    customFields, 
+    loading: loadingCustomFields 
+  } = useLeadCustomFields(
+    showPipelineData && leadData?.id ? leadData.id : null,  // Só busca se pipeline estiver aberto
+    { cache: true }  // Conversa mantém cache
+  );
+  
   // ✅ Estado para controlar o modal de adicionar lead
   const [showAddLeadModal, setShowAddLeadModal] = useState(false);
 
@@ -329,7 +339,7 @@ export function ContactInfo({
 
       {/* Header */}
       <div
-        className={`px-6 py-4 border-b ${
+        className={`px-6 py-3 border-b flex items-center justify-between h-[85px] ${
           isDark ? 'border-white/[0.08]' : 'border-border-light'
         }`}
       >
@@ -631,15 +641,21 @@ export function ContactInfo({
                     </div>
                   )}
 
-                  {/* Campos Personalizados - usando leadData.customFields */}
-                  {leadData.customFields && leadData.customFields.length > 0 && (
+                  {/* ✅ Campos Personalizados - Lazy Loading via hook */}
+                  {loadingCustomFields ? (
+                    <div className={`border-t pt-3 ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
+                      <span className={`text-xs block mb-2 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                        Carregando campos personalizados...
+                      </span>
+                    </div>
+                  ) : customFields.length > 0 && (
                     <>
                       <div className={`border-t pt-3 ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
                         <span className={`text-xs block mb-2 font-medium ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
                           Campos Personalizados
                         </span>
                       </div>
-                      {leadData.customFields.map((field) => (
+                      {customFields.map((field) => (
                         <div key={field.id}>
                           <span className={`text-xs block mb-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
                             {field.fieldName}

@@ -5,6 +5,7 @@ import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { AudioPlayer } from './AudioPlayer';
 import { PipelineLogsViewer } from '../PipelineLogsViewer';
 import { usePipelineLogs } from '../../hooks/usePipelineLogs';
+import { TranscriptionDropdown } from './TranscriptionDropdown';
 
 interface MessageBubbleProps {
   message: Message;
@@ -16,6 +17,7 @@ interface MessageBubbleProps {
 
 // ============================================
 // FUNÇÃO PARA DETECTAR E TORNAR LINKS CLICÁVEIS
+// ✅ PROTEÇÃO CONTRA XSS: Apenas http/https são permitidos
 // ============================================
 function linkifyText(text: string, isSentMessage: boolean): React.ReactNode {
   // Regex para detectar URLs (http, https, www)
@@ -34,12 +36,41 @@ function linkifyText(text: string, isSentMessage: boolean): React.ReactNode {
         url = `https://${part}`;
       }
       
+      // ✅ SEGURANÇA: Validar protocolo antes de renderizar link
+      try {
+        const parsed = new URL(url);
+        
+        // ✅ APENAS http e https são permitidos
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          console.warn('[MessageBubble] Protocolo não permitido:', parsed.protocol);
+          return <span key={index}>{part}</span>; // Renderizar como texto normal
+        }
+        
+        // ✅ SEGURANÇA: Validar que não é um domínio malicioso óbvio
+        const suspiciousPatterns = [
+          /javascript/i,
+          /data:/i,
+          /file:/i,
+          /vbscript/i,
+        ];
+        
+        if (suspiciousPatterns.some(pattern => pattern.test(url))) {
+          console.warn('[MessageBubble] URL suspeita bloqueada:', url);
+          return <span key={index}>{part}</span>;
+        }
+        
+      } catch (error) {
+        // URL inválida - renderizar como texto
+        console.warn('[MessageBubble] URL inválida:', url);
+        return <span key={index}>{part}</span>;
+      }
+      
       return (
         <a
           key={index}
           href={url}
           target="_blank"
-          rel="noopener noreferrer"
+          rel="noopener noreferrer" // ✅ SEGURANÇA: Prevenir window.opener exploit
           className={`underline hover:opacity-80 transition-opacity break-all ${
             isSentMessage ? 'text-white' : 'text-[#0169D9]'
           }`}
@@ -50,7 +81,7 @@ function linkifyText(text: string, isSentMessage: boolean): React.ReactNode {
       );
     }
     
-    // Se é texto normal
+    // Se é texto normal - renderizar diretamente (React já escapa HTML)
     return <span key={index}>{part}</span>;
   });
 }
@@ -100,7 +131,7 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
             : message.type === 'sent'
             ? 'bg-[#0169D9] text-white'
             : isDark
-            ? 'bg-elevated text-white'
+            ? 'bg-white/[0.08] text-white'
             : 'bg-light-elevated text-text-primary-light'
         }`}
       >
@@ -137,22 +168,34 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
                   onClick={() => onExpandImage(message.imageUrl!)}
                   loading="lazy"
                 />
+                {/* ✅ Dropdown de Transcrição para Imagem */}
+                <TranscriptionDropdown 
+                  message={message} 
+                  isDark={message.type === 'sent' ? true : isDark} 
+                />
               </div>
             )}
 
             {message.contentType === 'audio' && message.audioUrl && (
-              <AudioPlayer 
-                src={message.audioUrl}
-                duration={message.audioDuration}
-                isOwnMessage={message.type === 'sent'}
-                isDark={isDark}
-              />
+              <div>
+                <AudioPlayer 
+                  src={message.audioUrl}
+                  duration={message.audioDuration}
+                  isOwnMessage={message.type === 'sent'}
+                  isDark={isDark}
+                />
+                {/* ✅ Dropdown de Transcrição para Áudio */}
+                <TranscriptionDropdown 
+                  message={message} 
+                  isDark={message.type === 'sent' ? true : isDark} 
+                />
+              </div>
             )}
           </>
         )}
 
         <div
-          className={`flex items-center gap-2 justify-between mt-1 text-xs ${
+          className={`flex items-center gap-2 justify-end mt-1 text-xs ${ 
             isDeleted
               ? isDark ? 'text-white/30' : 'text-gray-400'
               : message.type === 'sent'
@@ -162,19 +205,7 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
               : 'text-text-secondary-light'
           }`}
         >
-          {/* ✅ Pipeline Logs Viewer - lado esquerdo */}
-          {!isDeleted && pipeline && showPipeline ? (
-            <PipelineLogsViewer 
-              pipeline={pipeline}
-              defaultExpanded={false}
-              isDark={message.type === 'sent' ? true : isDark}
-              inline={true}
-            />
-          ) : (
-            <div></div>
-          )}
-          
-          {/* Timestamp e status - lado direito */}
+          {/* Timestamp e status - acima da pipeline */}
           <div className="flex items-center gap-1">
             <span>{message.timestamp}</span>
             {(message.type === 'sent' || isDeleted) && !isDeleted && (
@@ -198,6 +229,18 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
             )}
           </div>
         </div>
+
+        {/* ✅ Pipeline Logs Viewer - abaixo do timestamp */}
+        {!isDeleted && pipeline && showPipeline && (
+          <div className="mt-1">
+            <PipelineLogsViewer 
+              pipeline={pipeline}
+              defaultExpanded={false}
+              isDark={message.type === 'sent' ? true : isDark}
+              inline={true}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,14 +1,12 @@
 // ============================================
 // FUNNELS SERVICE
-// Gerencia funis de vendas (pipelines)
+// Gerencia funis de vendas
 // ============================================
 
-import { createClient } from '../utils/supabase/client';
-import type { DbFunnel, DbFunnelColumn, DbLead } from '../types/database';
+import { supabase } from '../utils/supabase/client';
+import type { DbFunnel } from '../types/database';
 import { dbFunnelToFrontend, dbFunnelsToFrontend, type Funnel } from '../utils/supabase/converters';
 import * as customFieldsService from './custom-fields-service';
-
-const supabase = createClient();
 
 // ============================================
 // TIPOS
@@ -19,6 +17,7 @@ export interface CreateFunnelData {
   name: string;
   description?: string;
   position?: number;
+  columns?: { name: string; color?: string }[]; // ✅ Colunas customizadas opcionais
 }
 
 export interface UpdateFunnelData {
@@ -383,19 +382,26 @@ export async function createFunnel(data: CreateFunnelData): Promise<{
       return { funnel: null, error: funnelError || new Error('Erro ao criar funil') };
     }
 
-    // 2. Criar colunas padrão
-    const defaultColumns = [
-      { title: 'Novo Lead', position: 0, color: '#10B981' },
-      { title: 'Contactado', position: 1, color: '#3B82F6' },
-      { title: 'Proposta', position: 2, color: '#F59E0B' },
-      { title: 'Negociação', position: 3, color: '#8B5CF6' },
-      { title: 'Ganho', position: 4, color: '#22C55E' },
-    ];
+    // 2. Criar colunas padrão ou customizadas
+    const columnsData = data.columns
+      ? data.columns.map((col, index) => ({
+          funnel_id: newFunnel.id,
+          title: col.name,
+          position: index,
+          color: col.color || '#10B981', // Cor padrão se não for fornecida
+        }))
+      : [
+          { title: 'Novo Lead', position: 0, color: '#10B981' },
+          { title: 'Contactado', position: 1, color: '#3B82F6' },
+          { title: 'Proposta', position: 2, color: '#F59E0B' },
+          { title: 'Negociação', position: 3, color: '#8B5CF6' },
+          { title: 'Ganho', position: 4, color: '#22C55E' },
+        ];
 
     const { data: columns, error: columnsError } = await supabase
       .from('funnel_columns')
       .insert(
-        defaultColumns.map(col => ({
+        columnsData.map(col => ({
           funnel_id: newFunnel.id,
           title: col.title,
           position: col.position,
@@ -439,46 +445,56 @@ export async function updateFunnel(
   data: UpdateFunnelData
 ): Promise<{ error: Error | null }> {
   try {
-    const updateData: Partial<DbFunnel> = {};
-
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.description !== undefined) updateData.description = data.description;
-    if (data.isActive !== undefined) updateData.is_active = data.isActive;
-    if (data.position !== undefined) updateData.position = data.position;
-
-    const { error: updateError } = await supabase
+    console.log('[FUNNELS SERVICE] Atualizando funil:', funnelId, data);
+    
+    // Get workspace ID
+    const { data: funnelData } = await supabase
       .from('funnels')
-      .update(updateData)
-      .eq('id', funnelId);
-
-    if (updateError) {
-      console.error('[FUNNELS] Erro ao atualizar funil:', updateError);
-      return { error: updateError };
+      .select('workspace_id')
+      .eq('id', funnelId)
+      .single();
+    
+    if (!funnelData) {
+      return { error: new Error('Funil não encontrado') };
     }
-
-    // Atualizar colunas se necessário
-    if (data.columns) {
-      for (const column of data.columns) {
-        const { error: columnUpdateError } = await supabase
-          .from('funnel_columns')
-          .update({
-            title: column.title,
-            position: column.position,
-          })
-          .eq('id', column.id);
-
-        if (columnUpdateError) {
-          console.error('[FUNNELS] Erro ao atualizar coluna:', columnUpdateError);
-          return { error: columnUpdateError };
-        }
+    
+    // Get auth token
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { error: new Error('Não autenticado') };
+    }
+    
+    const workspaceId = funnelData.workspace_id;
+    const { projectId, publicAnonKey } = await import('../utils/supabase/info');
+    
+    // Use backend API to update funnel (handles column deletion)
+    const response = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${workspaceId}/funnels/${funnelId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description,
+          columns: data.columns,
+        }),
       }
+    );
+    
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('[FUNNELS SERVICE] Erro do servidor:', error);
+      return { error: new Error(error.error || 'Erro ao atualizar funil') };
     }
-
-    console.log('[FUNNELS] Funil atualizado com sucesso');
+    
+    console.log('[FUNNELS SERVICE] ✅ Funil atualizado com sucesso');
     return { error: null };
 
   } catch (error) {
-    console.error('[FUNNELS] Erro inesperado:', error);
+    console.error('[FUNNELS SERVICE] ❌ Erro inesperado:', error);
     return { error: error as Error };
   }
 }

@@ -4,6 +4,7 @@ import { Conversation, Message } from '../types/chat';
 import { fetchConversation, fetchConversationByLeadId, sendMessageViaServer, sendAudioViaServer, sendMediaViaServer, sendMessage as sendMessageService, markMessagesAsRead, deleteConversation as deleteConversationService, clearConversationHistory } from '../services/chat-service';
 import { CreateMessageData } from '../utils/supabase/chat-converters';
 import { toast } from 'sonner@2.0.3';
+import { RealtimeChannel } from 'npm:@supabase/supabase-js@2';
 
 interface UseSingleConversationReturn {
   conversation: Conversation | null;
@@ -23,6 +24,10 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  
+  // ✅ OTIMIZAÇÃO: Usar ref para evitar re-fetches duplicados
+  const isFetchingRef = useRef(false);
+  const lastFetchRef = useRef<number>(0);
 
   // 1. Buscar Conversation ID pelo Lead ID
   useEffect(() => {
@@ -33,12 +38,18 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
     }
 
     const loadConversation = async () => {
+      // ✅ Evitar fetch duplicado
+      if (isFetchingRef.current) return;
+      
+      isFetchingRef.current = true;
       setLoading(true);
+      
       try {
         const conv = await fetchConversationByLeadId(leadId);
         if (conv) {
           setConversation(conv);
           setConversationId(conv.id);
+          lastFetchRef.current = Date.now();
         } else {
           setConversation(null);
           setConversationId(null);
@@ -48,36 +59,98 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
         setError('Erro ao carregar conversa');
       } finally {
         setLoading(false);
+        isFetchingRef.current = false;
       }
     };
 
     loadConversation();
   }, [leadId]);
 
-  // 2. Realtime Subscription
+  // 2. Realtime Subscription - OTIMIZADO COM CLEANUP FORÇADO
   useEffect(() => {
     if (!conversationId || !workspaceId) return;
 
     console.log(`🔌 [useSingleConversation] Subscribing to conversation: ${conversationId}`);
+
+    // ✅ CORREÇÃO: Variável local para garantir cleanup do canal correto
+    let channelToCleanup: RealtimeChannel | null = null;
 
     // Subscribe to messages
     const channel = supabase.channel(`single-conversation-${conversationId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
         async (payload) => {
-          console.log('✅ [REALTIME] Message change:', payload.eventType);
-          // Recarregar conversa completa para garantir consistência
-          const updatedConv = await fetchConversation(conversationId);
-          if (updatedConv) {
-             // Preservar estado otimista se necessário, mas aqui vamos simplificar e substituir
-             setConversation(updatedConv);
-          }
+          console.log('✅ [REALTIME] New message inserted');
+          
+          // ✅ OTIMIZAÇÃO: Update otimista - adicionar mensagem diretamente sem re-fetch completo
+          setConversation(prev => {
+            if (!prev) return null;
+            
+            // Converter payload para Message (simplificado)
+            const newMessage: Message = {
+              id: payload.new.id,
+              conversationId: payload.new.conversation_id,
+              sender: payload.new.sent_by === 'user' ? 'user' : 'agent',
+              text: payload.new.text_content || '',
+              timestamp: new Date(payload.new.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+              createdAt: payload.new.created_at,
+              read: payload.new.is_read,
+              contentType: payload.new.content_type,
+              imageUrl: payload.new.media_url,
+              audioUrl: payload.new.media_url,
+              audioDuration: payload.new.audio_duration,
+              type: payload.new.message_type,
+              status: 'sent',
+            };
+            
+            // Verificar se mensagem já existe (evitar duplicatas)
+            if (prev.messages.some(m => m.id === newMessage.id)) {
+              return prev;
+            }
+            
+            return {
+              ...prev,
+              messages: [...prev.messages, newMessage],
+              lastMessage: newMessage.text || 'Mídia',
+              lastUpdate: 'Agora',
+            };
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        async (payload) => {
+          console.log('✅ [REALTIME] Message updated');
+          
+          // ✅ OTIMIZAÇÃO: Atualizar mensagem específica sem re-fetch
+          setConversation(prev => {
+            if (!prev) return null;
+            
+            return {
+              ...prev,
+              messages: prev.messages.map(m => 
+                m.id === payload.new.id 
+                  ? {
+                      ...m,
+                      read: payload.new.is_read,
+                      type: payload.new.message_type === 'delete' ? 'delete' : m.type,
+                    }
+                  : m
+              ),
+            };
+          });
         }
       )
       .on(
@@ -89,19 +162,37 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           filter: `id=eq.${conversationId}`,
         },
         async (payload) => {
-           console.log('✅ [REALTIME] Conversation updated');
-           const updatedConv = await fetchConversation(conversationId);
-           if (updatedConv) setConversation(updatedConv);
+          console.log('✅ [REALTIME] Conversation updated');
+          
+          // ✅ OTIMIZAÇÃO: Atualizar apenas metadados da conversa
+          setConversation(prev => {
+            if (!prev) return null;
+            
+            return {
+              ...prev,
+              status: payload.new.status,
+              tags: payload.new.tags,
+            };
+          });
         }
       )
       .subscribe();
 
+    // ✅ CORREÇÃO: Armazenar referência do canal para cleanup
+    channelToCleanup = channel;
+
     return () => {
-      supabase.removeChannel(channel);
+      console.log(`🔌 [useSingleConversation] Unsubscribing from conversation: ${conversationId}`);
+      
+      // ✅ CORREÇÃO: Garantir que o canal correto seja removido
+      if (channelToCleanup) {
+        supabase.removeChannel(channelToCleanup);
+        channelToCleanup = null;
+      }
     };
   }, [conversationId, workspaceId]);
 
-  // 3. Send Message Logic
+  // 3. Send Message Logic - OTIMIZADO
   const sendMessage = useCallback(async (messageData: any) => {
     if (!conversationId || !workspaceId) return;
 
@@ -151,14 +242,9 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
               fileName: 'image.jpg'
             });
         }
-        // Realtime will update the message status
         
-        // ✅ FORÇAR ATUALIZAÇÃO: Garantir que a mensagem saia do estado "sending"
-        // mesmo se o evento realtime demorar ou falhar.
-        setTimeout(() => {
-           console.log('🔄 [useSingleConversation] Forcing refresh after send');
-           refresh();
-        }, 300);
+        // ✅ OTIMIZAÇÃO: Remover setTimeout - realtime cuida da atualização
+        // O realtime subscription receberá o INSERT e atualizará automaticamente
 
     } catch (err: any) {
         console.error('Error sending message:', err);
@@ -215,6 +301,7 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           }
         );
         
+        // ✅ OTIMIZAÇÃO: Update otimista imediato
         setConversation(prev => {
             if(!prev) return null;
             return {
@@ -228,18 +315,39 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
   }, [workspaceId]);
 
   const refresh = useCallback(() => {
+      // ✅ OTIMIZAÇÃO: Evitar refresh muito frequente (debounce manual)
+      const now = Date.now();
+      if (now - lastFetchRef.current < 1000) {
+        console.log('[useSingleConversation] Skipping refresh - too soon');
+        return;
+      }
+      
+      if (isFetchingRef.current) {
+        console.log('[useSingleConversation] Skipping refresh - already fetching');
+        return;
+      }
+      
+      isFetchingRef.current = true;
+      lastFetchRef.current = now;
+      
       // ✅ Se já tem conversationId, recarregar pela ID
       if(conversationId) {
-        fetchConversation(conversationId).then(setConversation);
+        fetchConversation(conversationId)
+          .then(setConversation)
+          .finally(() => { isFetchingRef.current = false; });
       } 
       // ✅ Senão, forçar busca pela leadId (para quando conversa é criada)
       else if (leadId) {
-        fetchConversationByLeadId(leadId).then((conv) => {
-          if (conv) {
-            setConversation(conv);
-            setConversationId(conv.id);
-          }
-        });
+        fetchConversationByLeadId(leadId)
+          .then((conv) => {
+            if (conv) {
+              setConversation(conv);
+              setConversationId(conv.id);
+            }
+          })
+          .finally(() => { isFetchingRef.current = false; });
+      } else {
+        isFetchingRef.current = false;
       }
   }, [conversationId, leadId]);
 

@@ -39,6 +39,26 @@ export function useKanbanRealtime(options: UseKanbanRealtimeOptions) {
 
   const [isConnected, setIsConnected] = useState(false);
   const recentlyMovedLeads = useRef<Set<string>>(new Set());
+  
+  // ✅ FIX: Usar refs para evitar reconexões desnecessárias
+  const callbacksRef = useRef({
+    onLeadCreated,
+    onLeadUpdated,
+    onLeadMoved,
+    onLeadDeleted,
+    onFunnelUpdated,
+  });
+  
+  // Atualizar refs sempre que os callbacks mudarem
+  useEffect(() => {
+    callbacksRef.current = {
+      onLeadCreated,
+      onLeadUpdated,
+      onLeadMoved,
+      onLeadDeleted,
+      onFunnelUpdated,
+    };
+  }, [onLeadCreated, onLeadUpdated, onLeadMoved, onLeadDeleted, onFunnelUpdated]);
 
   // Track leads that current user just moved (for conflict detection)
   const trackRecentMove = useCallback((leadId: string) => {
@@ -71,16 +91,16 @@ export function useKanbanRealtime(options: UseKanbanRealtimeOptions) {
     if (eventType === 'INSERT') {
       const entry = { ...baseEntry, type: 'lead_created' } as const;
       
-      if (!isCurrentUser && onLeadCreated) {
-        onLeadCreated(entry);
+      if (!isCurrentUser && callbacksRef.current.onLeadCreated) {
+        callbacksRef.current.onLeadCreated(entry);
         toast.info('Novo lead criado', { duration: 3000 });
       }
     } 
     else if (eventType === 'DELETE') {
       const entry = { ...baseEntry, type: 'lead_deleted', entity_id: oldRecord.id } as const;
       
-      if (!isCurrentUser && onLeadDeleted) {
-        onLeadDeleted(entry);
+      if (!isCurrentUser && callbacksRef.current.onLeadDeleted) {
+        callbacksRef.current.onLeadDeleted(entry);
         toast.info('Lead deletado', { duration: 3000 });
       }
     } 
@@ -102,26 +122,26 @@ export function useKanbanRealtime(options: UseKanbanRealtimeOptions) {
           );
         }
 
-        if (!isCurrentUser && onLeadMoved) {
-          onLeadMoved(entry);
+        if (!isCurrentUser && callbacksRef.current.onLeadMoved) {
+          callbacksRef.current.onLeadMoved(entry);
         }
       } else {
         // Apenas update normal
         const entry = { ...baseEntry, type: 'lead_updated' } as const;
         
-        if (!isCurrentUser && onLeadUpdated) {
-          onLeadUpdated(entry);
+        if (!isCurrentUser && callbacksRef.current.onLeadUpdated) {
+          callbacksRef.current.onLeadUpdated(entry);
         }
       }
     }
-  }, [currentUserId, onLeadCreated, onLeadDeleted, onLeadMoved, onLeadUpdated]);
+  }, [currentUserId]);
 
   const handleFunnelChange = useCallback((payload: RealtimePostgresChangesPayload<any>) => {
     const { new: newRecord } = payload;
     const userId = newRecord?.updated_by || 'unknown';
     const isCurrentUser = userId === currentUserId;
 
-    if (!isCurrentUser && onFunnelUpdated) {
+    if (!isCurrentUser && callbacksRef.current.onFunnelUpdated) {
       const entry: ChangelogEntry = {
         id: crypto.randomUUID(),
         sequence: Date.now(),
@@ -133,10 +153,10 @@ export function useKanbanRealtime(options: UseKanbanRealtimeOptions) {
         data: newRecord,
       };
       
-      onFunnelUpdated(entry);
+      callbacksRef.current.onFunnelUpdated(entry);
       toast.info('Funil atualizado', { duration: 3000 });
     }
-  }, [currentUserId, onFunnelUpdated]);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!enabled || !workspaceId) {
@@ -198,7 +218,7 @@ export function useKanbanRealtime(options: UseKanbanRealtimeOptions) {
       supabase.removeChannel(channel);
       setIsConnected(false);
     };
-  }, [workspaceId, enabled, handleLeadChange, handleFunnelChange]);
+  }, [workspaceId, enabled]); // ✅ FIX: Removido handleLeadChange e handleFunnelChange (agora usam callbacksRef)
 
   return {
     trackRecentMove,

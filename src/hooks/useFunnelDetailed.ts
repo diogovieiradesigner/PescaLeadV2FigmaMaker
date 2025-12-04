@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import { FunnelDetailed, LeadsFilters } from '../types/leads.types';
-
-const supabase = createClient();
 
 export function useFunnelDetailed(workspaceId: string, filters: LeadsFilters) {
   return useQuery<FunnelDetailed | null>({

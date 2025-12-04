@@ -110,7 +110,7 @@ export function ConversationList({
     >
       {/* Header */}
       <div
-        className={`px-4 py-3 border-b ${
+        className={`px-4 py-3 border-b h-[85px] flex flex-col justify-center ${
           isDark ? 'border-white/[0.08]' : 'border-border-light'
         }`}
       >

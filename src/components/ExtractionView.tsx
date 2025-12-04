@@ -785,7 +785,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                   ) : (
                     currentHistory.map((item) => (
                       <tr key={item.id} className={`transition-all ${
-                        isDark ? 'hover:bg-white/[0.02]' : 'hover:bg-light-elevated/50'
+                        isDark ? 'bg-white/[0.02] hover:bg-white/[0.04]' : 'hover:bg-light-elevated/50'
                       }`}>
                         <td className={`px-6 py-4 ${
                           isDark ? 'text-white/70' : 'text-text-primary-light'

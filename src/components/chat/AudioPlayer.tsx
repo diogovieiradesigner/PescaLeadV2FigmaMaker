@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Play, Pause } from 'lucide-react';
+import { useAudioManager } from '../../contexts/AudioManagerContext';
 
 interface AudioPlayerProps {
   src: string;
@@ -14,6 +15,9 @@ export function AudioPlayer({ src, duration: initialDuration, isOwnMessage, isDa
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(initialDuration || 0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // ✅ CORREÇÃO: Usar context ao invés de querySelectorAll
+  const { playAudio, isCurrentAudio } = useAudioManager();
 
   // Format time helper
   const formatTime = (seconds: number) => {
@@ -46,30 +50,39 @@ export function AudioPlayer({ src, duration: initialDuration, isOwnMessage, isDa
       setProgress(0);
       setCurrentTime(0);
     };
+    
+    // ✅ CORREÇÃO: Detectar quando outro áudio começa a tocar
+    const handlePause = () => {
+      if (audioRef.current && !isCurrentAudio(audioRef.current)) {
+        setIsPlaying(false);
+      }
+    };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('pause', handlePause);
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('pause', handlePause);
     };
-  }, [duration]);
+  }, [duration, isCurrentAudio]);
 
   const togglePlay = () => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
+        setIsPlaying(false);
       } else {
-        // Pause all other audios if needed (optional, but good UX)
-        document.querySelectorAll('audio').forEach(el => {
-            if (el !== audioRef.current) el.pause();
-        });
+        // ✅ CORREÇÃO: Usar context ao invés de querySelectorAll
+        // Isso pausa automaticamente o áudio anterior (se houver)
+        playAudio(audioRef.current);
         audioRef.current.play();
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
     }
   };
 

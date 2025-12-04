@@ -97,7 +97,7 @@ function FilterDropdown({ label, options, selectedValues, onToggle, theme }: Fil
               zIndex: 9999,
             }}
             className={`min-w-[180px] rounded-lg shadow-2xl border ${
-              isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-border-light'
+              isDark ? 'bg-[#1a1a1a] border-white/[0.08]' : 'bg-white border-border-light'
             }`}
           >
             <div className="py-1 max-h-[300px] overflow-y-auto">

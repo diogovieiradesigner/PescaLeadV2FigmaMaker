@@ -259,19 +259,110 @@ export async function updateFunnel(
   
   // Update columns if provided
   if (updates.columns && updates.columns.length > 0) {
-    for (const col of updates.columns) {
-      const { error } = await supabase
-        .from('funnel_columns')
-        .update({
-          title: col.title,
-          position: col.position,
-        })
-        .eq('id', col.id)
-        .eq('funnel_id', funnelId);
+    console.log('[KANBAN HELPERS] Atualizando colunas:', {
+      receivedColumnsCount: updates.columns.length,
+      receivedColumns: updates.columns.map(c => ({ id: c.id, title: c.title }))
+    });
+    
+    // 1. Get existing columns from database
+    const { data: existingColumns, error: fetchError } = await supabase
+      .from('funnel_columns')
+      .select('id')
+      .eq('funnel_id', funnelId);
+    
+    if (fetchError) {
+      console.error('Error fetching existing columns:', fetchError);
+      throw new Error(`Failed to fetch existing columns: ${fetchError.message}`);
+    }
+    
+    const existingColumnIds = (existingColumns || []).map((col: any) => col.id);
+    const updatedColumnIds = updates.columns.map(col => col.id);
+    
+    console.log('[KANBAN HELPERS] Comparação de colunas:', {
+      existingCount: existingColumnIds.length,
+      existingIds: existingColumnIds,
+      updatedCount: updatedColumnIds.length,
+      updatedIds: updatedColumnIds
+    });
+    
+    // 2. Delete columns that are no longer in the list
+    const columnsToDelete = existingColumnIds.filter(id => !updatedColumnIds.includes(id));
+    
+    console.log('[KANBAN HELPERS] Colunas para deletar:', {
+      count: columnsToDelete.length,
+      ids: columnsToDelete
+    });
+    
+    if (columnsToDelete.length > 0) {
+      // Before deleting columns, we need to handle leads in those columns
+      // Option 1: Prevent deletion if there are leads
+      // Option 2: Move leads to another column
+      // For now, let's prevent deletion if there are leads
       
-      if (error) {
-        console.error('Error updating column:', error);
-        throw new Error(`Failed to update column: ${error.message}`);
+      for (const columnId of columnsToDelete) {
+        const { count, error: countError } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .eq('funnel_id', funnelId)
+          .eq('column_id', columnId)
+          .eq('status', 'active');
+        
+        if (countError) {
+          console.error('Error counting leads in column:', countError);
+          throw new Error(`Failed to count leads: ${countError.message}`);
+        }
+        
+        if (count && count > 0) {
+          throw new Error(`Não é possível deletar coluna com ${count} lead(s). Mova os leads antes de deletar.`);
+        }
+      }
+      
+      // Now safe to delete
+      const { error: deleteError } = await supabase
+        .from('funnel_columns')
+        .delete()
+        .in('id', columnsToDelete);
+      
+      if (deleteError) {
+        console.error('Error deleting columns:', deleteError);
+        throw new Error(`Failed to delete columns: ${deleteError.message}`);
+      }
+    }
+    
+    // 3. Update or insert columns
+    for (const col of updates.columns) {
+      // Check if column exists (is it an existing UUID or a temp ID?)
+      const isExisting = existingColumnIds.includes(col.id);
+      
+      if (isExisting) {
+        // Update existing column
+        const { error } = await supabase
+          .from('funnel_columns')
+          .update({
+            title: col.title,
+            position: col.position,
+          })
+          .eq('id', col.id)
+          .eq('funnel_id', funnelId);
+        
+        if (error) {
+          console.error('Error updating column:', error);
+          throw new Error(`Failed to update column: ${error.message}`);
+        }
+      } else {
+        // Insert new column (id is temp, let database generate real UUID)
+        const { error } = await supabase
+          .from('funnel_columns')
+          .insert({
+            funnel_id: funnelId,
+            title: col.title,
+            position: col.position,
+          });
+        
+        if (error) {
+          console.error('Error inserting column:', error);
+          throw new Error(`Failed to insert column: ${error.message}`);
+        }
       }
     }
   }
@@ -519,7 +610,12 @@ export async function moveLead(
   
   // Update stats if moved between columns
   if (fromColumnId !== toColumnId) {
-    await updateStatsOnMove(workspaceId, lead.funnel_id, fromColumnId, toColumnId, lead.dealValue);
+    try {
+      await updateStatsOnMove(workspaceId, lead.funnel_id, fromColumnId, toColumnId, lead.dealValue);
+    } catch (statsError) {
+      // ✅ Silenciar erros de stats (não devem bloquear o movimento do lead)
+      console.warn('⚠️ Failed to update stats on move (non-critical):', statsError);
+    }
   }
   
   return mapLeadFromDB(updatedLead);
@@ -768,8 +864,18 @@ export async function searchLeads(
     .eq('funnel_id', funnelId)
     .eq('status', 'active');
   
+  // ✅ CORREÇÃO SQL INJECTION: Sanitizar input antes de usar .or()
   if (query) {
-    queryBuilder = queryBuilder.or(`client_name.ilike.%${query}%,company.ilike.%${query}%,notes.ilike.%${query}%`);
+    // Escapar caracteres especiais que poderiam causar SQL injection
+    // PostgREST/Supabase aceita % como wildcard mas precisa sanitizar ' " \ 
+    const sanitized = query
+      .replace(/\\/g, '\\\\')  // Escapar backslash
+      .replace(/'/g, "''")      // Escapar aspas simples
+      .replace(/"/g, '\\"');    // Escapar aspas duplas
+    
+    queryBuilder = queryBuilder.or(
+      `client_name.ilike.%${sanitized}%,company.ilike.%${sanitized}%,notes.ilike.%${sanitized}%`
+    );
   }
   
   if (priority) {

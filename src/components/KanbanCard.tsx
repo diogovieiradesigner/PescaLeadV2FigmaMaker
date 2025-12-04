@@ -109,7 +109,7 @@ function KanbanCardComponent({ lead, isDragging, theme, onClick, onDelete }: Kan
           isDragging ? 'opacity-50' : ''
         } ${
           isDark
-            ? 'bg-elevated border-white/[0.08] hover:border-white/[0.15]'
+            ? 'bg-[#0f0f0f] border-white/[0.08] hover:border-white/[0.15]'
             : 'bg-white border-border-light hover:border-[#0169D9]/30 shadow-sm'
         }`}
         onClick={onClick}

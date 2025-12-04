@@ -3,7 +3,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Theme } from '../../hooks/useTheme';
 import { LoginView } from './LoginView';
 import { SignUpView } from './SignUpView';
-import AcceptInvite from '../../pages/AcceptInvite';
 
 interface AuthWrapperProps {
   theme: Theme;
@@ -13,23 +12,6 @@ interface AuthWrapperProps {
 export function AuthWrapper({ theme, children }: AuthWrapperProps) {
   const { isAuthenticated, isLoading, currentWorkspace, workspaces } = useAuth();
   const [authView, setAuthView] = useState<'login' | 'signup'>('login');
-  const [currentPath, setCurrentPath] = useState(window.location.hash || '');
-
-  useEffect(() => {
-    const handleHashChange = () => {
-      setCurrentPath(window.location.hash);
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
-
-  // Check if it's an invite page
-  const inviteMatch = currentPath.match(/#\/invite\/(.+)/);
-  if (inviteMatch) {
-    const inviteCode = inviteMatch[1];
-    return <AcceptInvite theme={theme} code={inviteCode} />;
-  }
 
   // Show loading state while checking session
   if (isLoading) {

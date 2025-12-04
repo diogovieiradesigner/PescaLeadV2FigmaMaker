@@ -17,7 +17,9 @@ import {
   Mail,
   Shield,
   Link as LinkIcon,
-  Clock
+  Clock,
+  Copy,
+  Check
 } from 'lucide-react';
 import { InviteMemberModal } from '../components/InviteMemberModal';
 
@@ -43,7 +45,8 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
   const [members, setMembers] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-
+  const [copiedInviteCode, setCopiedInviteCode] = useState<string | null>(null);
+  
   // Account form
   const [name, setName] = useState(user?.name || '');
   const [email] = useState(user?.email || '');
@@ -65,13 +68,15 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
       
       // Validate token exists
       if (!accessToken) {
-        console.error('Load members error: No access token available');
+        console.error('[SETTINGS] Load members error: No access token available');
         setErrorMessage('Sessão expirada. Por favor, faça login novamente.');
         return;
       }
 
+      console.log('[SETTINGS] Carregando membros do workspace:', currentWorkspace?.id);
+
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${currentWorkspace?.id}/members`,
+        `https://${projectId}.supabase.co/functions/v1/workspace-team/members?workspace_id=${currentWorkspace?.id}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`
@@ -91,9 +96,10 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
         throw new Error(data.error || 'Failed to load members');
       }
 
+      console.log('[SETTINGS] Membros carregados:', data.members);
       setMembers(data.members || []);
     } catch (error: any) {
-      console.error('Load members error:', error);
+      console.error('[SETTINGS] Load members error:', error);
       setErrorMessage(error.message || 'Erro ao carregar membros');
     } finally {
       setLoadingMembers(false);
@@ -104,12 +110,14 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
     try {
       // Validate token exists
       if (!accessToken) {
-        console.error('Load invites error: No access token available');
+        console.error('[SETTINGS] Load invites error: No access token available');
         return;
       }
 
+      console.log('[SETTINGS] Carregando convites do workspace:', currentWorkspace?.id);
+
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${currentWorkspace?.id}/invites`,
+        `https://${projectId}.supabase.co/functions/v1/workspace-team/invites?workspace_id=${currentWorkspace?.id}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`
@@ -120,7 +128,7 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
       // Check if response is JSON
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        console.warn('Invites endpoint not available or returned invalid response');
+        console.warn('[SETTINGS] Invites endpoint returned invalid response');
         setInvites([]);
         return;
       }
@@ -131,9 +139,10 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
         throw new Error(data.error || 'Failed to load invites');
       }
 
+      console.log('[SETTINGS] Convites carregados:', data.invites);
       setInvites(data.invites || []);
     } catch (error: any) {
-      console.error('Load invites error:', error);
+      console.error('[SETTINGS] Load invites error:', error);
       // Don't show error to user - invites are optional
       setInvites([]);
     }
@@ -143,25 +152,33 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
     if (!confirm('Tem certeza que deseja remover este membro?')) return;
 
     try {
+      console.log('[SETTINGS] Removendo membro:', memberId);
+
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${currentWorkspace?.id}/members/${memberId}`,
+        `https://${projectId}.supabase.co/functions/v1/workspace-team/remove-member`,
         {
-          method: 'DELETE',
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            workspace_id: currentWorkspace?.id,
+            target_user_id: memberId
+          })
         }
       );
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.error || 'Failed to remove member');
       }
 
+      console.log('[SETTINGS] Membro removido com sucesso');
       showMessage('Membro removido com sucesso!');
       loadMembers();
     } catch (error: any) {
+      console.error('[SETTINGS] Erro ao remover membro:', error);
       showMessage(error.message || 'Erro ao remover membro', true);
     }
   };
@@ -170,53 +187,80 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
     if (!confirm('Tem certeza que deseja revogar este convite?')) return;
 
     try {
+      console.log('[SETTINGS] Revogando convite:', inviteCode);
+
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${currentWorkspace?.id}/invites/${inviteCode}`,
+        `https://${projectId}.supabase.co/functions/v1/workspace-team/delete-invite`,
         {
-          method: 'DELETE',
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            invite_code: inviteCode
+          })
         }
       );
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.error || 'Failed to revoke invite');
       }
 
+      console.log('[SETTINGS] Convite revogado com sucesso');
       showMessage('Convite revogado com sucesso!');
       loadInvites();
     } catch (error: any) {
+      console.error('[SETTINGS] Erro ao revogar convite:', error);
       showMessage(error.message || 'Erro ao revogar convite', true);
     }
   };
 
   const handleChangeRole = async (memberId: string, newRole: string) => {
     try {
+      console.log('[SETTINGS] Alterando role do membro:', { memberId, newRole });
+
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${currentWorkspace?.id}/members/${memberId}`,
+        `https://${projectId}.supabase.co/functions/v1/workspace-team/update-role`,
         {
-          method: 'PUT',
+          method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ role: newRole })
+          body: JSON.stringify({
+            workspace_id: currentWorkspace?.id,
+            target_user_id: memberId,
+            new_role: newRole
+          })
         }
       );
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.error || 'Failed to change role');
       }
 
+      console.log('[SETTINGS] Role alterado com sucesso');
       showMessage('Função alterada com sucesso!');
       loadMembers();
     } catch (error: any) {
+      console.error('[SETTINGS] Erro ao alterar função:', error);
       showMessage(error.message || 'Erro ao alterar função', true);
+    }
+  };
+
+  const handleCopyInviteLink = async (inviteCode: string) => {
+    try {
+      const inviteUrl = `${window.location.origin}${window.location.pathname}#/invite/${inviteCode}`;
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedInviteCode(inviteCode);
+      showMessage('Link copiado para a área de transferência!');
+      setTimeout(() => setCopiedInviteCode(null), 2000);
+    } catch (error) {
+      console.error('[SETTINGS] Erro ao copiar link:', error);
+      showMessage('Erro ao copiar link', true);
     }
   };
 
@@ -727,6 +771,15 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
                         <Trash2 className="w-3.5 h-3.5" />
                         Revogar
                       </button>
+                      <button
+                        onClick={() => handleCopyInviteLink(invite.code)}
+                        className={`px-3 py-1.5 bg-[#0169D9] text-white rounded-lg hover:bg-[#0159C9] transition-colors flex items-center gap-1.5 text-sm ${
+                          copiedInviteCode === invite.code ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Copiar link
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1147,8 +1200,10 @@ export default function Settings({ theme, onToggleTheme }: SettingsProps) {
         onClose={() => setShowInviteModal(false)}
         theme={theme}
         workspaceId={currentWorkspace?.id || ''}
+        accessToken={accessToken || ''}
         onInviteCreated={() => {
           showMessage('Convite criado com sucesso!');
+          loadInvites();
         }}
       />
     </div>

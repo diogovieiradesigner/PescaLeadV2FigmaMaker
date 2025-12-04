@@ -1660,59 +1660,44 @@ app.post('/make-server-e4f9d774/auth/signup', async (c) => {
 
     const userId = authData.user.id;
 
-    // Create user in public.users table
-    const { error: userError } = await supabase
-      .from('users')
-      .insert({
-        id: userId,
-        email,
-        name,
-      });
+    // Create user in public.users table using RPC
+    const { data: userRpc, error: userError } = await supabase.rpc('create_user_profile', {
+      p_user_id: userId,
+      p_email: email,
+      p_name: name,
+    });
 
-    if (userError) {
-      console.log('Error creating public user:', userError);
+    if (userError || !userRpc?.success) {
+      console.log('❌ Error creating public user via RPC:', userError || userRpc?.error);
       // Don't fail hard here, auth user exists
+    } else {
+      console.log('✅ User profile created via RPC');
     }
 
-    // Create first workspace
-    const { data: workspace, error: wsError } = await supabase
-      .from('workspaces')
-      .insert({
-        name: workspaceName,
-        slug: generateSlug(workspaceName),
-        owner_id: userId,
-        settings: {}
-      })
-      .select()
-      .single();
+    // Create first workspace using RPC
+    const { data: wsRpc, error: wsError } = await supabase.rpc('create_workspace_with_owner', {
+      p_name: workspaceName,
+      p_owner_id: userId,
+    });
 
-    if (wsError) {
-      console.log('Error creating workspace:', wsError);
-      return c.json({ error: `Failed to create workspace: ${wsError.message}` }, 500);
+    if (wsError || !wsRpc?.success) {
+      console.log('❌ Error creating workspace via RPC:', wsError || wsRpc?.error);
+      return c.json({ error: `Failed to create workspace: ${wsError?.message || wsRpc?.error}` }, 500);
     }
 
-    // Add user as owner of workspace
-    const { error: memberError } = await supabase
-      .from('workspace_members')
-      .insert({
-        workspace_id: workspace.id,
-        user_id: userId,
-        role: 'owner',
-        permissions: [],
-        invited_by: userId
-      });
-
-    if (memberError) {
-      console.log('Error adding member:', memberError);
-      return c.json({ error: `Failed to add member: ${memberError.message}` }, 500);
-    }
+    console.log('✅ Workspace created via RPC (member already added)');
 
     return c.json({
       message: 'Signup successful',
       user: { id: userId, email, name },
-      workspace,
+      workspace: {
+        id: wsRpc.workspace_id,
+        name: wsRpc.name,
+        slug: wsRpc.slug,
+        owner_id: wsRpc.owner_id
+      },
       userId,
-      workspaceId: workspace.id
+      workspaceId: wsRpc.workspace_id
     });
 
   } catch (error) {
@@ -2253,18 +2238,45 @@ app.post('/make-server-e4f9d774/workspaces/:workspaceId/invites', validateAuth, 
       return c.json({ error: 'Insufficient permissions - Admin required' }, 403);
     }
 
-    const { email, role } = await c.req.json();
+    const { role, expires_in_days } = await c.req.json();
 
-    if (!email || !role) {
-      return c.json({ error: 'Email and role are required' }, 400);
+    if (!role) {
+      return c.json({ error: 'Role is required' }, 400);
     }
 
-    // TODO: Implement invite creation
-    // For now, return success with placeholder
-    
+    // Validar role
+    const validRoles = ['admin', 'member', 'viewer'];
+    if (!validRoles.includes(role)) {
+      return c.json({ error: 'Invalid role' }, 400);
+    }
+
+    // Gerar código único
+    const code = crypto.randomUUID().replace(/-/g, '');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + (expires_in_days || 7));
+
+    // Inserir convite no banco
+    const { error: inviteError } = await supabase
+      .from('workspace_invites')
+      .insert({
+        code,
+        workspace_id: workspaceId,
+        invited_by: inviterId,
+        role,
+        expires_at: expiresAt.toISOString(),
+      });
+
+    if (inviteError) {
+      console.log('Create invite error:', inviteError);
+      return c.json({ error: `Failed to create invite: ${inviteError.message}` }, 500);
+    }
+
+    console.log('[CREATE-INVITE] Convite criado:', { code, workspaceId, role, expiresAt });
+
     return c.json({ 
       success: true,
-      message: 'Invite feature coming soon'
+      code,
+      expires_at: expiresAt.toISOString()
     });
   } catch (error) {
     console.log('Create invite error:', error);
@@ -2292,6 +2304,169 @@ app.delete('/make-server-e4f9d774/workspaces/:workspaceId/invites/:inviteId', va
   } catch (error) {
     console.log('Delete invite error:', error);
     return c.json({ error: `Failed to delete invite: ${error.message}` }, 500);
+  }
+});
+
+// ============================================
+// PUBLIC INVITE ROUTES (No Auth Required)
+// ============================================
+
+// Get Invite Details (Public - para mostrar info do convite)
+app.get('/make-server-e4f9d774/invites/:code', async (c) => {
+  try {
+    const code = c.req.param('code');
+    
+    console.log('[GET-INVITE] Buscando convite:', code);
+
+    // Buscar convite
+    const { data: invite, error: inviteError } = await supabase
+      .from('workspace_invites')
+      .select(`
+        code,
+        role,
+        expires_at,
+        used,
+        workspace_id,
+        invited_by
+      `)
+      .eq('code', code)
+      .single();
+
+    if (inviteError || !invite) {
+      console.log('[GET-INVITE] Convite não encontrado:', inviteError);
+      return c.json({ error: 'Convite não encontrado' }, 404);
+    }
+
+    // Validar se expirou
+    if (new Date(invite.expires_at) < new Date()) {
+      return c.json({ error: 'Convite expirado' }, 400);
+    }
+
+    // Validar se já foi usado
+    if (invite.used) {
+      return c.json({ error: 'Convite já foi utilizado' }, 400);
+    }
+
+    // Buscar dados do workspace
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .select('id, name')
+      .eq('id', invite.workspace_id)
+      .single();
+
+    if (workspaceError || !workspace) {
+      console.log('[GET-INVITE] Workspace não encontrado:', workspaceError);
+      return c.json({ error: 'Workspace não encontrado' }, 404);
+    }
+
+    // Buscar dados do convidador
+    const { data: inviter, error: inviterError } = await supabase
+      .from('users')
+      .select('name')
+      .eq('id', invite.invited_by)
+      .single();
+
+    const inviteDetails = {
+      code: invite.code,
+      role: invite.role,
+      expires_at: invite.expires_at,
+      workspace: {
+        id: workspace.id,
+        name: workspace.name,
+      },
+      inviter: {
+        name: inviter?.name || 'Usuário desconhecido',
+      },
+    };
+
+    console.log('[GET-INVITE] Convite encontrado:', inviteDetails);
+
+    return c.json({ invite: inviteDetails });
+  } catch (error) {
+    console.log('[GET-INVITE] Erro:', error);
+    return c.json({ error: `Erro ao buscar convite: ${error.message}` }, 500);
+  }
+});
+
+// Accept Invite (Requires Auth)
+app.post('/make-server-e4f9d774/invites/:code/accept', validateAuth, async (c) => {
+  try {
+    const code = c.req.param('code');
+    const userId = c.get('userId');
+
+    console.log('[ACCEPT-INVITE] Aceitando convite:', { code, userId });
+
+    // Buscar convite
+    const { data: invite, error: inviteError } = await supabase
+      .from('workspace_invites')
+      .select('*')
+      .eq('code', code)
+      .single();
+
+    if (inviteError || !invite) {
+      console.log('[ACCEPT-INVITE] Convite não encontrado:', inviteError);
+      return c.json({ error: 'Convite não encontrado' }, 404);
+    }
+
+    // Validar se expirou
+    if (new Date(invite.expires_at) < new Date()) {
+      return c.json({ error: 'Convite expirado' }, 400);
+    }
+
+    // Validar se já foi usado
+    if (invite.used) {
+      return c.json({ error: 'Convite já foi utilizado' }, 400);
+    }
+
+    // Verificar se o usuário já é membro do workspace
+    const { data: existingMember } = await supabase
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', invite.workspace_id)
+      .eq('user_id', userId)
+      .single();
+
+    if (existingMember) {
+      return c.json({ error: 'Você já é membro deste workspace' }, 400);
+    }
+
+    // Adicionar membro ao workspace
+    const { error: memberError } = await supabase
+      .from('workspace_members')
+      .insert({
+        workspace_id: invite.workspace_id,
+        user_id: userId,
+        role: invite.role,
+        invited_by: invite.invited_by,
+      });
+
+    if (memberError) {
+      console.log('[ACCEPT-INVITE] Erro ao adicionar membro:', memberError);
+      return c.json({ error: `Erro ao adicionar membro: ${memberError.message}` }, 500);
+    }
+
+    // Marcar convite como usado
+    await supabase
+      .from('workspace_invites')
+      .update({ used: true, used_at: new Date().toISOString(), used_by: userId })
+      .eq('code', code);
+
+    // Buscar dados do workspace
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('id, name, slug')
+      .eq('id', invite.workspace_id)
+      .single();
+
+    console.log('[ACCEPT-INVITE] Convite aceito com sucesso!');
+
+    return c.json({ 
+      success: true,
+      workspace: workspace || null,
+    });
+  } catch (error) {
+    console.log('[ACCEPT-INVITE] Erro:', error);
+    return c.json({ error: `Erro ao aceitar convite: ${error.message}` }, 500);
   }
 });
 
@@ -2376,6 +2551,13 @@ app.put('/make-server-e4f9d774/workspaces/:workspaceId/funnels/:funnelId', valid
     
     const { name, columns } = await c.req.json();
     
+    console.log('[SERVER] Update funnel request:', {
+      funnelId,
+      name,
+      columnsCount: columns?.length,
+      columnIds: columns?.map((c: any) => c.id)
+    });
+    
     const existing = await kanbanHelpers.getFunnel(workspaceId, funnelId);
     if (!existing) {
       return c.json({ error: 'Funnel not found' }, 404);
@@ -2389,6 +2571,8 @@ app.put('/make-server-e4f9d774/workspaces/:workspaceId/funnels/:funnelId', valid
     };
     
     await kanbanHelpers.updateFunnel(workspaceId, funnelId, { name, columns });
+    
+    console.log('[SERVER] Funnel updated successfully');
     
     return c.json({ funnel: updatedFunnel });
   } catch (error) {

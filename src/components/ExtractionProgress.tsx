@@ -94,13 +94,13 @@ function DonutChart({ data, title, colors, category, isDark }: DonutChartProps &
               "text-3xl font-bold transition-all duration-200",
               isDark ? "text-white" : "text-zinc-900"
             )}>
-              {hoveredItem ? hoveredItem.value : total}
+              {hoveredItem ? hoveredItem.value : (data.length > 0 ? Math.max(...data.map(d => d.value)) : 0)}
             </div>
             <div className={cn(
               "text-xs transition-all duration-200",
               isDark ? "text-zinc-500" : "text-zinc-600"
             )}>
-              {hoveredItem ? hoveredItem.name : category}
+              {hoveredItem ? hoveredItem.name : (data.length > 0 ? data.reduce((max, item) => item.value > max.value ? item : max, data[0]).name : category)}
             </div>
           </div>
         </div>
@@ -571,11 +571,22 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                         "text-4xl font-bold",
                         isDark ? "text-zinc-700" : "text-zinc-300"
                       )}>
-                        <AnimatedCounter value={runInfo.success_rate || 0} />%
+                        <AnimatedCounter value={
+                          runInfo.created_quantity && runInfo.target_quantity && runInfo.target_quantity > 0
+                            ? Math.round((runInfo.created_quantity / runInfo.target_quantity) * 100)
+                            : 0
+                        } />%
                       </p>
                     </div>
                   </div>
-                  <AnimatedProgressBar percentage={runInfo.success_rate || 0} isDark={isDark} />
+                  <AnimatedProgressBar 
+                    percentage={
+                      runInfo.created_quantity && runInfo.target_quantity && runInfo.target_quantity > 0
+                        ? Math.min(Math.round((runInfo.created_quantity / runInfo.target_quantity) * 100), 100)
+                        : 0
+                    } 
+                    isDark={isDark} 
+                  />
                   <div className={cn(
                     "flex justify-between text-xs font-mono",
                     isDark ? "text-zinc-600" : "text-zinc-500"
@@ -777,15 +788,15 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                     "flex items-center gap-2 mb-3",
                     isDark ? "text-zinc-500" : "text-zinc-600"
                   )}>
-                    <span className="text-xs font-medium uppercase">WhatsApp Pendente</span>
+                    <span className="text-xs font-medium uppercase">WhatsApp Válido</span>
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-baseline gap-2">
                       <span className={cn(
                         "text-3xl font-bold",
-                        isDark ? "text-zinc-500" : "text-zinc-600"
+                        isDark ? "text-green-500" : "text-green-600"
                       )}>
-                        <AnimatedCounter value={analytics.contatos?.whatsapp?.pendente || 0} />
+                        <AnimatedCounter value={analytics.contatos?.whatsapp?.valido || 0} />
                       </span>
                     </div>
                   </div>
@@ -820,33 +831,6 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                 </CardContent>
               </Card>
 
-              {/* Sites .br */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className={cn(
-                    "flex items-center gap-2 mb-3",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    <span className="text-xs font-medium uppercase">Sites .br</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className={cn(
-                        "text-3xl font-bold",
-                        isDark ? "text-white" : "text-zinc-900"
-                      )}>
-                        <AnimatedCounter value={analytics.contatos?.website?.brasileiro || 0} />
-                      </span>
-                    </div>
-                    <MiniProgressBar percentage={analytics.contatos?.website?.brasileiro && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.brasileiro / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Sites Internacionais */}
               <Card className={cn(
                 isDark 
@@ -870,6 +854,33 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                       </span>
                     </div>
                     <MiniProgressBar percentage={analytics.contatos?.website?.internacional && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.internacional / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Sites .br */}
+              <Card className={cn(
+                isDark 
+                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
+                  : "bg-white border border-zinc-200"
+              )}>
+                <CardContent className="pt-6">
+                  <div className={cn(
+                    "flex items-center gap-2 mb-3",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>
+                    <span className="text-xs font-medium uppercase">Sites .br</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        <AnimatedCounter value={analytics.contatos?.website?.brasileiro || 0} />
+                      </span>
+                    </div>
+                    <MiniProgressBar percentage={analytics.contatos?.website?.brasileiro && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.brasileiro / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
                   </div>
                 </CardContent>
               </Card>
@@ -1177,32 +1188,7 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                         </div>
                       </div>
 
-                      {/* Migração */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={cn(
-                            "text-sm",
-                            isDark ? "text-zinc-400" : "text-zinc-600"
-                          )}>Migração para CRM</span>
-                          <span className={cn(
-                            "text-sm",
-                            isDark ? "text-white" : "text-zinc-900"
-                          )}>{analytics.enriquecimento?.migracao?.taxa || 0}%</span>
-                        </div>
-                        <div className={cn(
-                          "h-2 rounded-full overflow-hidden",
-                          isDark ? "bg-zinc-900" : "bg-zinc-200"
-                        )}>
-                          <div 
-                            className="h-full bg-purple-500" 
-                            style={{ width: `${analytics.enriquecimento?.migracao?.taxa || 0}%` }}
-                          />
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 text-xs">
-                          <span className={cn(isDark ? "text-purple-500" : "text-purple-600")}>✓ {analytics.enriquecimento?.migracao?.migrado || 0}</span>
-                          <span className={cn(isDark ? "text-zinc-500" : "text-zinc-600")}>⏳ {analytics.enriquecimento?.migracao?.pendente || 0}</span>
-                        </div>
-                      </div>
+
                     </div>
                   </CardContent>
                 </Card>

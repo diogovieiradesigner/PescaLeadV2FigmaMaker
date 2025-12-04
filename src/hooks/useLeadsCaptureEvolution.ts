@@ -1,8 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import { LeadsCaptureEvolution } from '../types/leads.types';
-
-const supabase = createClient();
 
 export function useLeadsCaptureEvolution(workspaceId: string, days: number = 7) {
   return useQuery<LeadsCaptureEvolution | null>({

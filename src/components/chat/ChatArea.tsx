@@ -35,6 +35,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isFirstRenderRef = useRef<boolean>(true); // ✅ Detectar primeira renderização
+  const lastScrolledMessagesCountRef = useRef<number>(0); // ✅ OTIMIZAÇÃO: Rastrear count de mensagens
   
   const isDark = theme === 'dark';
 
@@ -42,17 +43,24 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     setExpandedImage(url);
   }, []);
 
-  // Auto scroll to bottom when messages change
+  // ✅ OTIMIZAÇÃO: Auto scroll apenas quando há novas mensagens
   useEffect(() => {
-    // ✅ Primeira renderização: scroll instantâneo (sem animação)
-    // ✅ Próximas renderizações: scroll suave apenas para novas mensagens
-    if (isFirstRenderRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-      isFirstRenderRef.current = false;
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const currentCount = conversation?.messages.length || 0;
+    
+    // Só fazer scroll se:
+    // 1. É a primeira renderização, OU
+    // 2. O número de mensagens mudou
+    if (isFirstRenderRef.current || currentCount !== lastScrolledMessagesCountRef.current) {
+      if (isFirstRenderRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        isFirstRenderRef.current = false;
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+      
+      lastScrolledMessagesCountRef.current = currentCount;
     }
-  }, [conversation?.messages]);
+  }, [conversation?.messages.length]); // ✅ Depender apenas do length, não do array inteiro
 
   // ✅ Resetar flag quando trocar de conversa
   useEffect(() => {
@@ -336,7 +344,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     >
       {/* Header */}
       <div
-        className={`px-6 py-3 border-b flex items-center justify-between ${
+        className={`px-6 py-3 border-b flex items-center justify-between h-[85px] ${
           isDark ? 'border-white/[0.08]' : 'border-border-light'
         }`}
       >
@@ -452,7 +460,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
       {/* Input */}
       <div
         className={`px-6 py-4 border-t ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
+          isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'border-border-light'
         }`}
       >
         {/* Image Preview */}

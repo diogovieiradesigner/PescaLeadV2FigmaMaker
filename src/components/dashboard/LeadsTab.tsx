@@ -61,11 +61,22 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
   // Extrair lista de funis do resultado
   const funnelsList = funnelsResult?.funnels || [];
 
+  // DEBUG: Logs completos dos dados
+  console.log('🔍 [LEADS TAB] Dados recebidos:', {
+    summary,
+    funnelData,
+    channelData,
+    topSources,
+    evolutionData,
+    loadingSummary,
+    loadingFunnel,
+    loadingChannel,
+    loadingTopSources,
+    loadingEvolution,
+  });
+
   // Verificar se há erros
   const hasError = errorSummary || errorFunnel || errorChannel || errorTopSources || errorEvolution || errorFunnels || funnelsResult?.error;
-
-  // Loading state
-  const isLoading = loadingSummary || loadingFunnel || loadingChannel || loadingTopSources || loadingEvolution || loadingFunnels;
 
   // Período de comparação formatado
   const comparisonText = summary?.period
@@ -114,7 +125,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
             )}
           >
             <option value="all">Todos</option>
-            {funnelsList && funnelsList.map((funnel) => (
+            {funnelsList.map((funnel) => (
               <option key={funnel.id} value={funnel.id}>{funnel.name}</option>
             ))}
           </select>
@@ -139,7 +150,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
               Erro ao carregar dados de leads
             </p>
             <p className={cn('text-sm mt-1', isDark ? 'text-red-300' : 'text-red-600')}>
-              Verifique se as funções RPC do Supabase estão configuradas corretamente.
+              {errorSummary?.message || errorFunnel?.message || errorChannel?.message || 'Verifique se as funções RPC do Supabase estão configuradas corretamente.'}
             </p>
           </div>
         </div>
@@ -183,7 +194,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                   "text-3xl font-bold mb-2",
                   isDark ? "text-white" : "text-zinc-900"
                 )}>
-                  {summary?.captured.value.toLocaleString('pt-BR') || '0'}
+                  {summary?.captured.value.toLocaleString('pt-BR')}
                 </p>
                 <div className={cn(
                   "flex items-center gap-1.5 text-sm font-medium",
@@ -237,11 +248,17 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
               </div>
             ) : (
               <div className="space-y-1 mb-2">
-                {summary?.by_stage.slice(0, 3).map((stage) => (
-                  <p key={stage.name} className={cn("text-sm", isDark ? "text-zinc-400" : "text-zinc-600")}>
-                    {stage.name}: <span className={cn("font-semibold", isDark ? "text-white" : "text-zinc-900")}>{stage.count}</span>
+                {summary?.by_stage.length === 0 ? (
+                  <p className={cn("text-sm italic", isDark ? "text-zinc-600" : "text-zinc-500")}>
+                    Sem etapas
                   </p>
-                ))}
+                ) : (
+                  summary?.by_stage.slice(0, 3).map((stage) => (
+                    <p key={stage.name} className={cn("text-sm", isDark ? "text-zinc-400" : "text-zinc-600")}>
+                      {stage.name}: <span className={cn("font-semibold", isDark ? "text-white" : "text-zinc-900")}>{stage.count}</span>
+                    </p>
+                  ))
+                )}
               </div>
             )}
           </CardContent>
@@ -280,11 +297,17 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
               </div>
             ) : (
               <div className="space-y-1 mb-2">
-                {summary?.by_source.slice(0, 3).map((source) => (
-                  <p key={source.name} className={cn("text-sm", isDark ? "text-zinc-400" : "text-zinc-600")}>
-                    {source.name}: <span className={cn("font-semibold", isDark ? "text-white" : "text-zinc-900")}>{source.count}</span>
+                {summary?.by_source.length === 0 ? (
+                  <p className={cn("text-sm italic", isDark ? "text-zinc-600" : "text-zinc-500")}>
+                    Sem fontes
                   </p>
-                ))}
+                ) : (
+                  summary?.by_source.slice(0, 3).map((source) => (
+                    <p key={source.name} className={cn("text-sm", isDark ? "text-zinc-400" : "text-zinc-600")}>
+                      {source.name}: <span className={cn("font-semibold", isDark ? "text-white" : "text-zinc-900")}>{source.count}</span>
+                    </p>
+                  ))
+                )}
               </div>
             )}
           </CardContent>
@@ -322,11 +345,22 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                 </div>
               ))}
             </div>
-          ) : funnelData && funnelData.stages.length > 0 ? (
+          ) : (
             <>
+              {funnelData?.stages.length === 0 && (
+                <div className={cn(
+                  "mb-4 p-3 rounded-lg border",
+                  isDark ? "bg-yellow-500/10 border-yellow-500/30" : "bg-yellow-50 border-yellow-200"
+                )}>
+                  <p className={cn("text-xs font-medium", isDark ? "text-yellow-400" : "text-yellow-700")}>
+                    ⚠️ RPC retornou 0 etapas. Verifique se há dados no funil selecionado.
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-6">
-                {funnelData.stages.map((stage, index) => {
-                  const maxCount = funnelData.stages[0].count;
+                {(funnelData?.stages || []).map((stage, index) => {
+                  const maxCount = (funnelData?.stages || [])[0]?.count || 1;
                   const barWidth = maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
                   
                   return (
@@ -352,11 +386,13 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                       )}>
                         <div
                           className="h-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center px-4 transition-all"
-                          style={{ width: `${barWidth}%` }}
+                          style={{ width: `${Math.max(barWidth, stage.count > 0 ? 10 : 0)}%` }}
                         >
-                          <span className="text-xs font-medium text-white">
-                            {stage.count}
-                          </span>
+                          {stage.count > 0 && (
+                            <span className="text-xs font-medium text-white">
+                              {stage.count}
+                            </span>
+                          )}
                         </div>
                       </div>
                       {stage.conversion_rate > 0 && (
@@ -369,7 +405,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                           </span>
                         </div>
                       )}
-                      {index < funnelData.stages.length - 1 && (
+                      {index < (funnelData?.stages.length || 0) - 1 && (
                         <Separator className={cn(
                           "mt-4",
                           isDark ? "bg-white/[0.08]" : "bg-zinc-200"
@@ -379,59 +415,60 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                   );
                 })}
               </div>
-              <Separator className={cn(
-                "my-6",
-                isDark ? "bg-white/[0.08]" : "bg-zinc-200"
-              )} />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="text-center">
-                  <p className={cn(
-                    "text-xs mb-1",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    Taxa de Conversão Geral
-                  </p>
-                  <p className="text-2xl font-bold text-green-500">
-                    {funnelData.summary.conversion_rate.toFixed(1)}%
-                  </p>
-                  <p className={cn(
-                    "text-xs mt-1",
-                    isDark ? "text-zinc-600" : "text-zinc-500"
-                  )}>
-                    ({funnelData.stages[0]?.title} → {funnelData.stages[funnelData.stages.length - 1]?.title})
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className={cn(
-                    "text-xs mb-1",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    Tempo Médio no Funil
-                  </p>
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    isDark ? "text-white" : "text-zinc-900"
-                  )}>
-                    {funnelData.summary.avg_time_days} dias
-                  </p>
-                  <p className={cn(
-                    "text-xs mt-1",
-                    isDark ? "text-zinc-600" : "text-zinc-500"
-                  )}>
-                    (Captação → Fechamento)
-                  </p>
-                </div>
-              </div>
+
+              {funnelData && funnelData.stages.length > 0 && (
+                <>
+                  <Separator className={cn(
+                    "my-6",
+                    isDark ? "bg-white/[0.08]" : "bg-zinc-200"
+                  )} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="text-center">
+                      <p className={cn(
+                        "text-xs mb-1",
+                        isDark ? "text-zinc-500" : "text-zinc-600"
+                      )}>
+                        Taxa de Conversão Geral
+                      </p>
+                      <p className="text-2xl font-bold text-green-500">
+                        {funnelData.summary.conversion_rate.toFixed(1)}%
+                      </p>
+                      <p className={cn(
+                        "text-xs mt-1",
+                        isDark ? "text-zinc-600" : "text-zinc-500"
+                      )}>
+                        ({funnelData.stages[0]?.title} → {funnelData.stages[funnelData.stages.length - 1]?.title})
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className={cn(
+                        "text-xs mb-1",
+                        isDark ? "text-zinc-500" : "text-zinc-600"
+                      )}>
+                        Tempo Médio no Funil
+                      </p>
+                      <p className={cn(
+                        "text-2xl font-bold",
+                        isDark ? "text-white" : "text-zinc-900"
+                      )}>
+                        {funnelData.summary.avg_time_days} dias
+                      </p>
+                      <p className={cn(
+                        "text-xs mt-1",
+                        isDark ? "text-zinc-600" : "text-zinc-500"
+                      )}>
+                        (Captação → Fechamento)
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
-          ) : (
-            <p className={cn("text-sm text-center py-8", isDark ? "text-zinc-500" : "text-zinc-600")}>
-              Nenhum dado de funil disponível
-            </p>
           )}
         </CardContent>
       </Card>
 
-      {/* Grid: Leads por Canal + Top 5 Fontes */}
+      {/* Grid: Leads por Canal + Evolução */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Leads por Canal */}
         <Card className={cn(
@@ -463,13 +500,24 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                   <div className="h-4 bg-zinc-700 rounded" />
                 </div>
               </div>
-            ) : channelData && channelData.chart_data && channelData.chart_data.length > 0 ? (
+            ) : (
               <>
+                {channelData?.chart_data?.length === 0 && (
+                  <div className={cn(
+                    "mb-4 p-3 rounded-lg border",
+                    isDark ? "bg-yellow-500/10 border-yellow-500/30" : "bg-yellow-50 border-yellow-200"
+                  )}>
+                    <p className={cn("text-xs font-medium", isDark ? "text-yellow-400" : "text-yellow-700")}>
+                      ⚠️ RPC retornou 0 canais. Verifique se há leads no período selecionado.
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-center mb-6">
                   <ResponsiveContainer width="100%" height={200}>
                     <PieChart>
                       <Pie
-                        data={channelData.chart_data}
+                        data={channelData?.chart_data || []}
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
@@ -478,7 +526,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                         outerRadius={80}
                         paddingAngle={2}
                       >
-                        {channelData.chart_data.map((entry, index) => (
+                        {channelData?.chart_data?.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -500,8 +548,9 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
+
                 <div className="grid grid-cols-2 gap-4">
-                  {channelData.chart_data.map((channel) => (
+                  {channelData?.chart_data?.map((channel) => (
                     <div key={channel.name} className="flex items-center gap-3">
                       <div 
                         className="w-3 h-3 rounded-full"
@@ -524,6 +573,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                     </div>
                   ))}
                 </div>
+
                 <Separator className={cn(
                   "my-4",
                   isDark ? "bg-white/[0.08]" : "bg-zinc-200"
@@ -532,13 +582,9 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                   "text-sm font-medium text-center",
                   isDark ? "text-zinc-400" : "text-zinc-600"
                 )}>
-                  Total: {channelData.total.toLocaleString('pt-BR')} leads
+                  Total: {channelData?.total.toLocaleString('pt-BR')} leads
                 </p>
               </>
-            ) : (
-              <p className={cn("text-sm text-center py-8", isDark ? "text-zinc-500" : "text-zinc-600")}>
-                Nenhum dado de canal disponível
-              </p>
             )}
           </CardContent>
         </Card>
@@ -569,10 +615,21 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
               <div className="animate-pulse space-y-4">
                 <div className="h-48 bg-zinc-700 rounded" />
               </div>
-            ) : evolutionData && evolutionData.evolution && evolutionData.evolution.length > 0 ? (
+            ) : (
               <>
+                {evolutionData?.evolution?.length === 0 && (
+                  <div className={cn(
+                    "mb-4 p-3 rounded-lg border",
+                    isDark ? "bg-yellow-500/10 border-yellow-500/30" : "bg-yellow-50 border-yellow-200"
+                  )}>
+                    <p className={cn("text-xs font-medium", isDark ? "text-yellow-400" : "text-yellow-700")}>
+                      ⚠️ RPC retornou 0 dias de evolução. Verifique se há captações recentes.
+                    </p>
+                  </div>
+                )}
+
                 <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={evolutionData.evolution}>
+                  <BarChart data={evolutionData?.evolution || []}>
                     <XAxis 
                       dataKey="day_short" 
                       stroke={isDark ? '#52525b' : '#a1a1aa'}
@@ -605,6 +662,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                     />
                   </BarChart>
                 </ResponsiveContainer>
+
                 <Separator className={cn(
                   "my-4",
                   isDark ? "bg-white/[0.08]" : "bg-zinc-200"
@@ -613,13 +671,9 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                   "text-sm font-medium text-center",
                   isDark ? "text-zinc-400" : "text-zinc-600"
                 )}>
-                  Total: {evolutionData.total.toLocaleString('pt-BR')} leads
+                  Total: {evolutionData?.total.toLocaleString('pt-BR')} leads
                 </p>
               </>
-            ) : (
-              <p className={cn("text-sm text-center py-8", isDark ? "text-zinc-500" : "text-zinc-600")}>
-                Nenhum dado de evolução disponível
-              </p>
             )}
           </CardContent>
         </Card>
@@ -659,53 +713,62 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                 </div>
               ))}
             </div>
-          ) : topSources && topSources.sources && topSources.sources.length > 0 ? (
-            <div className="space-y-4">
-              {topSources.sources.map((source, index) => (
-                <div key={source.name}>
-                  <div className="flex items-start gap-3">
-                    <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0",
-                      index === 0 ? "bg-amber-500/20 text-amber-500" :
-                      index === 1 ? "bg-zinc-400/20 text-zinc-400" :
-                      index === 2 ? "bg-orange-500/20 text-orange-500" :
-                      isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
-                    )}>
-                      {source.position}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={cn(
-                        "text-sm font-medium mb-1",
-                        isDark ? "text-white" : "text-zinc-900"
+          ) : (
+            <>
+              {topSources?.sources?.length === 0 && (
+                <div className={cn(
+                  "mb-4 p-3 rounded-lg border",
+                  isDark ? "bg-yellow-500/10 border-yellow-500/30" : "bg-yellow-50 border-yellow-200"
+                )}>
+                  <p className={cn("text-xs font-medium", isDark ? "text-yellow-400" : "text-yellow-700")}>
+                    ⚠️ RPC retornou 0 fontes. Verifique se há leads com fontes cadastradas.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {topSources?.sources?.map((source, index) => (
+                  <div key={source.name}>
+                    <div className="flex items-start gap-3">
+                      <div className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0",
+                        index === 0 ? "bg-amber-500/20 text-amber-500" :
+                        index === 1 ? "bg-zinc-400/20 text-zinc-400" :
+                        index === 2 ? "bg-orange-500/20 text-orange-500" :
+                        isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
                       )}>
-                        {source.name}
-                      </p>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
-                          {source.conversion_rate}% conversão
-                        </Badge>
-                        <span className={cn(
-                          "text-xs",
-                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        {source.position}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={cn(
+                          "text-sm font-medium mb-1",
+                          isDark ? "text-white" : "text-zinc-900"
                         )}>
-                          ({source.converted}/{source.total})
-                        </span>
+                          {source.name}
+                        </p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                            {source.conversion_rate}% conversão
+                          </Badge>
+                          <span className={cn(
+                            "text-xs",
+                            isDark ? "text-zinc-500" : "text-zinc-600"
+                          )}>
+                            ({source.converted}/{source.total})
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    {index < (topSources?.sources?.length || 0) - 1 && (
+                      <Separator className={cn(
+                        "mt-4",
+                        isDark ? "bg-white/[0.08]" : "bg-zinc-200"
+                      )} />
+                    )}
                   </div>
-                  {index < topSources.sources.length - 1 && (
-                    <Separator className={cn(
-                      "mt-4",
-                      isDark ? "bg-white/[0.08]" : "bg-zinc-200"
-                    )} />
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className={cn("text-sm text-center py-8", isDark ? "text-zinc-500" : "text-zinc-600")}>
-              Nenhuma fonte disponível
-            </p>
+                ))}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

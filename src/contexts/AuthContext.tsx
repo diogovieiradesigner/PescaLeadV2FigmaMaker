@@ -45,6 +45,7 @@ interface AuthContextType {
   // Auth methods
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, workspaceName: string) => Promise<void>;
+  signupWithInvite: (name: string, email: string, password: string, inviteCode: string) => Promise<void>;
   logout: () => Promise<void>;
   
   // Workspace methods
@@ -241,7 +242,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (signupError || !newUser) {
-        throw signupError || new Error('Erro ao criar usuário');
+        console.error('[AUTH] ❌ Erro ao criar usuário:', signupError);
+        
+        // ✅ CORREÇÃO: Lançar erro formatado para o frontend capturar
+        const errorMessage = signupError?.message || 'Erro ao criar usuário';
+        throw new Error(errorMessage);
       }
 
       console.log('[AUTH] Usuário criado:', newUser.email);
@@ -278,6 +283,55 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   // ============================================
+  // SIGNUP WITH INVITE
+  // ============================================
+  async function signupWithInvite(name: string, email: string, password: string, inviteCode: string) {
+    try {
+      setIsLoading(true);
+
+      // 1. Create user
+      const { user: newUser, error: signupError } = await authService.signUp({
+        email,
+        password,
+        name,
+      });
+
+      if (signupError || !newUser) {
+        console.error('[AUTH] ❌ Erro ao criar usuário:', signupError);
+        
+        // ✅ CORREÇÃO: Lançar erro formatado para o frontend capturar
+        const errorMessage = signupError?.message || 'Erro ao criar usuário';
+        throw new Error(errorMessage);
+      }
+
+      console.log('[AUTH] Usuário criado:', newUser.email);
+
+      // 2. Login to get session
+      await login(email, password);
+
+      // 3. Accept invite
+      const { workspaceId, error: inviteError } = await workspacesService.acceptInvite(inviteCode);
+
+      if (inviteError) {
+        console.error('[AUTH] ❌ Erro ao aceitar convite:', inviteError);
+        // ⚠️ IMPORTANTE: Mostrar erro ao usuário!
+        throw new Error(`Convite não aceito: ${inviteError.message}`);
+      }
+
+      // 4. Refresh workspaces to get the new workspace
+      await refreshWorkspaces();
+
+      console.log('[AUTH] ✅ Cadastro com convite completo!');
+
+    } catch (error) {
+      console.error('[AUTH] Erro no cadastro:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // ============================================
   // LOGIN
   // ============================================
   async function login(email: string, password: string) {
@@ -290,7 +344,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (error || !userData) {
-        throw error || new Error('Credenciais inválidas');
+        console.error('[AUTH] ❌ Erro ao fazer login:', error);
+        
+        // ✅ CORREÇÃO: Lançar erro formatado para o frontend capturar
+        const errorMessage = error?.message || 'Credenciais inválidas';
+        throw new Error(errorMessage);
       }
 
       // Get session token
@@ -604,6 +662,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Methods
     login,
     signup,
+    signupWithInvite,
     logout,
     switchWorkspace,
     refreshWorkspaces,

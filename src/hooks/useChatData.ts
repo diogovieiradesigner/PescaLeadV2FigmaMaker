@@ -158,17 +158,37 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
              
              console.log(`[useChatData] Requesting avatar for ${phoneToTry}: ${functionUrl}`);
              
-             const res = await fetch(functionUrl, {
-                headers: { Authorization: `Bearer ${token}` }
-             });
-             
-             if (!res.ok) {
-                 const text = await res.text();
-                 throw new Error(`Server responded with ${res.status}: ${text}`);
+             try {
+               // Adicionar timeout de 5 segundos para evitar travamentos
+               const controller = new AbortController();
+               const timeoutId = setTimeout(() => controller.abort(), 5000);
+               
+               const res = await fetch(functionUrl, {
+                 headers: { Authorization: `Bearer ${token}` },
+                 signal: controller.signal
+               });
+               
+               clearTimeout(timeoutId);
+               
+               if (!res.ok) {
+                   const text = await res.text();
+                   console.warn(`[useChatData] Avatar fetch failed for ${phoneToTry}: ${res.status} - ${text}`);
+                   return { url: null, success: false };
+               }
+               
+               const data = await res.json();
+               return { url: data.url, success: !!data.url };
+             } catch (fetchError: any) {
+               // Não logar erro se for timeout ou network error - muito comum
+               if (fetchError.name === 'AbortError') {
+                 console.warn(`[useChatData] Avatar fetch timeout for ${phoneToTry}`);
+               } else if (fetchError.message?.includes('fetch')) {
+                 console.warn(`[useChatData] Network error fetching avatar for ${phoneToTry}`);
+               } else {
+                 console.warn(`[useChatData] Avatar fetch error for ${phoneToTry}:`, fetchError.message);
+               }
+               return { url: null, success: false };
              }
-             
-             const data = await res.json();
-             return { url: data.url, success: !!data.url };
           };
 
           // Estratégia 1: Tentar com o número sanitizado padrão
@@ -214,8 +234,11 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
               ));
           }
           
-        } catch (error) {
-          console.error(`[useChatData] Error processing avatar for ${conv.contactPhone}`, error);
+        } catch (error: any) {
+          // Silenciar erros de rede comuns para não poluir console
+          if (!error.message?.includes('fetch') && !error.message?.includes('network')) {
+            console.error(`[useChatData] Error processing avatar for ${conv.contactPhone}`, error);
+          }
         }
       }
     };

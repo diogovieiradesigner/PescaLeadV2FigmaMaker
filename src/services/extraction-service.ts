@@ -276,8 +276,7 @@ export async function getRecentExtractionRuns(workspaceId: string): Promise<any[
 
   if (error) {
     console.error('Error fetching recent runs:', error);
-    // Fallback: buscar direto da tabela se a view falhar
-    return getWorkspaceExtractionRuns(workspaceId, 30);
+    throw error;
   }
 
   return data || [];
@@ -535,55 +534,64 @@ export async function getExtractedLeads(runId: string, limit: number = 100): Pro
 
 /**
  * ✅ NOVA FUNÇÃO UNIFICADA - Buscar analytics completos de uma extração
- * Substitui: get_extraction_statistics + get_extraction_metrics_card
- * 
- * Aceita 3 formas de chamada:
- * - Por p_run_id (run específico)
- * - Por p_workspace_id (mais recente do workspace)
- * - Sem parâmetros (mais recente global)
+ * Usa APENAS a RPC get_extraction_analytics do banco (sem fallback)
  */
 export async function getExtractionAnalytics(params?: { 
   runId?: string;
   workspaceId?: string;
 }): Promise<any> {
-  const rpcParams: any = {};
-  
-  if (params?.runId) {
-    rpcParams.p_run_id = params.runId;
-  } else if (params?.workspaceId) {
-    rpcParams.p_workspace_id = params.workspaceId;
-  }
-  // Se não passar nada, busca o mais recente
+  let runId = params?.runId;
 
-  console.log('🔍 [getExtractionAnalytics] Chamando RPC com params:', rpcParams);
+  // 1. Resolver runId se não fornecido (pegar o mais recente do workspace)
+  if (!runId && params?.workspaceId) {
+    const { data: runs } = await supabase
+      .from('lead_extraction_runs')
+      .select('id')
+      .eq('workspace_id', params.workspaceId)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-  const { data, error } = await supabase
-    .rpc('get_extraction_analytics', rpcParams);
-
-  if (error) {
-    console.error('❌ [getExtractionAnalytics] Error:', error);
-    console.error('❌ [getExtractionAnalytics] Error code:', error.code);
-    console.error('❌ [getExtractionAnalytics] Error message:', error.message);
-    console.error('❌ [getExtractionAnalytics] Error details:', error.details);
-    console.error('❌ [getExtractionAnalytics] Error hint:', error.hint);
-    
-    // Se a função RPC não existir ou tiver problema de schema
-    if (error.code === '42P01' || error.code === '42883') {
-      throw new Error(
-        `A função RPC 'get_extraction_analytics' ou a tabela 'lead_stats' não existe no Supabase.\n\n` +
-        `Por favor, certifique-se de que:\n` +
-        `1. A função RPC 'get_extraction_analytics' foi criada no Supabase\n` +
-        `2. Todas as tabelas necessárias existem (lead_extraction_runs, leads, etc.)\n` +
-        `3. A função não referencia tabelas inexistentes como 'lead_stats'\n\n` +
-        `Erro original: ${error.message}`
-      );
+    if (runs && runs.length > 0) {
+      runId = runs[0].id;
     }
-    
+  }
+
+  // Se ainda não tiver runId, retornar estrutura vazia
+  if (!runId) {
+    console.log('⚠️ [getExtractionAnalytics] No runId provided, returning empty structure');
+    return {
+      run: null,
+      contatos: {},
+      enriquecimento: {},
+      qualidade: {},
+      fontes: {},
+      graficos: {},
+      timeline: []
+    };
+  }
+
+  try {
+    // ✅ CHAMADA DIRETA RPC - SEM FALLBACK
+    console.log('🚀 [getExtractionAnalytics] Calling RPC get_extraction_analytics with runId:', runId);
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_extraction_analytics', { run_id: runId });
+
+    if (rpcError) {
+      console.error('❌ [getExtractionAnalytics] RPC Error:', rpcError);
+      throw new Error(`Erro ao buscar analytics: ${rpcError.message}`);
+    }
+
+    if (!rpcData) {
+      console.error('❌ [getExtractionAnalytics] RPC returned null/undefined');
+      throw new Error('Analytics não encontrado para este run');
+    }
+
+    console.log('✅ [getExtractionAnalytics] RPC data received successfully');
+    return rpcData;
+
+  } catch (error) {
+    console.error('❌ [getExtractionAnalytics] Error:', error);
     throw error;
   }
-
-  console.log('✅ [getExtractionAnalytics] Data received:', data);
-  return data;
 }
 
 /**

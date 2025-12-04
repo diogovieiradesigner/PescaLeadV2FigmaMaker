@@ -1,8 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import { format } from 'date-fns';
-
-const supabase = createClient();
 
 export interface LeadsByChannelDistribution {
   total: number;

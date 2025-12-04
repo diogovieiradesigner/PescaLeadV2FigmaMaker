@@ -37,17 +37,8 @@ export function LeadsByChannelChart({ data, isLoading, isDark = true }: LeadsByC
     return <div className="animate-pulse bg-zinc-800 h-96 rounded-xl" />;
   }
 
-  // Preparar dados para o gráfico
-  const chartData = data.chart_data?.length > 0 
-    ? data.chart_data 
-    : Object.entries(data.channels || {})
-        .filter(([_, value]) => value > 0)
-        .map(([key, value]) => ({
-          name: CHANNEL_NAMES[key] || key,
-          value: value as number,
-          percentage: data.total > 0 ? Math.round((value as number / data.total) * 100 * 10) / 10 : 0,
-          color: CHANNEL_COLORS[key] || '#9CA3AF',
-        }));
+  // Preparar dados para o gráfico - usando apenas chart_data da RPC
+  const chartData = data.chart_data || [];
 
   // Tooltip customizado
   const CustomTooltip = ({ active, payload }: any) => {

@@ -63,6 +63,7 @@ interface DashboardViewProps {
   theme: Theme;
   onThemeToggle: () => void;
   onNavigateToSettings: () => void;
+  onManageMembersClick?: () => void;
   stats?: {
     totalDeals: number;
     totalValue: number;
@@ -71,11 +72,11 @@ interface DashboardViewProps {
   };
 }
 
-export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, stats: propStats }: DashboardViewProps) {
+export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, onManageMembersClick, stats }: DashboardViewProps) {
   const isDark = theme === 'dark';
 
   // Usar stats recebidas como props ou valores padrão
-  const stats = propStats || {
+  const statsData = stats || {
     totalDeals: 0,
     totalValue: 0,
     activeLeads: 0,
@@ -140,25 +141,25 @@ export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, stat
   const pipelineData = [
     { 
       name: 'Novos Leads', 
-      value: stats.activeLeads || 12, 
+      value: statsData.activeLeads || 12, 
       color: '#3B82F6',
       percentage: 100 
     },
     { 
       name: 'Qualificados', 
-      value: Math.floor((stats.activeLeads || 12) * 0.6), 
+      value: Math.floor((statsData.activeLeads || 12) * 0.6), 
       color: '#8B5CF6',
       percentage: 60 
     },
     { 
       name: 'Proposta', 
-      value: Math.floor((stats.activeLeads || 12) * 0.35), 
+      value: Math.floor((statsData.activeLeads || 12) * 0.35), 
       color: '#F59E0B',
       percentage: 35 
     },
     { 
       name: 'Fechados', 
-      value: stats.totalDeals || 3, 
+      value: statsData.totalDeals || 3, 
       color: '#10B981',
       percentage: 25 
     },
@@ -174,7 +175,7 @@ export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, stat
     { day: 'Qui', leads: 16 },
     { day: 'Sex', leads: 14 },
     { day: 'Sáb', leads: 18 },
-    { day: 'Dom', leads: stats.activeLeads || 15 },
+    { day: 'Dom', leads: statsData.activeLeads || 15 },
   ];
 
   // Dados de conversas
@@ -242,7 +243,7 @@ export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, stat
           </button>
 
           {/* User Profile */}
-          <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} />
+          <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} onManageMembersClick={onManageMembersClick} />
         </div>
       </header>
 
@@ -253,31 +254,28 @@ export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, stat
       )}>
         <Tabs defaultValue="overview" className="h-full flex flex-col">
           {/* Tabs Navigation */}
-          <div className={cn(
-            "px-6 pt-6 pb-4 mb-4 border-b",
-            isDark ? "border-white/[0.08]" : "border-zinc-200"
-          )}>
+          <div className="px-6 pt-6 pb-4 mb-4">
             <TabsList className={cn(
-              "inline-flex justify-start rounded-lg p-1 h-auto",
+              "inline-flex justify-start rounded-lg p-1 h-auto gap-2",
               isDark ? "bg-white/[0.05]" : "bg-zinc-100"
             )}>
-              <TabsTrigger value="overview" className="gap-2">
+              <TabsTrigger value="overview" className="gap-2 px-4 py-2 dark:data-[state=active]:border-transparent">
                 <BarChart3 className="w-4 h-4" />
                 Visão Geral
               </TabsTrigger>
-              <TabsTrigger value="leads" className="gap-2">
+              <TabsTrigger value="leads" className="gap-2 px-4 py-2 dark:data-[state=active]:border-transparent">
                 <Users className="w-4 h-4" />
                 Leads
               </TabsTrigger>
-              <TabsTrigger value="conversations" className="gap-2">
+              <TabsTrigger value="conversations" className="gap-2 px-4 py-2 dark:data-[state=active]:border-transparent">
                 <MessageSquare className="w-4 h-4" />
                 Conversas
               </TabsTrigger>
-              <TabsTrigger value="campaigns" className="gap-2">
+              <TabsTrigger value="campaigns" className="gap-2 px-4 py-2 dark:data-[state=active]:border-transparent">
                 <Megaphone className="w-4 h-4" />
                 Campanhas
               </TabsTrigger>
-              <TabsTrigger value="ai" className="gap-2">
+              <TabsTrigger value="ai" className="gap-2 px-4 py-2 dark:data-[state=active]:border-transparent">
                 <Bot className="w-4 h-4" />
                 I.A & Automação
               </TabsTrigger>

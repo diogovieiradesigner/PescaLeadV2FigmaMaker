@@ -20,7 +20,47 @@ export function useTopRankings(
       });
 
       if (error) throw error;
-      return data as TopRankings;
+      
+      // O RPC pode retornar arrays como strings JSON - fazer parse
+      let result = data as any;
+      
+      if (!result || typeof result !== 'object') {
+        console.warn('[useTopRankings] Dados inválidos recebidos do RPC:', data);
+        return {
+          leads_engaged: [],
+          attendants: [],
+          sources: [],
+          campaigns: [],
+          period: { 
+            start: filters.startDate.toISOString(), 
+            end: filters.endDate.toISOString() 
+          },
+          limit,
+          generated_at: new Date().toISOString(),
+        };
+      }
+      
+      // Parse de campos que podem vir como string
+      const arrayFields = ['leads_engaged', 'attendants', 'sources', 'campaigns'];
+      
+      for (const field of arrayFields) {
+        if (typeof result[field] === 'string') {
+          try {
+            result[field] = JSON.parse(result[field]);
+          } catch (e) {
+            console.error(`[useTopRankings] Erro ao fazer parse de ${field}:`, e);
+            result[field] = [];
+          }
+        }
+        
+        // Garantir que seja um array
+        if (!Array.isArray(result[field])) {
+          console.warn(`[useTopRankings] ${field} não é um array:`, result[field]);
+          result[field] = [];
+        }
+      }
+      
+      return result as TopRankings;
     },
     staleTime: 5 * 60 * 1000,
     enabled: !!workspaceId,

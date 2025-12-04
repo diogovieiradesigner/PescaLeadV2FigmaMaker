@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
-import { User, LogOut, Settings, ChevronDown, Building2 } from 'lucide-react';
+import { User, LogOut, Settings, ChevronDown, Building2, Users } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
 
 interface ProfileMenuProps {
   theme: Theme;
   onNavigateToSettings?: () => void;
+  onManageMembersClick?: () => void;
 }
 
-export function ProfileMenu({ theme, onNavigateToSettings }: ProfileMenuProps) {
+export function ProfileMenu({ theme, onNavigateToSettings, onManageMembersClick }: ProfileMenuProps) {
   const isDark = theme === 'dark';
   const { user, currentWorkspace, workspaces, logout, switchWorkspace } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -99,7 +100,7 @@ export function ProfileMenu({ theme, onNavigateToSettings }: ProfileMenuProps) {
       {isOpen && (
         <div className={`absolute right-0 top-full mt-2 w-64 rounded-lg border shadow-lg overflow-hidden z-50 ${
           isDark
-            ? 'bg-elevated border-white/[0.08]'
+            ? 'bg-[#181818] border-white/[0.08]'
             : 'bg-white border-border-light'
         }`}>
           {/* User Info Section */}
@@ -229,6 +230,28 @@ export function ProfileMenu({ theme, onNavigateToSettings }: ProfileMenuProps) {
             >
               <Settings className="w-4 h-4" />
               Configurações
+            </button>
+
+            <button
+              onClick={() => {
+                if (onManageMembersClick) {
+                  onManageMembersClick();
+                  setIsOpen(false);
+                }
+              }}
+              disabled={!onManageMembersClick}
+              className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-3 ${
+                !onManageMembersClick
+                  ? isDark
+                    ? 'text-white/30 cursor-not-allowed'
+                    : 'text-text-secondary-light/30 cursor-not-allowed'
+                  : isDark
+                    ? 'text-white/70 hover:bg-white/[0.05] hover:text-white'
+                    : 'text-text-secondary-light hover:bg-black/[0.05] hover:text-text-primary-light'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Gerenciar membros
             </button>
           </div>
 

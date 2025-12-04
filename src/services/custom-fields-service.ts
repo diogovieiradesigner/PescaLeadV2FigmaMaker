@@ -1,12 +1,10 @@
-// ============================================
-// CUSTOM FIELDS SERVICE
-// Gerencia campos personalizados dos leads
-// ============================================
+/**
+ * Custom Fields Service
+ * Gerencia campos personalizados do CRM
+ */
 
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import type { CustomField } from '../types/crm';
-
-const supabase = createClient();
 
 // ============================================
 // TIPOS

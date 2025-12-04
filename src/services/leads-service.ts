@@ -1,15 +1,13 @@
 // ============================================
-// LEADS SERVICE
-// Gerencia leads/cards do kanban (PRINCIPAL!)
+// Leads Service
+// Gerencia leads do CRM
 // ============================================
 
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import type { DbLead } from '../types/database';
-import { dbLeadToFrontend, frontendLeadToDb, dbLeadsToFrontend, type CRMLead } from '../utils/supabase/converters';
+import { dbLeadToFrontend, type Lead } from '../utils/supabase/converters';
 import * as customFieldsService from './custom-fields-service';
 import type { CustomField } from '../types/crm';
-
-const supabase = createClient();
 
 // ============================================
 // TIPOS
@@ -68,7 +66,7 @@ export interface MoveLeadData {
  * Busca todos os leads de um workspace
  */
 export async function getLeadsByWorkspace(workspaceId: string): Promise<{
-  leads: CRMLead[];
+  leads: Lead[];
   error: Error | null;
 }> {
   try {
@@ -102,7 +100,7 @@ export async function getLeadsByWorkspace(workspaceId: string): Promise<{
  * Busca leads de uma coluna específica
  */
 export async function getLeadsByColumn(columnId: string): Promise<{
-  leads: CRMLead[];
+  leads: Lead[];
   error: Error | null;
 }> {
   try {
@@ -135,7 +133,7 @@ export async function getLeadsByColumn(columnId: string): Promise<{
  * Busca lead específico
  */
 export async function getLeadById(leadId: string): Promise<{
-  lead: CRMLead | null;
+  lead: Lead | null;
   error: Error | null;
 }> {
   try {
@@ -314,7 +312,7 @@ async function saveContactAsCustomField(
  * Cria novo lead
  */
 export async function createLead(data: CreateLeadData): Promise<{
-  lead: CRMLead | null;
+  lead: Lead | null;
   error: Error | null;
 }> {
   try {
@@ -823,25 +821,55 @@ export async function updateLead(
  */
 export async function moveLead(data: MoveLeadData): Promise<{ error: Error | null }> {
   try {
+    // ✅ OTIMIZAÇÃO: Usar backend com SERVICE_ROLE_KEY para evitar erros de RLS
+    const { projectId, publicAnonKey } = await import('../utils/supabase/info');
+    
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !authUser) {
       return { error: authError || new Error('Não autenticado') };
     }
 
-    // Atualizar coluna e posição do lead
-    const { error: moveError } = await supabase
+    // ✅ Obter workspace ID do lead que está sendo movido
+    const { data: leadData, error: leadError } = await supabase
       .from('leads')
-      .update({
-        column_id: data.newColumnId,
-        position: data.newPosition,
-        updated_by: authUser.id,
-      })
-      .eq('id', data.leadId);
+      .select('workspace_id')
+      .eq('id', data.leadId)
+      .single();
 
-    if (moveError) {
-      console.error('[LEADS] Erro ao mover lead:', moveError);
-      return { error: moveError };
+    if (leadError || !leadData?.workspace_id) {
+      console.error('[LEADS] Erro ao buscar workspace do lead:', leadError);
+      return { error: new Error('Lead não encontrado ou workspace inválido') };
+    }
+
+    const workspaceId = leadData.workspace_id;
+
+    // ✅ Chamar backend para mover lead (bypassa RLS com SERVICE_ROLE_KEY)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session?.access_token) {
+      return { error: sessionError || new Error('Sessão não encontrada') };
+    }
+
+    const response = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${workspaceId}/leads/${data.leadId}/move`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          toColumnId: data.newColumnId,
+          toPosition: data.newPosition,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[LEADS] Erro ao mover lead via backend:', errorData);
+      return { error: new Error(errorData.error || 'Erro ao mover lead') };
     }
 
     // Criar mensagem de atividade mais descritiva
@@ -855,7 +883,7 @@ export async function moveLead(data: MoveLeadData): Promise<{ error: Error | nul
 
     await createLeadActivity(data.leadId, description, 'status_change');
 
-    console.log('[LEADS] Lead movido com sucesso');
+    console.log('[LEADS] Lead movido com sucesso via backend');
     return { error: null };
 
   } catch (error) {
@@ -1030,7 +1058,7 @@ export async function restoreLead(leadId: string): Promise<{ error: Error | null
  * Busca leads por texto (full-text search)
  */
 export async function searchLeads(workspaceId: string, query: string): Promise<{
-  leads: CRMLead[];
+  leads: Lead[];
   error: Error | null;
 }> {
   try {

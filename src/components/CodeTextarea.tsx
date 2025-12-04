@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Maximize2, X, GripHorizontal } from 'lucide-react';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import * as DialogPrimitive from '@radix-ui/react-dialog@1.1.6';
 import { Resizable } from 're-resizable';
 
@@ -20,19 +19,21 @@ export function CodeTextarea({
   onChange,
   onKeyDown,
   placeholder,
-  rows = 10,
+  rows = 6,
   isDark,
   className = '',
   label = 'Editar',
 }: CodeTextareaProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const highlightRef = useRef<HTMLDivElement>(null);
-  const modalTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [lineNumbers, setLineNumbers] = useState<number[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const modalTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const modalHighlightRef = useRef<HTMLDivElement>(null);
+  const modalContentRef = useRef<HTMLDivElement>(null);
+  
   // Calcular tamanho inicial do modal
   const getInitialSize = () => ({
-    width: Math.floor(window.innerWidth * 0.6),
+    width: Math.floor(window.innerWidth * 0.7),
     height: Math.floor(window.innerHeight * 0.8),
   });
   
@@ -44,28 +45,27 @@ export function CodeTextarea({
       setModalSize(getInitialSize());
     }
   }, [isModalOpen]);
+
+  // Fechar modal ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalContentRef.current && !modalContentRef.current.contains(event.target as Node)) {
+        setIsModalOpen(false);
+      }
+    };
+
+    if (isModalOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isModalOpen]);
   
   // Contadores
   const charCount = value.length;
   const wordCount = value.trim() === '' ? 0 : value.trim().split(/\s+/).length;
-
-  // Atualizar números de linha quando o conteúdo mudar
-  useEffect(() => {
-    const lines = value.split('\n').length;
-    setLineNumbers(Array.from({ length: Math.max(lines, rows) }, (_, i) => i + 1));
-  }, [value, rows]);
-
-  // Sincronizar scroll entre números de linha, textarea e highlight
-  const handleScroll = () => {
-    const lineNumbersEl = document.getElementById(`line-numbers-${uniqueId.current}`);
-    if (lineNumbersEl && textareaRef.current && highlightRef.current) {
-      lineNumbersEl.scrollTop = textareaRef.current.scrollTop;
-      highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  };
-
-  // ID único para este textarea
-  const uniqueId = useRef(`textarea-${Math.random().toString(36).substr(2, 9)}`);
 
   // Paleta de cores para diferentes tags
   const tagColors = isDark
@@ -103,145 +103,138 @@ export function CodeTextarea({
     
     // Escapar HTML primeiro
     const escaped = text
-      .replace(/&/g, '&')
-      .replace(/</g, '<')
-      .replace(/>/g, '>');
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     
-    // Colorir tags de abertura e fechamento: <tag> e </tag>
-    let highlighted = escaped.replace(
-      /<(\/?)[a-zA-Z0-9_-]+(?:\s[^&]*?)?>/g,
-      (match, slash, tagName) => {
+    // Colorir tags de abertura e fechamento
+    const highlighted = escaped.replace(
+      /&lt;(\/?\w+)(?:\s[^&]*?)?&gt;/g,
+      (match, tagWithSlash) => {
+        const tagName = tagWithSlash.replace('/', '');
         const color = getTagColor(tagName);
-        return `<span style="color: ${color};"><${slash}${tagName}></span>`;
+        return `<span style="color: ${color}; font-weight: 500;">${match}</span>`;
       }
     );
     
     return highlighted;
   };
 
-  const renderEditor = (isModal = false) => {
-    const currentRef = isModal ? modalTextareaRef : textareaRef;
+  // Sincronizar scroll do highlight com o textarea
+  const handleScroll = (isModal: boolean) => {
+    const textarea = isModal ? modalTextareaRef.current : textareaRef.current;
+    const highlight = isModal ? modalHighlightRef.current : highlightRef.current;
     
-    return (
-    <div
-      className={`relative flex rounded-lg border overflow-hidden ${
-        isDark
-          ? 'bg-white/[0.05] border-white/[0.1]'
-          : 'bg-white border-gray-200'
-      } ${isModal ? 'h-full' : className}`}
-    >
-      {/* Números de Linha */}
-      <div
-        id={`line-numbers-${uniqueId.current}${isModal ? '-modal' : ''}`}
-        className={`select-none overflow-hidden py-2 pr-3 pl-3 text-right font-mono text-sm ${
-          isDark ? 'text-white/30 bg-white/[0.02]' : 'text-gray-400 bg-gray-50'
-        }`}
-        style={{
-          lineHeight: '1.5',
-          minWidth: '3rem',
-          height: isModal ? '100%' : 'auto',
-          maxHeight: isModal ? '100%' : `${rows * 1.5 * 16 + 16}px`,
-        }}
-      >
-        {lineNumbers.map((num) => (
-          <div key={num}>{num}</div>
-        ))}
-      </div>
+    if (textarea && highlight) {
+      highlight.scrollTop = textarea.scrollTop;
+      highlight.scrollLeft = textarea.scrollLeft;
+    }
+  };
 
-      {/* Container para Textarea + Highlight Overlay */}
-      <div className="relative flex-1">
-        {/* Highlight Overlay (atrás do textarea) */}
+  // Renderizar editor (normal ou modal)
+  const renderEditor = (isModal: boolean) => {
+    const currentTextareaRef = isModal ? modalTextareaRef : textareaRef;
+    const currentHighlightRef = isModal ? modalHighlightRef : highlightRef;
+
+    return (
+      <div 
+        className={`relative w-full rounded-lg border ${
+          isDark
+            ? 'bg-white/[0.05] border-white/[0.1]'
+            : 'bg-white border-gray-200'
+        } ${!isModal ? className : ''}`}
+        style={isModal ? { height: '100%' } : {}}
+      >
+        {/* Highlight overlay - atrás do textarea */}
         <div
-          ref={highlightRef}
-          className={`absolute inset-0 px-3 py-2 font-mono text-sm pointer-events-none overflow-auto whitespace-pre-wrap break-words ${
+          ref={currentHighlightRef}
+          className={`absolute inset-0 px-4 py-3 font-mono text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words rounded-lg ${
             isDark ? 'text-white' : 'text-gray-900'
           }`}
           style={{
-            lineHeight: '1.5',
-            wordWrap: 'break-word',
-            overflowWrap: 'break-word',
+            lineHeight: '1.6',
+            wordBreak: 'break-word',
+            zIndex: 1,
           }}
-          dangerouslySetInnerHTML={{ __html: highlightSyntax(value) || '<br />' }}
+          dangerouslySetInnerHTML={{ __html: highlightSyntax(value) || '&nbsp;' }}
         />
 
-        {/* Textarea (transparente para mostrar highlight) */}
+        {/* Textarea - transparente para mostrar o highlight */}
         <textarea
-          ref={currentRef}
-          id={`${uniqueId.current}${isModal ? '-modal' : ''}`}
+          ref={currentTextareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          onScroll={handleScroll}
+          onScroll={() => handleScroll(isModal)}
           placeholder={placeholder}
-          rows={isModal ? 20 : rows}
-          className={`relative z-10 w-full px-3 py-2 font-mono text-sm outline-none transition-colors ${
-            isModal ? 'resize-none h-full' : 'resize-y'
-          } ${
-            isDark
-              ? 'bg-transparent text-transparent caret-white placeholder-white/40 focus:ring-2 focus:ring-[#0169D9]/50'
-              : 'bg-transparent text-transparent caret-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#0169D9]/50'
-          }`}
-          style={{
-            lineHeight: '1.5',
-            minHeight: isModal ? '100%' : `${rows * 1.5}rem`,
-            maxHeight: isModal ? '100%' : undefined,
-            WebkitTextFillColor: 'transparent',
-          }}
+          rows={isModal ? undefined : rows}
           spellCheck={false}
+          className={`relative w-full px-4 py-3 font-mono text-sm rounded-lg border-none resize-none outline-none transition-all bg-transparent ${
+            isDark
+              ? 'text-transparent caret-white placeholder:text-white/40 focus:ring-2 focus:ring-[#0169D9]/20'
+              : 'text-transparent caret-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-[#0169D9]/20'
+          } ${!isModal ? className : ''}`}
+          style={{
+            lineHeight: '1.6',
+            height: isModal ? '100%' : undefined,
+            WebkitTextFillColor: 'transparent',
+            zIndex: 2,
+          }}
         />
       </div>
-    </div>
-  );
+    );
   };
 
   return (
     <>
-      {/* Editor Principal */}
+      {/* Editor Principal - Compacto */}
       <div className="relative">
         {renderEditor(false)}
         
         {/* Barra de informações e ações */}
-        <div className={`flex items-center justify-between mt-1 px-1 text-xs ${
-          isDark ? 'text-white/50' : 'text-gray-500'
-        }`}>
+        <div
+          className={`flex items-center justify-between mt-2 px-1 text-xs ${
+            isDark ? 'text-white/50' : 'text-gray-500'
+          }`}
+        >
           <div className="flex items-center gap-3">
-            <span>{wordCount} {wordCount === 1 ? 'palavra' : 'palavras'}</span>
+            <span>
+              {wordCount} {wordCount === 1 ? 'palavra' : 'palavras'}
+            </span>
             <span>&bull;</span>
-            <span>{charCount} {charCount === 1 ? 'caractere' : 'caracteres'}</span>
+            <span>
+              {charCount} {charCount === 1 ? 'caractere' : 'caracteres'}
+            </span>
           </div>
-          
+
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+            className={`flex items-center gap-1.5 px-2 py-1 rounded transition-colors ${
               isDark
                 ? 'hover:bg-white/10 text-white/60 hover:text-white/90'
                 : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
             }`}
             title="Expandir editor"
           >
-            <Maximize2 className="w-3 h-3" />
+            <Maximize2 className="w-3.5 h-3.5" />
             <span>Expandir</span>
           </button>
         </div>
       </div>
 
       {/* Modal de edição expandida */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      <DialogPrimitive.Root open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay 
-            className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-          />
+          <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
           <DialogPrimitive.Content
             className="fixed top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] z-50 outline-none"
-            style={{
-              pointerEvents: 'none',
-            }}
+            style={{ pointerEvents: 'none' }}
           >
             <Resizable
-              size={{ width: modalSize.width, height: modalSize.height }}
-              onResize={(e, direction, ref, d) => {
-                // Atualizar tamanho em tempo real
+              ref={modalContentRef}
+              size={modalSize}
+              onResize={(e, direction, ref) => {
                 setModalSize({
                   width: ref.offsetWidth,
                   height: ref.offsetHeight,
@@ -262,134 +255,96 @@ export function CodeTextarea({
                 topLeft: true,
               }}
               handleStyles={{
-                right: { 
-                  width: '8px', 
-                  right: '-4px',
-                  cursor: 'ew-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                bottom: { 
-                  height: '8px', 
-                  bottom: '-4px',
-                  cursor: 'ns-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                left: { 
-                  width: '8px', 
-                  left: '-4px',
-                  cursor: 'ew-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                top: { 
-                  height: '8px', 
-                  top: '-4px',
-                  cursor: 'ns-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                topRight: { 
-                  width: '16px', 
-                  height: '16px',
-                  right: '-8px',
-                  top: '-8px',
-                  cursor: 'nesw-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                bottomRight: { 
-                  width: '16px', 
-                  height: '16px',
-                  right: '-8px',
-                  bottom: '-8px',
-                  cursor: 'nwse-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                bottomLeft: { 
-                  width: '16px', 
-                  height: '16px',
-                  left: '-8px',
-                  bottom: '-8px',
-                  cursor: 'nesw-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
-                topLeft: { 
-                  width: '16px', 
-                  height: '16px',
-                  left: '-8px',
-                  top: '-8px',
-                  cursor: 'nwse-resize',
-                  background: 'transparent',
-                  zIndex: 10,
-                },
+                right: { width: '8px', right: '-4px', cursor: 'ew-resize' },
+                bottom: { height: '8px', bottom: '-4px', cursor: 'ns-resize' },
+                left: { width: '8px', left: '-4px', cursor: 'ew-resize' },
+                top: { height: '8px', top: '-4px', cursor: 'ns-resize' },
+                topRight: { width: '16px', height: '16px', right: '-8px', top: '-8px', cursor: 'nesw-resize' },
+                bottomRight: { width: '16px', height: '16px', right: '-8px', bottom: '-8px', cursor: 'nwse-resize' },
+                bottomLeft: { width: '16px', height: '16px', left: '-8px', bottom: '-8px', cursor: 'nesw-resize' },
+                topLeft: { width: '16px', height: '16px', left: '-8px', top: '-8px', cursor: 'nwse-resize' },
               }}
               style={{
                 pointerEvents: 'auto',
               }}
-              className={`flex flex-col rounded-lg shadow-lg overflow-hidden ${
-                isDark ? 'bg-[#1a1a1a] border-white/10 border' : 'bg-white border-gray-200 border'
+              className={`rounded-lg shadow-2xl border flex flex-col ${
+                isDark ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-gray-200'
               }`}
             >
-            {/* Header com botão fechar */}
-            <div className={`px-6 pt-6 pb-3 shrink-0 border-b ${
-              isDark ? 'border-white/10' : 'border-gray-200'
-            }`}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <DialogPrimitive.Title className={`text-lg leading-none font-semibold mb-2 ${
-                    isDark ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    {label}
-                  </DialogPrimitive.Title>
-                  <DialogPrimitive.Description className={`text-sm ${
-                    isDark ? 'text-white/60' : 'text-gray-600'
-                  }`}>
-                    Editor redimensionavel &bull; Arraste as bordas para ajustar o tamanho
-                  </DialogPrimitive.Description>
+              {/* Header fixo */}
+              <div
+                className={`px-6 py-4 flex-shrink-0 border-b ${
+                  isDark ? 'border-white/10' : 'border-gray-200'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <DialogPrimitive.Title
+                      className={`text-lg font-semibold mb-1 ${
+                        isDark ? 'text-white' : 'text-gray-900'
+                      }`}
+                    >
+                      {label}
+                    </DialogPrimitive.Title>
+                    <DialogPrimitive.Description
+                      className={`text-sm ${
+                        isDark ? 'text-white/60' : 'text-gray-600'
+                      }`}
+                    >
+                      Arraste as bordas para redimensionar o editor
+                    </DialogPrimitive.Description>
+                  </div>
+                  <DialogPrimitive.Close
+                    className={`flex-shrink-0 rounded p-1.5 transition-colors ${
+                      isDark
+                        ? 'hover:bg-white/10 text-white/60 hover:text-white/90'
+                        : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+                    }`}
+                    title="Fechar"
+                  >
+                    <X className="w-4 h-4" />
+                  </DialogPrimitive.Close>
                 </div>
-                <DialogPrimitive.Close
-                  className={`rounded-xs p-1.5 transition-colors ${
-                    isDark 
-                      ? 'hover:bg-white/10 text-white/60 hover:text-white/90' 
-                      : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-                  }`}
-                  title="Fechar"
-                  aria-label="Fechar"
-                >
-                  <X className="w-4 h-4" />
-                </DialogPrimitive.Close>
               </div>
-            </div>
-            
-            <div className="flex-1 px-6 pb-3 overflow-hidden flex flex-col min-h-0">
-              <div className="flex-1 min-h-0">
+
+              {/* Área do Editor */}
+              <div className="flex-1 p-6" style={{ minHeight: 0 }}>
                 {renderEditor(true)}
               </div>
-              
-              {/* Contadores no modal */}
-              <div className={`flex items-center gap-3 text-sm mt-3 shrink-0 ${
-                isDark ? 'text-white/50' : 'text-gray-500'
-              }`}>
-                <span>{wordCount} {wordCount === 1 ? 'palavra' : 'palavras'}</span>
-                <span>&bull;</span>
-                <span>{charCount} {charCount === 1 ? 'caractere' : 'caracteres'}</span>
+
+              {/* Footer fixo com estatísticas */}
+              <div
+                className={`px-6 py-3 flex-shrink-0 border-t ${
+                  isDark ? 'border-white/10' : 'border-gray-200'
+                }`}
+              >
+                <div
+                  className={`flex items-center gap-3 text-sm ${
+                    isDark ? 'text-white/50' : 'text-gray-500'
+                  }`}
+                >
+                  <span>
+                    {wordCount} {wordCount === 1 ? 'palavra' : 'palavras'}
+                  </span>
+                  <span>&bull;</span>
+                  <span>
+                    {charCount} {charCount === 1 ? 'caractere' : 'caracteres'}
+                  </span>
+                </div>
               </div>
-            </div>
-            
-              {/* Indicador visual de resize no canto inferior direito */}
-              <div className={`absolute bottom-2 right-2 pointer-events-none ${
-                isDark ? 'text-white/20' : 'text-gray-300'
-              }`}>
+
+              {/* Indicador visual de resize */}
+              <div
+                className={`absolute bottom-2 right-2 pointer-events-none ${
+                  isDark ? 'text-white/20' : 'text-gray-300'
+                }`}
+              >
                 <GripHorizontal className="w-4 h-4 transform rotate-45" />
               </div>
             </Resizable>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
-      </Dialog>
+      </DialogPrimitive.Root>
     </>
   );
 }

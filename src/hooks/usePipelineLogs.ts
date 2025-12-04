@@ -20,6 +20,8 @@ export interface PipelineStep {
   errorMessage: string | null;
   model: string | null;
   config: any | null;
+  inputData: any | null;
+  outputData: any | null;
 }
 
 export interface PipelineInfo {
@@ -111,8 +113,10 @@ export function usePipelineLogs(pipelineId: string | null | undefined) {
             inputSummary: step.input_summary,
             outputSummary: step.output_summary,
             errorMessage: step.error_message,
-            model: step.model,
+            model: step.config?.model || null,
             config: step.config,
+            inputData: step.input_data,
+            outputData: step.output_data,
           })),
         };
 

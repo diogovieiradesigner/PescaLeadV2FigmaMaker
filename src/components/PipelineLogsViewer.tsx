@@ -65,60 +65,33 @@ const StepItem: React.FC<StepItemProps> = ({ step, isLast, isDark = false }) => 
     }
   };
   
-  const getStatusBadge = () => {
-    switch (step.status) {
-      case 'success':
-        return <span className="px-1.5 py-0.5 text-[9px] font-medium uppercase bg-green-500/30 text-green-300 rounded">Success</span>;
-      case 'error':
-        return <span className="px-1.5 py-0.5 text-[9px] font-medium uppercase bg-red-500/30 text-red-300 rounded">Error</span>;
-      case 'skipped':
-        return <span className="px-1.5 py-0.5 text-[9px] font-medium uppercase bg-gray-500/30 text-gray-300 rounded">Skipped</span>;
-      default:
-        return null;
-    }
-  };
-  
   return (
     <div className={`${!isLast ? (isDark ? 'border-b border-white/10' : 'border-b border-gray-200') : ''}`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`w-full px-2 py-2.5 flex items-center gap-2 ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} transition-colors rounded`}
+        className={`w-full px-2 py-2.5 flex items-center gap-2 ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'} transition-colors rounded text-left`}
       >
         <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
           {getIcon()}
         </div>
         
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-0.5">
-            <div className="flex items-center gap-1.5">
-              <span className={`text-xs ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{step.name}</span>
-              {getStatusBadge()}
-            </div>
+        <div className="flex-1 min-w-0 text-left">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`text-xs text-left ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{step.name}</span>
             
-            <div className={`flex items-center gap-2 text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
-              {step.durationMs != null && (
-                <span className="flex items-center gap-1">
-                  <Clock size={10} /> {step.durationMs}ms
-                </span>
-              )}
-              {step.tokensTotal != null && step.tokensTotal > 0 && (
-                <span>{step.tokensTotal} tokens</span>
-              )}
-              {step.model && (
-                <span className={isDark ? 'text-blue-400' : 'text-blue-600'}>{step.model.split('/').pop()}</span>
-              )}
-              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <div className="flex-shrink-0">
+              {expanded ? <ChevronDown size={12} className={isDark ? 'text-gray-400' : 'text-gray-600'} /> : <ChevronRight size={12} className={isDark ? 'text-gray-400' : 'text-gray-600'} />}
             </div>
           </div>
           
           {step.statusMessage && (
-            <div className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-600'} truncate`}>
+            <div className={`text-[10px] text-left ${isDark ? 'text-gray-500' : 'text-gray-600'} truncate mt-0.5`}>
               {step.statusMessage.replace('[PREVIEW] ', '').replace(/^[✅❌📨ℹ️⚠️]\s*/, '')}
             </div>
           )}
           
           {step.status === 'error' && step.errorMessage && !expanded && (
-            <div className="mt-1 text-[10px] text-red-400 truncate">
+            <div className="mt-1 text-[10px] text-left text-red-400 truncate">
               {step.errorMessage}
             </div>
           )}
@@ -132,25 +105,68 @@ const StepItem: React.FC<StepItemProps> = ({ step, isLast, isDark = false }) => 
       
       {/* Detalhes expandidos */}
       {expanded && (
-        <div className={`mb-2 ml-7 mr-3 ${isDark ? 'bg-black/40 border-gray-800' : 'bg-gray-100 border-gray-300'} rounded border p-2 space-y-1`}>
+        <div className={`mb-2 ml-7 mr-3 ${isDark ? 'bg-black border-gray-800' : 'bg-gray-100 border-gray-300'} rounded border p-2 space-y-1 overflow-hidden`}>
           {step.model && (
-            <div className="text-[10px]">
+            <div className="text-[10px] break-words">
               <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Model:</span>
               <span className={`ml-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{step.model}</span>
             </div>
           )}
           {step.inputSummary && (
-            <div className="text-[10px]">
+            <div className="text-[10px] break-words overflow-wrap-anywhere">
               <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Input:</span>
               <span className={`ml-1 ${isDark ? 'text-gray-400' : 'text-gray-700'}`}>{step.inputSummary}</span>
             </div>
           )}
           {step.outputSummary && (
-            <div className="text-[10px]">
+            <div className="text-[10px] break-words overflow-wrap-anywhere">
               <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Output:</span>
               <span className={`ml-1 ${isDark ? 'text-gray-400' : 'text-gray-700'}`}>{step.outputSummary}</span>
             </div>
           )}
+          
+          {/* Detalhes especiais para Transcrição */}
+          {step.key === 'transcription' && (step.inputData || step.config) && (
+            <div className="text-[10px] space-y-1 pt-1 border-t border-white/10">
+              {step.inputData && (
+                <div className="flex items-center gap-2">
+                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Mídias:</span>
+                  <span className={`${isDark ? 'text-gray-400' : 'text-gray-700'}`}>
+                    {step.inputData.completed || 0}/{step.inputData.total_media || 0} transcrita(s)
+                  </span>
+                </div>
+              )}
+              {step.config && (
+                <>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {step.config.has_audio && (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] ${isDark ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>
+                        🎤 Áudio
+                      </span>
+                    )}
+                    {step.config.has_image && (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] ${isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+                        🖼️ Imagem
+                      </span>
+                    )}
+                  </div>
+                  {step.config.audio_provider && (
+                    <div>
+                      <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Audio Provider:</span>
+                      <span className={`ml-1 ${isDark ? 'text-gray-400' : 'text-gray-700'}`}>{step.config.audio_provider}</span>
+                    </div>
+                  )}
+                  {step.config.image_provider && (
+                    <div>
+                      <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Image Provider:</span>
+                      <span className={`ml-1 ${isDark ? 'text-gray-400' : 'text-gray-700'}`}>{step.config.image_provider}</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          
           {(step.tokensInput != null || step.tokensOutput != null) && (
             <div className="text-[10px]">
               <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Tokens:</span>
@@ -202,7 +218,7 @@ export const PipelineLogsViewer: React.FC<PipelineLogsViewerProps> = ({
   const totalSteps = pipeline.steps.length;
   
   return (
-    <div className={inline ? 'block w-full' : 'inline-block relative'}>
+    <div className="inline-block w-full">
       {/* Header - Inline compacto */}
       <button 
         onClick={() => setIsExpanded(!isExpanded)}
@@ -238,13 +254,9 @@ export const PipelineLogsViewer: React.FC<PipelineLogsViewerProps> = ({
         )}
       </button>
       
-      {/* Conteúdo expandido - Inline ou Dropdown */}
+      {/* Conteúdo expandido - Sempre inline, ocupa espaço normalmente */}
       {isExpanded && (
-        <div className={
-          inline
-            ? `mt-2 w-full rounded-md ${isDark ? 'bg-black border-white/20' : 'bg-white border-gray-300'} border overflow-hidden z-10 p-3`
-            : `mt-1 z-10 w-full rounded-md ${isDark ? 'bg-black/95 border-gray-800' : 'bg-white border-gray-300'} border shadow-lg overflow-hidden p-3`
-        }>
+        <div className={`mt-2 max-w-md rounded-md ${isDark ? 'bg-black border-white/20' : 'bg-white border-gray-300'} border overflow-hidden p-3 max-h-[400px] overflow-y-auto overflow-x-hidden scrollbar-thin`}>
           {pipeline.steps.map((step, index) => (
             <StepItem 
               key={step.key} 

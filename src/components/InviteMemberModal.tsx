@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { X, Link as LinkIcon, Copy, Check, Loader2 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { projectId } from '../utils/supabase/info';
 
 interface InviteMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
   theme: Theme;
   workspaceId: string;
+  accessToken: string;
   onInviteCreated?: () => void;
 }
 
-export function InviteMemberModal({ isOpen, onClose, theme, workspaceId, onInviteCreated }: InviteMemberModalProps) {
+export function InviteMemberModal({ isOpen, onClose, theme, workspaceId, accessToken, onInviteCreated }: InviteMemberModalProps) {
   const isDark = theme === 'dark';
   const [role, setRole] = useState<'member' | 'admin' | 'viewer'>('member');
   const [expiresInDays, setExpiresInDays] = useState(7);
@@ -27,30 +28,46 @@ export function InviteMemberModal({ isOpen, onClose, theme, workspaceId, onInvit
       setIsLoading(true);
       setError('');
 
+      console.log('[INVITE MODAL] Gerando convite:', { workspaceId, role, expiresInDays });
+
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${workspaceId}/invites`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+            'Authorization': `Bearer ${accessToken}`
           },
-          body: JSON.stringify({ role, expiresInDays })
+          body: JSON.stringify({ 
+            role, 
+            expires_in_days: expiresInDays 
+          })
         }
       );
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate invite');
+        const data = await response.json();
+        throw new Error(data.error || 'Erro ao gerar convite');
       }
 
-      // Generate local URL with hash
-      const localUrl = `${window.location.origin}${window.location.pathname}#/invite/${data.invite.code}`;
-      setInviteUrl(localUrl);
-      if (onInviteCreated) onInviteCreated();
+      const data = await response.json();
+      console.log('[INVITE MODAL] Convite criado:', data);
+
+      // ✅ O retorno da RPC/Edge Function tem "code", não "invite_code"
+      if (!data.success || !data.code) {
+        throw new Error(data.error || 'Erro ao criar convite');
+      }
+
+      // ✅ NOVO FORMATO: Query params ao invés de hash routing
+      const inviteLink = `https://hub.pescalead.com.br/?invite=${data.code}`;
+      setInviteUrl(inviteLink);
+      
+      if (onInviteCreated) {
+        onInviteCreated();
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error('[INVITE MODAL] Erro ao gerar convite:', err);
+      setError(err.message || 'Erro ao gerar convite');
     } finally {
       setIsLoading(false);
     }
@@ -70,6 +87,8 @@ export function InviteMemberModal({ isOpen, onClose, theme, workspaceId, onInvit
     setInviteUrl('');
     setCopied(false);
     setError('');
+    setRole('member');
+    setExpiresInDays(7);
     onClose();
   };
 
@@ -83,11 +102,11 @@ export function InviteMemberModal({ isOpen, onClose, theme, workspaceId, onInvit
 
       {/* Modal */}
       <div className={`relative w-full max-w-md rounded-xl shadow-2xl overflow-hidden ${
-        isDark ? 'bg-elevated' : 'bg-white'
+        isDark ? 'bg-[#0A0A0A]' : 'bg-white'
       }`}>
         {/* Header */}
         <div className={`px-6 py-4 border-b flex items-center justify-between ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
+          isDark ? 'border-white/[0.08] bg-[#0A0A0A]' : 'border-border-light bg-white'
         }`}>
           <h2 className={`text-lg font-medium ${
             isDark ? 'text-white' : 'text-text-primary-light'

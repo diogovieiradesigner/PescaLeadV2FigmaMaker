@@ -20,6 +20,7 @@ interface HeaderProps {
   onEditFunnelClick: () => void;
   onNavigateToSettings?: () => void;
   onRefresh?: () => void; // ✅ Callback para recarregar leads
+  onManageMembersClick?: () => void;
 }
 
 export function Header({
@@ -36,6 +37,7 @@ export function Header({
   onEditFunnelClick,
   onNavigateToSettings,
   onRefresh,
+  onManageMembersClick,
 }: HeaderProps) {
   const isDark = theme === 'dark';
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -206,7 +208,7 @@ export function Header({
         )}
 
         {/* User Profile */}
-        <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} />
+        <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} onManageMembersClick={onManageMembersClick} />
       </div>
     </header>
   );

@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import { TopSourcesByConversion, LeadsFilters } from '../types/leads.types';
-
-const supabase = createClient();
 
 export function useTopSourcesConversion(workspaceId: string, filters: LeadsFilters, limit: number = 5) {
   return useQuery<TopSourcesByConversion | null>({

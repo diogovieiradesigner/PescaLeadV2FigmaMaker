@@ -98,48 +98,32 @@ export function ProfileModal({ isOpen, onClose, theme }: ProfileModalProps) {
         onClick={onClose}
       />
 
-      {/* Modal */}
-      <div className={`relative w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden ${
-        isDark ? 'bg-elevated' : 'bg-white'
-      }`}>
+      {/* Modal - Fundo preto 100% opaco */}
+      <div className="relative w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden bg-black opacity-100">
         {/* Header */}
-        <div className={`px-6 py-4 border-b flex items-center justify-between ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
-        }`}>
-          <h2 className={`text-lg font-medium ${
-            isDark ? 'text-white' : 'text-text-primary-light'
-          }`}>
+        <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between">
+          <h2 className="text-lg font-medium text-white">
             Meu Perfil
           </h2>
           <button
             onClick={onClose}
-            className={`p-1.5 rounded-lg transition-colors ${
-              isDark
-                ? 'hover:bg-white/[0.05] text-white/70 hover:text-white'
-                : 'hover:bg-black/[0.05] text-text-secondary-light hover:text-text-primary-light'
-            }`}
+            className="p-1.5 rounded-lg transition-colors hover:bg-white/[0.05] text-white/70 hover:text-white"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Avatar Section */}
-        <div className={`px-6 py-6 border-b ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
-        }`}>
+        <div className="px-6 py-6 border-b border-white/[0.08]">
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-[#0169D9] flex items-center justify-center">
               <span className="text-white text-2xl font-medium">{initials}</span>
             </div>
             <div>
-              <h3 className={`text-lg font-medium ${
-                isDark ? 'text-white' : 'text-text-primary-light'
-              }`}>
+              <h3 className="text-lg font-medium text-white">
                 {user.name}
               </h3>
-              <p className={`text-sm ${
-                isDark ? 'text-white/50' : 'text-text-secondary-light'
-              }`}>
+              <p className="text-sm text-white/50">
                 {user.email}
               </p>
             </div>
@@ -147,9 +131,7 @@ export function ProfileModal({ isOpen, onClose, theme }: ProfileModalProps) {
         </div>
 
         {/* Tabs */}
-        <div className={`px-6 border-b ${
-          isDark ? 'border-white/[0.08]' : 'border-border-light'
-        }`}>
+        <div className="px-6 border-b border-white/[0.08]">
           <div className="flex gap-6">
             <button
               onClick={() => {
@@ -160,9 +142,7 @@ export function ProfileModal({ isOpen, onClose, theme }: ProfileModalProps) {
               className={`py-3 px-1 border-b-2 transition-colors ${
                 activeTab === 'info'
                   ? 'border-[#0169D9] text-[#0169D9]'
-                  : isDark
-                    ? 'border-transparent text-white/50 hover:text-white/70'
-                    : 'border-transparent text-text-secondary-light hover:text-text-primary-light'
+                  : 'border-transparent text-white/50 hover:text-white/70'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -179,9 +159,7 @@ export function ProfileModal({ isOpen, onClose, theme }: ProfileModalProps) {
               className={`py-3 px-1 border-b-2 transition-colors ${
                 activeTab === 'security'
                   ? 'border-[#0169D9] text-[#0169D9]'
-                  : isDark
-                    ? 'border-transparent text-white/50 hover:text-white/70'
-                    : 'border-transparent text-text-secondary-light hover:text-text-primary-light'
+                  : 'border-transparent text-white/50 hover:text-white/70'
               }`}
             >
               <div className="flex items-center gap-2">

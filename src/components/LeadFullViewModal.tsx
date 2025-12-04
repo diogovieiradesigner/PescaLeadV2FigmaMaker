@@ -6,7 +6,7 @@ import { Avatar } from './Avatar';
 import { ChatArea } from './chat/ChatArea';
 import { useSingleConversation } from '../hooks/useSingleConversation';
 import { useAuth } from '../contexts/AuthContext';
-import { loadCustomFieldsForLead } from '../services/custom-fields-service';
+import { useLeadCustomFields } from '../hooks/useLeadCustomFields'; // ✅ Novo hook de lazy loading
 import { getLeadActivities, updateLead } from '../services/leads-service';
 import { toast } from 'sonner';
 import { createConversation } from '../services/chat-service';
@@ -275,11 +275,10 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   });
   
   const { currentWorkspace } = useAuth();
-  const [activeTab, setActiveTab] = useState<ActiveTab>('chat');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('data');
   const [formData, setFormData] = useState<CRMLead | null>(lead);
   const [activities, setActivities] = useState<any[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [isSaving, setIsSaving] = useState(false); // Bloqueio de múltiplos cliques
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [availableInboxes, setAvailableInboxes] = useState<any[]>([]);
@@ -287,6 +286,16 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   const [loadingInboxes, setLoadingInboxes] = useState(false);
   const [selectedPhone, setSelectedPhone] = useState<string>(''); // ✅ Telefone selecionado
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null); // ✅ Controle de qual campo está em edição
+  
+  // ✅ LAZY LOADING: Custom fields carregam sob demanda (sem cache - sempre recarrega no kanban)
+  const { 
+    customFields, 
+    loading: loadingCustomFields, 
+    refresh: refreshCustomFields 
+  } = useLeadCustomFields(
+    isOpen && lead?.id ? lead.id : null,  // Só busca se modal estiver aberto
+    { cache: false }  // Kanban sempre recarrega
+  );
   
   // Hook do chat para a aba de Chat
   const { 
@@ -373,22 +382,8 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     if (isOpen && lead) {
       setFormData(lead);
       
-      // Carregar Custom Fields se necessário
-      if (!lead.customFields || lead.customFields.length === 0) {
-        if (currentWorkspace?.id) {
-           loadCustomFieldsForLead(lead.id, currentWorkspace.id).then(({ customFields }) => {
-             setCustomFields(customFields);
-             setFormData(prev => {
-               if (!prev) return null;
-               const newData = { ...prev, customFields };
-               
-               return newData;
-             });
-           });
-        }
-      } else {
-        setCustomFields(lead.customFields);
-      }
+      // ✅ Custom Fields agora são carregados automaticamente pelo hook useLeadCustomFields
+      // Não é mais necessário carregar manualmente aqui
       
       // Carregar atividades
       fetchActivities();
@@ -416,10 +411,11 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
   // ✅ Handler para alteração de campos personalizados
   const handleCustomFieldChange = (fieldId: string, value: string) => {
+    // ✅ Custom fields agora vêm do hook (read-only)
+    // Atualizar apenas no formData para salvar depois
     const updatedFields = customFields.map(f => 
       f.id === fieldId ? { ...f, fieldValue: value } : f
     );
-    setCustomFields(updatedFields);
     setFormData(prev => prev ? ({ ...prev, customFields: updatedFields }) : null);
   };
 
@@ -586,14 +582,14 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
       {/* Modal Container */}
       <div 
         className={`relative w-full max-w-[95vw] h-[90vh] flex flex-col rounded-xl shadow-2xl overflow-hidden ${
-          isDark ? 'bg-elevated border border-white/[0.08]' : 'bg-white border border-border-light'
+          isDark ? 'bg-[#000000] border border-white/[0.08]' : 'bg-white border border-border-light'
         }`}
         style={{ zIndex: 10000 }}
       >
         
         {/* Header */}
         <div className={`flex items-center justify-between px-6 py-4 border-b ${
-           isDark ? 'border-white/[0.08] bg-true-black' : 'border-border-light bg-gray-50'
+           isDark ? 'border-white/[0.08] bg-[#000000]' : 'border-border-light bg-gray-50'
         }`}>
            <div className="flex items-center gap-4">
               <Avatar imageUrl={formData.avatar} name={formData.clientName} size="md" />
@@ -648,7 +644,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
            <div className="flex-1 flex flex-col min-w-0 border-r border-border-light dark:border-white/[0.08]">
               {/* Tabs Header */}
               <div className={`flex items-center px-6 border-b ${
-                 isDark ? 'border-white/[0.08] bg-true-black' : 'border-border-light bg-white'
+                 isDark ? 'border-white/[0.08] bg-[#000000]' : 'border-border-light bg-white'
               }`}>
                  <button
                     onClick={() => setActiveTab('chat')}
@@ -687,11 +683,11 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
               {/* Tab Content */}
               <div className={`flex-1 overflow-hidden relative ${
-                 isDark ? 'bg-true-black' : 'bg-gray-50'
+                 isDark ? 'bg-[#000000]' : 'bg-gray-50'
               }`}>
                  {activeTab === 'chat' && (
                     <div className={`w-full h-full flex flex-col ${
-                      isDark ? 'bg-true-black' : 'bg-light-bg'
+                      isDark ? 'bg-[#000000]' : 'bg-light-bg'
                     }`}>
                        {conversation ? (
                           <ChatArea 
@@ -705,7 +701,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                              // onNavigateToPipeline ignorado pois já estamos no contexto do lead
                           />
                        ) : (
-                          <div className="flex-1 flex items-center justify-center flex-col gap-4 p-6">
+                          <div className={`flex-1 flex items-center justify-center flex-col gap-4 p-6 ${isDark ? 'bg-[#000000]' : 'bg-white'}`}>
                              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
                                 isDark ? 'bg-white/10' : 'bg-gray-200'
                              }`}>
@@ -776,8 +772,8 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                                      : 'bg-white text-gray-900 border-gray-300 focus:border-[#0169D9]'
                                                } focus:outline-none focus:ring-1 focus:ring-[#0169D9]`}
                                             >
-                                               {availablePhones.map(phone => (
-                                                  <option key={phone.value} value={phone.value}>
+                                               {availablePhones.map((phone, index) => (
+                                                  <option key={`${phone.value}-${index}`} value={phone.value}>
                                                      {phone.label}
                                                   </option>
                                                ))}
@@ -810,7 +806,9 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  )}
 
                  {activeTab === 'data' && (
-                    <div className="p-6 overflow-y-auto h-full">
+                    <div className={`p-6 overflow-y-auto h-full ${
+                       isDark ? 'bg-[#000000]' : 'bg-gray-50'
+                    }`}>
                        <div className="max-w-3xl mx-auto">
                           <h3 className={`text-lg font-medium mb-6 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                              Campos Personalizados
@@ -1053,7 +1051,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                                                           onBlur={() => setEditingFieldId(null)}
                                                                           autoFocus
                                                                           onClick={(e) => e.stopPropagation()}
-                                                                          className={`w-full text-sm bg-transparent border-none outline-none ${isDark ? 'text-blue-400' : 'text-blue-600'}`}
+                                                                          className={`w-full text-sm bg-transparent border-none outline-none ${isDark ? 'text-white' : 'text-gray-900'}`}
                                                                        />
                                                                     ) : (
                                                                        <a 
@@ -1087,6 +1085,75 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                                               </div>
                                                            );
                                                         })}
+                                                     </div>
+                                                  );
+                                               }
+                                               
+                                               // ===== ARRAY DE SÓCIOS =====
+                                               if (Array.isArray(parsedValue) && parsedValue.length > 0 && parsedValue[0].nome_socio && parsedValue[0].qualificacao_socio) {
+                                                  const socios = parsedValue as Array<{
+                                                     nome_socio: string;
+                                                     qualificacao_socio: string;
+                                                     faixa_etaria?: string;
+                                                     cnpj_cpf_do_socio?: string;
+                                                     data_entrada_sociedade?: string;
+                                                     pais?: string | null;
+                                                     [key: string]: any;
+                                                  }>;
+                                                  
+                                                  return (
+                                                     <div className="space-y-3">
+                                                        {socios.map((socio, idx) => (
+                                                           <div 
+                                                              key={idx}
+                                                              className={`p-3 rounded-lg border ${
+                                                                 isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'
+                                                              }`}
+                                                           >
+                                                              {/* Nome e Qualificação */}
+                                                              <div className="flex items-start gap-2 mb-2">
+                                                                 <User className="w-4 h-4 opacity-50 mt-0.5 flex-shrink-0" />
+                                                                 <div className="flex-1 min-w-0">
+                                                                    <div className={`font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                                                       {socio.nome_socio}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                       <span className={`text-xs px-2 py-0.5 rounded ${
+                                                                          socio.qualificacao_socio?.toLowerCase().includes('administrador')
+                                                                             ? 'bg-purple-500/10 text-purple-500'
+                                                                             : 'bg-blue-500/10 text-blue-500'
+                                                                       }`}>
+                                                                          {socio.qualificacao_socio}
+                                                                       </span>
+                                                                    </div>
+                                                                 </div>
+                                                              </div>
+                                                              
+                                                              {/* Informações adicionais */}
+                                                              <div className={`grid grid-cols-2 gap-2 mt-2 text-xs ${isDark ? 'text-white/60' : 'text-gray-600'}`}>
+                                                                 {socio.faixa_etaria && (
+                                                                    <div>
+                                                                       <span className="opacity-50">Idade:</span> {socio.faixa_etaria}
+                                                                    </div>
+                                                                 )}
+                                                                 {socio.data_entrada_sociedade && (
+                                                                    <div>
+                                                                       <span className="opacity-50">Entrada:</span> {new Date(socio.data_entrada_sociedade).toLocaleDateString('pt-BR')}
+                                                                    </div>
+                                                                 )}
+                                                                 {socio.cnpj_cpf_do_socio && (
+                                                                    <div className="col-span-2">
+                                                                       <span className="opacity-50">CPF/CNPJ:</span> {socio.cnpj_cpf_do_socio}
+                                                                    </div>
+                                                                 )}
+                                                                 {socio.pais && (
+                                                                    <div className="col-span-2">
+                                                                       <span className="opacity-50">País:</span> {socio.pais}
+                                                                    </div>
+                                                                 )}
+                                                              </div>
+                                                           </div>
+                                                        ))}
                                                      </div>
                                                   );
                                                }
@@ -1142,7 +1209,9 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  )}
 
                  {activeTab === 'activities' && (
-                    <div className="p-6 overflow-y-auto h-full">
+                    <div className={`p-6 overflow-y-auto h-full ${
+                       isDark ? 'bg-[#000000]' : 'bg-gray-50'
+                    }`}>
                        <div className="max-w-3xl mx-auto">
                           <h3 className={`text-lg font-medium mb-6 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                              Timeline de Atividades
@@ -1190,7 +1259,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
            {/* Right Column - Sidebar */}
            <div className={`w-80 flex-shrink-0 border-l overflow-y-auto scrollbar-thin ${
-              isDark ? 'border-white/[0.08] bg-elevated' : 'border-border-light bg-white'
+              isDark ? 'border-white/[0.08] bg-[#000000]' : 'border-border-light bg-white'
            }`}>
               <div className="p-6 space-y-6">
                  

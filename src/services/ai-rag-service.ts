@@ -1,9 +1,10 @@
 /**
- * Serviço para gerenciar Base de Conhecimento RAG (Gemini File Search)
+ * AI RAG Service
+ * Gerencia documentos RAG (Retrieval-Augmented Generation)
  */
 
-import { createClient } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
+import { supabase } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 export interface RAGDocument {
   id: string;
@@ -34,7 +35,6 @@ export interface RAGCollection {
  * Buscar documentos RAG de um agente
  */
 export async function fetchRAGDocuments(agentId: string): Promise<RAGDocument[]> {
-  const supabase = createClient();
   const { data, error } = await supabase
     .from('ai_rag_documents')
     .select('*')
@@ -53,7 +53,6 @@ export async function fetchRAGDocuments(agentId: string): Promise<RAGDocument[]>
  * Buscar coleção RAG de um agente
  */
 export async function fetchRAGCollection(agentId: string): Promise<RAGCollection | null> {
-  const supabase = createClient();
   const { data, error } = await supabase
     .from('ai_rag_collections')
     .select('*')
@@ -78,8 +77,6 @@ export async function uploadRAGDocument(
   onProgress?: (progress: number) => void
 ): Promise<RAGDocument> {
   try {
-    const supabase = createClient();
-    
     // Obter token de autenticação
     const { data: { session } } = await supabase.auth.getSession();
     const accessToken = session?.access_token;
@@ -131,8 +128,6 @@ export async function uploadRAGDocument(
  */
 export async function deleteRAGDocument(documentId: string): Promise<void> {
   try {
-    const supabase = createClient();
-    
     // Obter token de autenticação
     const { data: { session } } = await supabase.auth.getSession();
     const accessToken = session?.access_token;

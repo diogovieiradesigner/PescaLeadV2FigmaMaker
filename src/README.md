@@ -2,28 +2,50 @@
 
 > Sistema completo de CRM com automação via WhatsApp e Agentes de IA
 
-[![Deploy](https://img.shields.io/badge/Deploy-Coolify-blue)](./DEPLOY_COOLIFY.md)
 [![License](https://img.shields.io/badge/License-Proprietary-red)]()
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-green)]()
-[![Node.js](https://img.shields.io/badge/Node.js-20.x-green)]()
-[![Build](https://img.shields.io/badge/Build-Nixpacks-purple)]()
+[![React](https://img.shields.io/badge/React-18.x-blue)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)]()
+[![Supabase](https://img.shields.io/badge/Supabase-Powered-green)]()
+[![Tailwind](https://img.shields.io/badge/Tailwind-v3-38bdf8)]()
 
 ---
 
-## 🚀 Quick Start - Deploy em 5 Minutos
+## 🚀 Executando no Figma Make
+
+Este projeto está configurado para rodar no **Figma Make**.
+
+### ⚠️ IMPORTANTE - CSS Fix Aplicado
+
+O projeto teve correções aplicadas para resolver problemas de CSS:
+- ✅ Tailwind CSS v3 (downgrade de v4 experimental)
+- ✅ `tailwind.config.js` criado
+- ✅ `postcss.config.js` criado
+- ✅ `globals.css` corrigido para sintaxe v3
+
+📖 **Detalhes completos:** [CSS_FIX_COMPLETO.md](/CSS_FIX_COMPLETO.md)
+
+### 🔄 Após abrir o projeto pela primeira vez:
+
+O Figma Make vai automaticamente instalar as dependências. Se o CSS não aparecer:
 
 ```bash
-# 1. Clone e commit
-git add .
-git commit -m "fix: configuração Nixpacks"
-git push
-
-# 2. Coolify → Clear Build Cache (OBRIGATÓRIO!)
-
-# 3. Coolify → Force Rebuild & Deploy
+# No terminal do Figma Make:
+npm install
+npm run dev
 ```
 
-📖 **Guia completo**: [QUICK_FIX_AGORA.md](./QUICK_FIX_AGORA.md) | [README_DEPLOY_FINAL.md](./README_DEPLOY_FINAL.md)
+Depois, **recarregue a página** do preview (Cmd/Ctrl + Shift + R).
+
+### ⚙️ Variáveis de Ambiente Necessárias
+
+O projeto já está conectado ao Supabase. As seguintes secrets já estão configuradas:
+- ✅ `SUPABASE_URL`
+- ✅ `SUPABASE_ANON_KEY`
+- ✅ `SUPABASE_SERVICE_ROLE_KEY`
+- ✅ `EVOLUTION_API_KEY` / `EVOLUTION_API_URL`
+- ✅ `GEMINI_API_KEY`
+- ✅ `RESEND_API_KEY`
 
 ---
 
@@ -70,41 +92,12 @@ git push
 
 ---
 
-## 🚀 Deploy Rápido
-
-### ⚡ Quick Start (10 min)
-
-```bash
-# 1. Clonar e preparar
-git clone <seu-repo>
-cd pesca-lead-crm
-
-# 2. Verificar
-chmod +x scripts/*.sh
-./scripts/check-deploy.sh
-
-# 3. Subir para GitHub
-git push origin main
-
-# 4. Deploy no Coolify
-# Siga: QUICK_START_DEPLOY.md
-```
-
-### 📚 Documentação de Deploy
-
-- 🚀 **[Quick Start](./QUICK_START_DEPLOY.md)** - Deploy em 10 minutos
-- 📖 **[Guia Completo](./DEPLOY_COOLIFY.md)** - Instruções detalhadas
-- ✅ **[Checklist](./DEPLOY_CHECKLIST.md)** - Lista de verificação
-- 🔧 **[Visão Técnica](./README_DEPLOY.md)** - Arquitetura e otimizações
-
----
-
 ## 🛠️ Stack Tecnológica
 
 ### Frontend
 - **Framework:** React 18 + TypeScript
 - **Build:** Vite 5
-- **Styling:** Tailwind CSS v4
+- **Styling:** Tailwind CSS v3
 - **UI:** shadcn/ui + Radix UI
 - **State:** TanStack Query (React Query)
 - **Forms:** React Hook Form + Zod

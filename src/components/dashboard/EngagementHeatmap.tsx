@@ -116,7 +116,7 @@ export function EngagementHeatmap({ data, isLoading, isDark = true }: Engagement
 
         {/* Legenda */}
         <div className="flex items-center justify-center gap-4 mt-6 text-xs">
-          {data.legend.map((item) => (
+          {(data?.legend || []).map((item) => (
             <div key={item.level} className="flex items-center gap-1">
               <div className={cn('w-3 h-3 rounded', getLevelColor(item.level))} />
               <span className={cn(isDark ? "text-zinc-500" : "text-zinc-600")}>

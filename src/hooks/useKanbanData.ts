@@ -3,6 +3,7 @@ import { Funnel, CRMLead, KanbanColumn } from '../types/crm';
 import * as funnelsService from '../services/funnels-service';
 import * as leadsService from '../services/leads-service';
 import { toast } from 'sonner@2.0.3';
+import { supabase } from '../utils/supabase/client';
 
 interface ColumnLeadsState {
   [columnId: string]: {
@@ -170,77 +171,84 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
       return;
     }
 
-    const columnState = columnLeadsState[columnId];
-    if (!columnState || !columnState.hasMore || columnState.loading) {
-      console.log('[KANBAN] loadMoreLeads: Nada para carregar', { 
-        hasState: !!columnState, 
-        hasMore: columnState?.hasMore,
-        loading: columnState?.loading 
-      });
-      return;
-    }
+    // ✅ Usar função de callback para acessar estado atual (evita dependência)
+    setColumnLeadsState(prev => {
+      const columnState = prev[columnId];
+      if (!columnState || !columnState.hasMore || columnState.loading) {
+        console.log('[KANBAN] loadMoreLeads: Nada para carregar', { 
+          hasState: !!columnState, 
+          hasMore: columnState?.hasMore,
+          loading: columnState?.loading 
+        });
+        return prev; // Não muda nada
+      }
 
-    try {
-      // Marcar como loading
-      setColumnLeadsState(prev => ({
+      // Marcar como loading e iniciar carregamento
+      const offset = columnState.offset;
+      
+      // Executar carregamento de forma assíncrona
+      (async () => {
+        try {
+          console.log('[KANBAN] Carregando mais leads para coluna:', columnId, 'offset:', offset);
+
+          const { leads: newLeads, total, error } = await funnelsService.getLeadsByColumn(
+            columnId,
+            workspaceId,
+            { limit: 10, offset }
+          );
+
+          if (error) {
+            throw error;
+          }
+
+          console.log('[KANBAN] Carregados mais', newLeads.length, 'leads');
+
+          // Atualizar estado e filtrar duplicatas
+          setColumnLeadsState(prev => {
+            // ✅ Filtrar duplicatas antes de adicionar (silenciosamente - duplicatas são esperadas após movimentações)
+            const existingIds = new Set(prev[columnId].leads.map(l => l.id));
+            const uniqueNewLeads = newLeads.filter(lead => !existingIds.has(lead.id));
+
+            const newOffset = prev[columnId].offset + newLeads.length;
+
+            return {
+              ...prev,
+              [columnId]: {
+                ...prev[columnId],
+                leads: [...prev[columnId].leads, ...uniqueNewLeads],
+                offset: newOffset,
+                total,
+                hasMore: newOffset < total,
+                loading: false,
+              },
+            };
+          });
+
+        } catch (error: any) {
+          console.error('[KANBAN] Failed to load more leads:', error);
+          toast.error('Erro ao carregar mais leads', { description: error.message });
+          
+          // Resetar loading
+          setColumnLeadsState(prev => ({
+            ...prev,
+            [columnId]: {
+              ...prev[columnId],
+              loading: false,
+            },
+          }));
+        }
+      })();
+
+      // Retornar estado com loading=true imediatamente
+      return {
         ...prev,
         [columnId]: {
           ...prev[columnId],
           loading: true,
         },
-      }));
-
-      console.log('[KANBAN] Carregando mais leads para coluna:', columnId, 'offset:', columnState.offset);
-
-      const { leads: newLeads, total, error } = await funnelsService.getLeadsByColumn(
-        columnId,
-        workspaceId,
-        { limit: 10, offset: columnState.offset }
-      );
-
-      if (error) {
-        throw error;
-      }
-
-      console.log('[KANBAN] Carregados mais', newLeads.length, 'leads');
-
-      // Atualizar estado e filtrar duplicatas
-      setColumnLeadsState(prev => {
-        // ✅ Filtrar duplicatas antes de adicionar
-        const existingIds = new Set(prev[columnId].leads.map(l => l.id));
-        const uniqueNewLeads = newLeads.filter(lead => !existingIds.has(lead.id));
-        
-        if (uniqueNewLeads.length < newLeads.length) {
-          console.warn(`⚠️ [KANBAN] Removidas ${newLeads.length - uniqueNewLeads.length} duplicatas ao carregar mais leads`);
-        }
-
-        return {
-          ...prev,
-          [columnId]: {
-            ...prev[columnId],
-            leads: [...prev[columnId].leads, ...uniqueNewLeads],
-            offset: prev[columnId].offset + newLeads.length,
-            total,
-            hasMore: prev[columnId].offset + newLeads.length < total,
-            loading: false,
-          },
-        };
-      });
-
-    } catch (error: any) {
-      console.error('[KANBAN] Failed to load more leads:', error);
-      toast.error('Erro ao carregar mais leads', { description: error.message });
-      
-      // Resetar loading
-      setColumnLeadsState(prev => ({
-        ...prev,
-        [columnId]: {
-          ...prev[columnId],
-          loading: false,
-        },
-      }));
-    }
-  }, [workspaceId, columnLeadsState]);
+      };
+    });
+  }, [workspaceId]); // ✅ Removido columnLeadsState das dependências
 
   // ============================================
   // CREATE LEAD
@@ -445,9 +453,12 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
     let fromColumnName: string | null = null;
     let toColumnName: string | null = null;
     let movedLead: CRMLead | null = null;
-    let previousState = columnLeadsState;
+    let previousState: ColumnLeadsState | null = null;
 
     setColumnLeadsState(prev => {
+      // ✅ Guardar estado anterior para rollback
+      previousState = prev;
+      
       const newState = { ...prev };
       
       // ✅ DEDUPLICAÇÃO: Primeiro remover o lead de TODAS as colunas (caso esteja duplicado)
@@ -465,10 +476,12 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
           fromColumnId = columnId;
           movedLead = { ...prev[columnId].leads[leadIndex] };
           
-          // Atualizar total da coluna de origem
+          // ✅ Atualizar total e offset da coluna de origem
           newState[columnId] = {
             ...newState[columnId],
             total: Math.max(0, prev[columnId].total - 1),
+            // ✅ Decrementar offset se o lead estava nos primeiros carregados
+            offset: leadIndex < prev[columnId].offset ? Math.max(0, prev[columnId].offset - 1) : prev[columnId].offset,
           };
           break;
         }
@@ -478,10 +491,13 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
       if (movedLead && newState[toColumnId]) {
         const newLeads = [...newState[toColumnId].leads];
         newLeads.splice(toPosition, 0, movedLead);
+        
         newState[toColumnId] = {
           ...newState[toColumnId],
           leads: newLeads,
           total: newState[toColumnId].total + 1,
+          // ✅ Incrementar offset pois adicionamos um lead na visualização
+          offset: Math.min(newState[toColumnId].total + 1, newState[toColumnId].offset + 1),
         };
       }
 
@@ -499,6 +515,7 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
     }
 
     try {
+      // ✅ Enviar para backend em paralelo (não bloqueia UI)
       const { error } = await leadsService.moveLead({
         leadId,
         newColumnId: toColumnId,
@@ -511,41 +528,22 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
         throw error;
       }
 
-      // Buscar lead atualizado
-      const { lead: updatedLead } = await leadsService.getLeadById(leadId);
+      // ✅ NÃO buscar lead novamente - evita flickering
+      // ✅ NÃO recarregar stats - evita re-renders desnecessários
 
-      if (updatedLead) {
-        setColumnLeadsState(prev => {
-          const newState = { ...prev };
-          if (newState[toColumnId]) {
-            const leadIndex = newState[toColumnId].leads.findIndex(l => l.id === leadId);
-            if (leadIndex !== -1) {
-              const newLeads = [...newState[toColumnId].leads];
-              newLeads[leadIndex] = updatedLead;
-              newState[toColumnId] = {
-                ...newState[toColumnId],
-                leads: newLeads,
-              };
-            }
-          }
-          return newState;
-        });
-      }
-
-      // ✅ Recarregar stats após mover lead (pode mudar taxa de conversão)
-      await reloadStats();
-
-      return updatedLead;
+      return movedLead;
     } catch (error: any) {
-      console.error('Failed to move lead:', error);
+      console.error('❌ [KANBAN] Failed to move lead:', error);
       toast.error('Erro ao mover lead', { description: error.message });
       
       // Rollback optimistic update
-      setColumnLeadsState(previousState);
+      if (previousState) {
+        setColumnLeadsState(previousState);
+      }
       
       throw error;
     }
-  }, [workspaceId, columnLeadsState, reloadStats]);
+  }, [workspaceId, currentFunnel]); // ✅ Removido reloadStats das dependências
 
   // ============================================
   // DELETE LEAD
@@ -605,10 +603,15 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
   // ============================================
   // CREATE FUNNEL
   // ============================================
-  const createFunnel = useCallback(async (name: string, description?: string) => {
+  const createFunnel = useCallback(async (
+    name: string, 
+    description?: string,
+    columns?: { name: string; color?: string }[]
+  ) => {
     console.log('[KANBAN] createFunnel called:', {
       name,
       description,
+      columns: columns?.length || 0,
       workspaceId,
       hasWorkspaceId: !!workspaceId,
     });
@@ -623,6 +626,7 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
         workspaceId,
         name,
         description,
+        columns, // ✅ Passar colunas customizadas
       });
 
       if (error || !newFunnel) {
@@ -696,16 +700,35 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
     }
 
     try {
-      const { error } = await funnelsService.deleteFunnel(funnelId);
+      console.log('[KANBAN DATA] Deletando funil:', funnelId);
+
+      // Chamar RPC para deletar funil de forma segura
+      const { data, error } = await supabase.rpc('delete_funnel_safe', {
+        p_funnel_id: funnelId,
+      });
 
       if (error) {
+        console.error('[KANBAN DATA] Erro ao deletar funil:', error);
         throw error;
       }
 
+      if (!data.success) {
+        console.error('[KANBAN DATA] Falha ao deletar funil:', data.error);
+        throw new Error(data.error || 'Erro ao deletar funil');
+      }
+
+      console.log('[KANBAN DATA] Funil deletado:', data);
+
+      // Atualizar lista de funis
       setFunnels(prev => prev.filter(f => f.id !== funnelId));
-      toast.success('Funil deletado com sucesso');
+
+      const leadsMessage = data.leads_migrated > 0 
+        ? ` ${data.leads_migrated} lead(s) migrados.` 
+        : '';
+      
+      toast.success(`Funil deletado com sucesso.${leadsMessage}`);
     } catch (error: any) {
-      console.error('Failed to delete funnel:', error);
+      console.error('[KANBAN DATA] Failed to delete funnel:', error);
       toast.error('Erro ao deletar funil', { description: error.message });
       throw error;
     }
@@ -715,7 +738,7 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
   // EFFECTS
   // ============================================
 
-  // Initial load - funnels
+  // Initial load - funnels - ✅ EXECUTAR APENAS UMA VEZ
   useEffect(() => {
     console.log('[KANBAN] useEffect funnels triggered:', { workspaceId, hasWorkspace: !!workspaceId });
     if (workspaceId) {
@@ -725,9 +748,11 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
       setLoading(false);
       setFunnelsLoading(false);
     }
-  }, [workspaceId, loadFunnels]);
+    // ✅ CRÍTICO: Remover loadFunnels das dependências para evitar loop infinito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
 
-  // Load funnel when currentFunnelId changes
+  // Load funnel when currentFunnelId changes - ✅ EXECUTAR APENAS QUANDO ID MUDA
   useEffect(() => {
     console.log('[KANBAN] useEffect funnel triggered:', { 
       currentFunnelId, 
@@ -742,7 +767,9 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
       console.log('[KANBAN] No funnel selected, turning off loading');
       setLoading(false);
     }
-  }, [currentFunnelId, workspaceId, loadFunnel, funnelsLoading]);
+    // ✅ CRÍTICO: Remover loadFunnel das dependências para evitar loop infinito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFunnelId, workspaceId, funnelsLoading]);
 
   // ============================================
   // CONVERT TO COLUMNS FORMAT
@@ -771,7 +798,85 @@ export function useKanbanData(workspaceId: string | null, currentFunnelId: strin
     updateFunnel,
     deleteFunnel,
     refetchFunnels: loadFunnels,
-    refetchFunnel: () => currentFunnelId && loadFunnel(currentFunnelId),
+    // ✅ CRÍTICO: Não depender de loadFunnel (evita recriações em cadeia)
+    refetchFunnel: useCallback(async () => {
+      if (!currentFunnelId || !workspaceId) {
+        console.log('[KANBAN DATA] refetchFunnel: Missing IDs');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        console.log('[KANBAN] 🔄 Recarregando funnel:', currentFunnelId);
+        
+        // Load funnel with columns (sem leads ainda)
+        const { funnel, error } = await funnelsService.getFunnelById(currentFunnelId, { limit: 0, offset: 0 });
+        
+        if (error || !funnel) {
+          console.error('[KANBAN] Erro ao recarregar funil:', error);
+          return;
+        }
+
+        console.log('[KANBAN] Funnel recarregado:', funnel.name, 'com', funnel.columns.length, 'colunas');
+        setCurrentFunnel(funnel);
+
+        // Inicializar estado das colunas e carregar primeiros leads
+        const newColumnState: ColumnLeadsState = {};
+        
+        for (const column of funnel.columns) {
+          // Carregar primeiros 10 leads de cada coluna
+          const { leads: columnLeads, total, error: leadsError } = await funnelsService.getLeadsByColumn(
+            column.id,
+            workspaceId,
+            { limit: 10, offset: 0 }
+          );
+
+          if (leadsError) {
+            console.error('[KANBAN] Erro ao carregar leads da coluna', column.title, ':', leadsError);
+          }
+
+          newColumnState[column.id] = {
+            leads: columnLeads || [],
+            offset: columnLeads?.length || 0,
+            total: total || 0,
+            hasMore: (columnLeads?.length || 0) < (total || 0),
+            loading: false,
+          };
+        }
+
+        setColumnLeadsState(newColumnState);
+
+        // Buscar estatísticas
+        console.log('[KANBAN DATA] 🚀 Buscando stats...');
+        
+        const { stats: optimizedStats, error: statsError } = await funnelsService.getFunnelStats(funnel.id);
+
+        if (statsError) {
+          console.error('[KANBAN DATA] ❌ Erro ao buscar stats:', statsError);
+          // Fallback: usar stats zerados se houver erro
+          setStats({ 
+            totalLeads: 0, 
+            totalValue: 0, 
+            highPriorityCount: 0 
+          });
+        } else {
+          console.log('[KANBAN DATA] ✅ Stats carregadas:', optimizedStats);
+          setStats({
+            totalLeads: optimizedStats?.totalLeads || 0,
+            totalValue: optimizedStats?.totalValue || 0,
+            highPriorityCount: optimizedStats?.highPriorityCount || 0,
+            activeLeads: optimizedStats?.activeLeads || 0,
+            conversionRate: optimizedStats?.conversionRate || 0,
+          });
+        }
+
+      } catch (error: any) {
+        console.error('[KANBAN] Failed to refetch funnel:', error);
+        toast.error('Erro ao recarregar funil', { description: error.message });
+      } finally {
+        setLoading(false);
+      }
+    }, [currentFunnelId, workspaceId]), // ✅ CRÍTICO: NÃO depender de loadFunnel
     reloadStats,
   };
 }

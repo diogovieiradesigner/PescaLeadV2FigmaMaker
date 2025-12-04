@@ -46,6 +46,11 @@ export interface DbMessage {
   sent_by?: string; // user_id (quem enviou)
   pipeline_id?: string; // ✅ ID do pipeline de IA
   created_at: string;
+  // ✅ Campos de transcrição
+  transcription?: string;
+  transcription_status?: 'none' | 'pending' | 'processing' | 'completed' | 'failed' | 'disabled';
+  transcription_provider?: string;
+  transcribed_at?: string;
 }
 
 export interface DbInbox {

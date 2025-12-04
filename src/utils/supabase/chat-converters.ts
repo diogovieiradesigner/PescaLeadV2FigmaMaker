@@ -26,6 +26,11 @@ export function dbMessageToFrontend(dbMessage: DbMessage): Message {
     createdAt: dbMessage.created_at, // ✅ Timestamp completo para ordenação
     read: dbMessage.is_read,
     pipelineId: dbMessage.pipeline_id, // ✅ ID do pipeline de IA
+    // ✅ Campos de transcrição
+    transcription: dbMessage.transcription,
+    transcriptionStatus: dbMessage.transcription_status,
+    transcriptionProvider: dbMessage.transcription_provider,
+    transcribedAt: dbMessage.transcribed_at,
   };
 }
 
@@ -36,13 +41,7 @@ export function dbMessageToFrontend(dbMessage: DbMessage): Message {
 export function dbConversationToFrontend(
   dbConversation: DbConversation,
   messages: DbMessage[],
-  assignedUser?: DbUser,
-  leadCustomFields?: Array<{
-    id: string;
-    fieldName: string;
-    fieldType: 'text' | 'number' | 'date' | 'email' | 'phone' | 'url' | 'textarea';
-    fieldValue: string;
-  }>
+  assignedUser?: DbUser
 ): Conversation {
   // ✅ Ordenar mensagens por created_at (mais antiga primeiro, mais recente no final)
   const sortedMessages = messages
@@ -113,7 +112,6 @@ export function dbConversationToFrontend(
     lastUpdate: lastMessageDate.toLocaleString('pt-BR'),
     tags: dbConversation.tags || [],
     leadId: dbConversation.lead_id,
-    leadCustomFields, // ✅ Campos personalizados do lead
     attendantType: dbConversation.attendant_type || 'human', // ✅ Tipo de atendente
     workspaceId: dbConversation.workspace_id, // ✅ Workspace ID para filtrar realtime
   };

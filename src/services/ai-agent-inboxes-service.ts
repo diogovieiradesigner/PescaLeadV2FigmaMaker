@@ -1,10 +1,9 @@
 /**
- * Serviço para gerenciar relação entre Agentes de IA e Inboxes
+ * AI Agent Inboxes Service
+ * Gerencia inboxes vinculadas a agentes de IA
  */
 
-import { createClient } from '../utils/supabase/client';
-
-const supabase = createClient();
+import { supabase } from '../utils/supabase/client';
 
 export interface AIAgentInbox {
   id: string;

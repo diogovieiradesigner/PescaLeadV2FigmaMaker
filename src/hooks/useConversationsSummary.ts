@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import { format } from 'date-fns';
 import type { ConversationsSummaryData, ConversationsFilters } from '../types/conversations.types';
-
-const supabase = createClient();
 
 /**
  * Hook para buscar resumo de conversas (cards principais)

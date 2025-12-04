@@ -11,8 +11,13 @@ import {
   Shield,
   User,
   LogIn,
-  UserPlus
+  UserPlus,
+  Mail,
+  Lock,
+  ArrowLeft,
+  AlertCircle
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface AcceptInviteProps {
   theme: Theme;
@@ -34,13 +39,21 @@ interface InviteDetails {
 
 export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
   const isDark = theme === 'dark';
-  const { user, accessToken, refreshWorkspaces } = useAuth();
+  const { user, accessToken, refreshWorkspaces, login, signupWithInvite } = useAuth();
 
   const [invite, setInvite] = useState<InviteDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  
+  // Estados para login/signup
+  const [view, setView] = useState<'invite' | 'login' | 'signup'>('invite');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   // Simple navigation
   const navigate = (path: string) => {
@@ -50,6 +63,13 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
   useEffect(() => {
     loadInvite();
   }, [code]);
+
+  // Auto-aceitar convite quando usuário fizer login/cadastro
+  useEffect(() => {
+    if (user && accessToken && view !== 'invite' && !success) {
+      handleAccept();
+    }
+  }, [user, accessToken]);
 
   const loadInvite = async () => {
     try {
@@ -81,8 +101,7 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
 
   const handleAccept = async () => {
     if (!user || !accessToken) {
-      // Redirect to login with invite code
-      navigate(`/login?invite=${code}`);
+      toast.error('Você precisa fazer login primeiro');
       return;
     }
 
@@ -107,22 +126,88 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
       }
 
       setSuccess(true);
+      toast.success('Convite aceito com sucesso!');
       
       // Refresh workspaces
       await refreshWorkspaces();
 
       // Redirect to new workspace after 2 seconds
       setTimeout(() => {
-        if (data.workspace?.slug) {
-          navigate(`/${data.workspace.slug}`);
-        } else {
-          navigate('/');
-        }
+        navigate('/');
       }, 2000);
     } catch (err: any) {
       setError(err.message);
+      toast.error('Erro ao aceitar convite', {
+        description: err.message
+      });
     } finally {
       setIsAccepting(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (!email || !password) {
+      setAuthError('Por favor, preencha todos os campos');
+      return;
+    }
+
+    try {
+      setAuthLoading(true);
+      await login(email, password);
+      // O useEffect vai detectar que o usuário está logado e aceitar o convite automaticamente
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro ao fazer login');
+      toast.error('Erro ao fazer login', {
+        description: err.message
+      });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (!name || !email || !password) {
+      setAuthError('Por favor, preencha todos os campos');
+      return;
+    }
+
+    if (password.length < 6) {
+      setAuthError('A senha deve ter no mínimo 6 caracteres');
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      setAuthError('Email inválido');
+      return;
+    }
+
+    try {
+      setAuthLoading(true);
+      
+      // Verificar se signupWithInvite existe, se não, usar signup normal
+      if (signupWithInvite) {
+        await signupWithInvite(name.trim(), normalizedEmail, password, code);
+      } else {
+        toast.error('Função de cadastro com convite não disponível');
+        return;
+      }
+      
+      // O useEffect vai detectar que o usuário está logado e aceitar o convite automaticamente
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro ao criar conta');
+      toast.error('Erro ao criar conta', {
+        description: err.message
+      });
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -155,7 +240,7 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
   if (isLoading) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${
-        isDark ? 'bg-app-dark' : 'bg-background-light'
+        isDark ? 'bg-gradient-to-br from-zinc-950 via-zinc-900 to-black' : 'bg-gradient-to-br from-blue-50 via-white to-blue-100'
       }`}>
         <div className="text-center">
           <Loader2 className={`w-8 h-8 animate-spin mx-auto mb-4 ${
@@ -172,10 +257,10 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
   if (error && !invite) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 ${
-        isDark ? 'bg-app-dark' : 'bg-background-light'
+        isDark ? 'bg-gradient-to-br from-zinc-950 via-zinc-900 to-black' : 'bg-gradient-to-br from-blue-50 via-white to-blue-100'
       }`}>
-        <div className={`max-w-md w-full rounded-xl p-8 text-center ${
-          isDark ? 'bg-elevated' : 'bg-white'
+        <div className={`max-w-md w-full rounded-xl p-8 text-center shadow-2xl ${
+          isDark ? 'bg-zinc-900/50 border border-white/[0.08]' : 'bg-white/80 border border-zinc-200'
         }`}>
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/10 flex items-center justify-center">
             <XCircle className="w-8 h-8 text-red-500" />
@@ -194,7 +279,7 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
             onClick={() => navigate('/')}
             className="px-6 py-2.5 bg-[#0169D9] text-white rounded-lg hover:bg-[#0159C9] transition-colors"
           >
-            Ir para Dashboard
+            Ir para Login
           </button>
         </div>
       </div>
@@ -204,10 +289,10 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
   if (success) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 ${
-        isDark ? 'bg-app-dark' : 'bg-background-light'
+        isDark ? 'bg-gradient-to-br from-zinc-950 via-zinc-900 to-black' : 'bg-gradient-to-br from-blue-50 via-white to-blue-100'
       }`}>
-        <div className={`max-w-md w-full rounded-xl p-8 text-center ${
-          isDark ? 'bg-elevated' : 'bg-white'
+        <div className={`max-w-md w-full rounded-xl p-8 text-center shadow-2xl ${
+          isDark ? 'bg-zinc-900/50 border border-white/[0.08]' : 'bg-white/80 border border-zinc-200'
         }`}>
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/10 flex items-center justify-center">
             <CheckCircle2 className="w-8 h-8 text-green-500" />
@@ -236,16 +321,308 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
 
   const RoleIcon = getRoleIcon(invite.role);
   const expiresAt = new Date(invite.expires_at);
-  const isExpiringSoon = expiresAt.getTime() - Date.now() < 24 * 60 * 60 * 1000; // Less than 24h
+  const isExpiringSoon = expiresAt.getTime() - Date.now() < 24 * 60 * 60 * 1000;
 
+  // Tela de Login
+  if (view === 'login') {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 ${
+        isDark ? 'bg-gradient-to-br from-zinc-950 via-zinc-900 to-black' : 'bg-gradient-to-br from-blue-50 via-white to-blue-100'
+      }`}>
+        <div className={`max-w-md w-full rounded-xl shadow-2xl overflow-hidden ${
+          isDark ? 'bg-zinc-900/50 border border-white/[0.08]' : 'bg-white/80 border border-zinc-200'
+        }`}>
+          <div className="p-8 border-b border-white/[0.08]">
+            <button
+              onClick={() => setView('invite')}
+              className={`flex items-center gap-2 mb-4 text-sm ${
+                isDark ? 'text-white/70 hover:text-white' : 'text-text-secondary-light hover:text-text-primary-light'
+              } transition-colors`}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Voltar
+            </button>
+            <h2 className={`text-2xl font-semibold mb-2 ${
+              isDark ? 'text-white' : 'text-text-primary-light'
+            }`}>
+              Fazer Login
+            </h2>
+            <p className={`text-sm ${
+              isDark ? 'text-white/70' : 'text-text-secondary-light'
+            }`}>
+              Entre para aceitar o convite de <strong>{invite.workspace.name}</strong>
+            </p>
+          </div>
+
+          <div className="p-8">
+            {authError && (
+              <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-500">{authError}</p>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isDark ? 'text-zinc-300' : 'text-zinc-700'
+                }`}>
+                  Email
+                </label>
+                <div className="relative group">
+                  <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${
+                    isDark ? 'text-zinc-500 group-focus-within:text-blue-400' : 'text-zinc-400 group-focus-within:text-blue-500'
+                  }`} />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
+                    className={`w-full pl-12 pr-4 py-3.5 rounded-xl border transition-all ${
+                      isDark
+                        ? 'bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:bg-zinc-800'
+                        : 'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:shadow-md'
+                    } outline-none`}
+                    disabled={authLoading}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isDark ? 'text-zinc-300' : 'text-zinc-700'
+                }`}>
+                  Senha
+                </label>
+                <div className="relative group">
+                  <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${
+                    isDark ? 'text-zinc-500 group-focus-within:text-blue-400' : 'text-zinc-400 group-focus-within:text-blue-500'
+                  }`} />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className={`w-full pl-12 pr-4 py-3.5 rounded-xl border transition-all ${
+                      isDark
+                        ? 'bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:bg-zinc-800'
+                        : 'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:shadow-md'
+                    } outline-none`}
+                    disabled={authLoading}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {authLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Entrando...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-5 h-5" />
+                    Entrar e Aceitar Convite
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800">
+              <p className={`text-center text-sm ${
+                isDark ? 'text-zinc-400' : 'text-zinc-600'
+              }`}>
+                Não tem uma conta?{' '}
+                <button
+                  onClick={() => setView('signup')}
+                  className="font-semibold text-blue-600 hover:text-blue-700 transition-all"
+                  disabled={authLoading}
+                >
+                  Criar conta →
+                </button>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de Cadastro
+  if (view === 'signup') {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 ${
+        isDark ? 'bg-gradient-to-br from-zinc-950 via-zinc-900 to-black' : 'bg-gradient-to-br from-blue-50 via-white to-blue-100'
+      }`}>
+        <div className={`max-w-md w-full rounded-xl shadow-2xl overflow-hidden ${
+          isDark ? 'bg-zinc-900/50 border border-white/[0.08]' : 'bg-white/80 border border-zinc-200'
+        }`}>
+          <div className="p-8 border-b border-white/[0.08]">
+            <button
+              onClick={() => setView('invite')}
+              className={`flex items-center gap-2 mb-4 text-sm ${
+                isDark ? 'text-white/70 hover:text-white' : 'text-text-secondary-light hover:text-text-primary-light'
+              } transition-colors`}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Voltar
+            </button>
+            <h2 className={`text-2xl font-semibold mb-2 ${
+              isDark ? 'text-white' : 'text-text-primary-light'
+            }`}>
+              Criar Conta
+            </h2>
+            <p className={`text-sm ${
+              isDark ? 'text-white/70' : 'text-text-secondary-light'
+            }`}>
+              Crie sua conta para aceitar o convite de <strong>{invite.workspace.name}</strong>
+            </p>
+          </div>
+
+          <div className="p-8">
+            {authError && (
+              <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-500">{authError}</p>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSignup} className="space-y-4">
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isDark ? 'text-zinc-300' : 'text-zinc-700'
+                }`}>
+                  Nome completo
+                </label>
+                <div className="relative group">
+                  <User className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${
+                    isDark ? 'text-zinc-500 group-focus-within:text-blue-400' : 'text-zinc-400 group-focus-within:text-blue-500'
+                  }`} />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Seu nome"
+                    className={`w-full pl-12 pr-4 py-3.5 rounded-xl border transition-all ${
+                      isDark
+                        ? 'bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:bg-zinc-800'
+                        : 'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:shadow-md'
+                    } outline-none`}
+                    disabled={authLoading}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isDark ? 'text-zinc-300' : 'text-zinc-700'
+                }`}>
+                  Email
+                </label>
+                <div className="relative group">
+                  <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${
+                    isDark ? 'text-zinc-500 group-focus-within:text-blue-400' : 'text-zinc-400 group-focus-within:text-blue-500'
+                  }`} />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
+                    className={`w-full pl-12 pr-4 py-3.5 rounded-xl border transition-all ${
+                      isDark
+                        ? 'bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:bg-zinc-800'
+                        : 'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:shadow-md'
+                    } outline-none`}
+                    disabled={authLoading}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isDark ? 'text-zinc-300' : 'text-zinc-700'
+                }`}>
+                  Senha
+                </label>
+                <div className="relative group">
+                  <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${
+                    isDark ? 'text-zinc-500 group-focus-within:text-blue-400' : 'text-zinc-400 group-focus-within:text-blue-500'
+                  }`} />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className={`w-full pl-12 pr-4 py-3.5 rounded-xl border transition-all ${
+                      isDark
+                        ? 'bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500 focus:border-blue-500 focus:bg-zinc-800'
+                        : 'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:shadow-md'
+                    } outline-none`}
+                    disabled={authLoading}
+                  />
+                </div>
+                <p className={`text-xs mt-1 ${
+                  isDark ? 'text-zinc-500' : 'text-zinc-500'
+                }`}>
+                  Mínimo de 6 caracteres
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {authLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Criando conta...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-5 h-5" />
+                    Criar Conta e Aceitar Convite
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800">
+              <p className={`text-center text-sm ${
+                isDark ? 'text-zinc-400' : 'text-zinc-600'
+              }`}>
+                Já tem uma conta?{' '}
+                <button
+                  onClick={() => setView('login')}
+                  className="font-semibold text-blue-600 hover:text-blue-700 transition-all"
+                  disabled={authLoading}
+                >
+                  Fazer login →
+                </button>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de Convite (default)
   return (
     <div className={`min-h-screen flex items-center justify-center p-4 ${
-      isDark ? 'bg-app-dark' : 'bg-background-light'
+      isDark ? 'bg-gradient-to-br from-zinc-950 via-zinc-900 to-black' : 'bg-gradient-to-br from-blue-50 via-white to-blue-100'
     }`}>
-      <div className={`max-w-md w-full rounded-xl shadow-xl overflow-hidden ${
-        isDark ? 'bg-elevated' : 'bg-white'
+      <div className={`max-w-md w-full rounded-xl shadow-2xl overflow-hidden ${
+        isDark ? 'bg-zinc-900/50 border border-white/[0.08]' : 'bg-white/80 border border-zinc-200'
       }`}>
-        {/* Header */}
         <div className="p-8 text-center border-b border-white/[0.08]">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#0169D9]/10 flex items-center justify-center">
             <Building2 className="w-8 h-8 text-[#0169D9]" />
@@ -260,9 +637,7 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
           </p>
         </div>
 
-        {/* Content */}
         <div className="p-8 space-y-6">
-          {/* Workspace Info */}
           <div className={`p-4 rounded-lg border ${
             isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-gray-50 border-border-light'
           }`}>
@@ -285,7 +660,6 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
             </div>
           </div>
 
-          {/* Role Info */}
           <div className={`p-4 rounded-lg border ${
             isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-gray-50 border-border-light'
           }`}>
@@ -308,7 +682,6 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
             </div>
           </div>
 
-          {/* Inviter Info */}
           <div className={`p-4 rounded-lg border ${
             isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-gray-50 border-border-light'
           }`}>
@@ -331,7 +704,6 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
             </div>
           </div>
 
-          {/* Expiration Warning */}
           {isExpiringSoon && (
             <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-start gap-2">
               <Clock className="w-4 h-4 text-orange-500 mt-0.5" />
@@ -341,14 +713,12 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
             </div>
           )}
 
-          {/* Error Message */}
           {error && (
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
               <p className="text-sm text-red-500">{error}</p>
             </div>
           )}
 
-          {/* Actions */}
           <div className="space-y-3">
             {user ? (
               <button
@@ -371,14 +741,14 @@ export default function AcceptInvite({ theme, code }: AcceptInviteProps) {
             ) : (
               <>
                 <button
-                  onClick={handleAccept}
+                  onClick={() => setView('login')}
                   className="w-full px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0159C9] transition-colors flex items-center justify-center gap-2"
                 >
                   <LogIn className="w-5 h-5" />
                   Fazer Login e Aceitar
                 </button>
                 <button
-                  onClick={() => navigate(`/signup?invite=${code}`)}
+                  onClick={() => setView('signup')}
                   className={`w-full px-6 py-3 rounded-lg transition-colors flex items-center justify-center gap-2 ${
                     isDark
                       ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white'

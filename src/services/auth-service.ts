@@ -1,13 +1,11 @@
 // ============================================
-// AUTH SERVICE
-// Gerencia autenticação e perfil de usuários
+// Auth Service
+// Gerencia autenticação e usuários
 // ============================================
 
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import type { DbUser } from '../types/database';
 import { dbUserToFrontend, type FrontendUser } from '../utils/supabase/converters';
-
-const supabase = createClient(); // Singleton instance
 
 // ============================================
 // TIPOS
@@ -124,24 +122,27 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
     if (!profile) {
       console.log('[AUTH] Trigger não criou perfil, criando manualmente...');
       
-      const { data: createdProfile, error: createError } = await supabase
-        .from('users')
-        .insert({
-          id: authData.user.id,
-          email: data.email,
-          name: data.name,
-          avatar_url: null,
-          last_workspace_id: null,
-        })
-        .select()
-        .single();
+      const { data: rpcResult, error: createError } = await supabase.rpc('create_user_profile', {
+        p_user_id: authData.user.id,
+        p_email: data.email,
+        p_name: data.name,
+      });
 
       if (createError) {
-        console.error('[AUTH] Erro ao criar perfil manualmente:', createError);
+        console.error('[AUTH] ❌ Erro RPC ao criar perfil:', createError);
         // Continuar mesmo se falhar, retornar fallback
+      } else if (rpcResult?.success) {
+        // Buscar perfil criado
+        const { data: fetchedProfile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+        
+        profile = fetchedProfile;
+        console.log('[AUTH] ✅ Perfil criado via RPC com sucesso');
       } else {
-        profile = createdProfile;
-        console.log('[AUTH] Perfil criado manualmente com sucesso');
+        console.error('[AUTH] ❌ RPC retornou erro:', rpcResult?.error);
       }
     }
 
@@ -306,20 +307,14 @@ export async function getCurrentUser(): Promise<AuthResponse> {
     if (!profile) {
       console.log('[AUTH] Perfil não encontrado, criando...');
       
-      const { data: createdProfile, error: createError } = await supabase
-        .from('users')
-        .insert({
-          id: session.user.id,
-          email: session.user.email || '',
-          name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
-          avatar_url: null,
-          last_workspace_id: null,
-        })
-        .select()
-        .single();
+      const { data: rpcResult, error: createError } = await supabase.rpc('create_user_profile', {
+        p_user_id: session.user.id,
+        p_email: session.user.email || '',
+        p_name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+      });
 
       if (createError) {
-        console.error('[AUTH] Erro ao criar perfil:', createError);
+        console.error('[AUTH] ❌ Erro RPC ao criar perfil:', createError);
         
         // Fallback se criação falhar
         const frontendUser: FrontendUser = {
@@ -334,8 +329,31 @@ export async function getCurrentUser(): Promise<AuthResponse> {
         return { user: frontendUser, error: null };
       }
 
-      profile = createdProfile;
-      console.log('[AUTH] Perfil criado com sucesso');
+      if (rpcResult?.success) {
+        // Buscar perfil criado
+        const { data: fetchedProfile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        profile = fetchedProfile;
+        console.log('[AUTH] ✅ Perfil criado via RPC com sucesso');
+      } else {
+        console.error('[AUTH] ❌ RPC retornou erro:', rpcResult?.error);
+        
+        // Fallback
+        const frontendUser: FrontendUser = {
+          id: session.user.id,
+          name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+          email: session.user.email || '',
+          avatar: null,
+          lastWorkspaceId: null,
+        };
+        
+        console.log('[AUTH] Usando fallback após erro RPC:', frontendUser.email);
+        return { user: frontendUser, error: null };
+      }
     }
 
     const frontendUser = dbUserToFrontend(profile as DbUser);

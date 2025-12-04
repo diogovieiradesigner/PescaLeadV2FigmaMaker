@@ -6,6 +6,8 @@ export type ConversationStatus = 'waiting' | 'in-progress' | 'resolved';
 
 export type MessageStatus = 'sending' | 'sent' | 'error';
 
+export type TranscriptionStatus = 'none' | 'pending' | 'processing' | 'completed' | 'failed' | 'disabled';
+
 export interface Message {
   id: string;
   text?: string;
@@ -21,6 +23,11 @@ export interface Message {
   conversationId?: string; // ID da conversa
   sender?: 'agent' | 'contact'; // Quem enviou
   pipelineId?: string; // ✅ ID do pipeline de IA (para logs RAG, tools, guardrails)
+  // ✅ Campos de transcrição
+  transcription?: string; // Transcrição/descrição da mídia
+  transcriptionStatus?: TranscriptionStatus; // Status da transcrição
+  transcriptionProvider?: string; // Provider usado (groq, openrouter, etc)
+  transcribedAt?: string; // Timestamp da transcrição
 }
 
 export interface Conversation {

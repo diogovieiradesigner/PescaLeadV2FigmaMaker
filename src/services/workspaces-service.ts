@@ -1,13 +1,11 @@
 // ============================================
-// WORKSPACES SERVICE
-// Gerencia workspaces e membros
+// Workspaces Service
+// Gerencia workspaces (espaços de trabalho)
 // ============================================
 
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 import type { DbWorkspace, DbWorkspaceMember, DbWorkspaceInvite, WorkspaceRole } from '../types/database';
 import { dbWorkspaceToFrontend, type FrontendWorkspace } from '../utils/supabase/converters';
-
-const supabase = createClient();
 
 // ============================================
 // TIPOS
@@ -152,9 +150,12 @@ export async function getWorkspaceById(workspaceId: string): Promise<{
 /**
  * Cria novo workspace e adiciona usuário como owner
  * 
- * Fluxo:
- * 1. Cria workspace
- * 2. Adiciona usuário como owner em workspace_members
+ * Usa RPC 'create_workspace_with_owner' para bypassar RLS
+ * Fluxo (executado no banco via SECURITY DEFINER):
+ * 1. Valida usuário autenticado
+ * 2. Cria workspace com slug auto-gerado
+ * 3. Adiciona usuário como owner em workspace_members
+ * 4. Retorna dados do workspace criado
  */
 export async function createWorkspace(data: CreateWorkspaceData): Promise<{
   workspace: FrontendWorkspace | null;
@@ -169,48 +170,32 @@ export async function createWorkspace(data: CreateWorkspaceData): Promise<{
       return { workspace: null, error: authError || new Error('Não autenticado') };
     }
 
-    // 2. Criar workspace
-    const { data: newWorkspace, error: workspaceError } = await supabase
-      .from('workspaces')
-      .insert({
-        name: data.name,
-        slug: data.slug || data.name.toLowerCase().replace(/\s+/g, '-'),
-        owner_id: authUser.id,
-      })
-      .select()
-      .single();
+    // 2. Criar workspace usando RPC (bypassa RLS com SECURITY DEFINER)
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('create_workspace_with_owner', {
+      p_name: data.name,
+    });
 
-    if (workspaceError) {
-      console.error('[WORKSPACES] Erro ao criar workspace:', workspaceError);
-      return { workspace: null, error: workspaceError };
+    if (rpcError) {
+      console.error('[WORKSPACES] ❌ Erro RPC ao criar workspace:', rpcError);
+      return { workspace: null, error: rpcError };
     }
 
-    // 3. Adicionar usuário como owner
-    const { error: memberError } = await supabase
-      .from('workspace_members')
-      .insert({
-        workspace_id: newWorkspace.id,
-        user_id: authUser.id,
-        role: 'owner',
-      });
-
-    if (memberError) {
-      console.error('[WORKSPACES] Erro ao adicionar owner:', memberError);
-      // Tentar deletar workspace criado
-      await supabase.from('workspaces').delete().eq('id', newWorkspace.id);
-      return { workspace: null, error: memberError };
+    if (!rpcResult?.success) {
+      const errorMsg = rpcResult?.error || 'Erro desconhecido ao criar workspace';
+      console.error('[WORKSPACES] ❌ RPC retornou erro:', errorMsg);
+      return { workspace: null, error: new Error(errorMsg) };
     }
 
-    // 4. Converter para formato do frontend
+    // 3. Converter para formato do frontend
     const workspace: FrontendWorkspace = {
-      id: newWorkspace.id,
-      name: newWorkspace.name,
-      slug: newWorkspace.slug,
+      id: rpcResult.workspace_id,
+      name: rpcResult.name,
+      slug: rpcResult.slug,
       role: 'owner',
-      ownerId: authUser.id,
+      ownerId: rpcResult.owner_id,
     };
 
-    console.log('[WORKSPACES] Workspace criado com sucesso:', workspace.name);
+    console.log('[WORKSPACES] ✅ Workspace criado com sucesso via RPC:', workspace.name);
     return { workspace, error: null };
 
   } catch (error) {

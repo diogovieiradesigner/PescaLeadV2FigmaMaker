@@ -112,7 +112,7 @@ export function TagSelector({ theme, selectedTags, onTagsChange }: TagSelectorPr
         <div
           className={`absolute left-0 top-full mt-1 w-64 rounded-lg border shadow-lg z-50 ${
             isDark
-              ? 'bg-elevated border-white/[0.08]'
+              ? 'bg-[#1a1a1a] border-white/[0.08]'
               : 'bg-white border-border-light'
           }`}
         >

@@ -1,34 +1,12 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
-  /* Color Tokens - Dark Theme */
-  --color-true-black: #000000;
-  --color-elevated: #181818;
-  --color-primary-blue: #0169D9;
-  --color-secondary-cyan: #00CFFA;
-  --color-text-primary-dark: #FFFFFF;
-  --color-text-secondary-dark: rgba(255, 255, 255, 0.7);
-  --color-border-dark: rgba(255, 255, 255, 0.08);
-  --color-border-elevated: rgba(255, 255, 255, 0.05);
-  
-  /* Color Tokens - Light Theme */
-  --color-light-bg: #FFFFFF;
-  --color-light-elevated: #F8F9FA;
-  --color-light-elevated-hover: #F0F1F3;
-  --color-text-primary-light: #1A1A1A;
-  --color-text-secondary-light: rgba(26, 26, 26, 0.6);
-  --color-border-light: rgba(0, 0, 0, 0.08);
-  --color-border-light-elevated: rgba(0, 0, 0, 0.05);
-  
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #0169D9 0%, #00CFFA 100%);
-  --gradient-hover: linear-gradient(135deg, #0184F5 0%, #1ADBFF 100%);
-  
-  /* Shadows */
-  --shadow-glow: 0 0 20px rgba(0, 207, 250, 0.3);
-  --shadow-hover: 0 4px 12px rgba(0, 207, 250, 0.1);
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.5);
-  --shadow-light: 0 2px 8px rgba(0, 0, 0, 0.08);
+@layer utilities {
+  .overflow-wrap-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
 
 body {

@@ -63,7 +63,7 @@ export function ChatActionsMenu({
               : 'bg-white border-border-light'
           }`}
         >
-          <div className="py-1">
+          <div className="py-1 bg-black opacity-100">
             {/* Ver perfil completo - só mostra se houver lead associado */}
             {hasLead && (
               <button

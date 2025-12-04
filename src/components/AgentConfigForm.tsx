@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   AlertCircle,
   GripVertical,
+  Brain,
 } from 'lucide-react';
 import { AIModelSelect } from './AIModelSelect';
 import { supabase } from '../utils/supabase/client';
@@ -94,6 +95,9 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
   const [crmUpdatePrompt, setCrmUpdatePrompt] = useState(
     'Extraia informações relevantes da conversa para atualizar o lead: nome, email, telefone, empresa, cargo, interesse.'
   );
+
+  // Orchestrator
+  const [orchestratorEnabled, setOrchestratorEnabled] = useState(false);
 
   // Inboxes e Atendentes
   const [availableInboxes, setAvailableInboxes] = useState<InboxItem[]>([]);
@@ -254,6 +258,9 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
       setCrmAutoUpdate(agent.crm_auto_update || false);
       setCrmUpdatePrompt(agent.crm_update_prompt || '');
 
+      // Orchestrator
+      setOrchestratorEnabled(agent.orchestrator_enabled || false);
+
       // Inboxes
       const inboxIds = await fetchAgentInboxes(id);
       setSelectedInboxes(inboxIds);
@@ -304,6 +311,7 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
         default_attendant_type: defaultAttendantType,
         system_prompt: systemPrompt,
         specialist_agents: specialistAgents,
+        orchestrator_enabled: orchestratorEnabled,
         crm_auto_update: crmAutoUpdate,
         crm_update_prompt: crmUpdatePrompt || null,
         behavior_config: {
@@ -617,6 +625,33 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
           <h3 className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Agentes Especialistas (Orquestrador)
           </h3>
+        </div>
+
+        {/* Toggle do Orquestrador */}
+        <div className={`flex items-center justify-between mb-6 pb-6 border-b ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+          <div className="flex items-center gap-3">
+            <Brain className={`w-5 h-5 ${isDark ? 'text-white/60' : 'text-gray-600'}`} />
+            <div>
+              <label className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Orquestrador Inteligente
+              </label>
+              <p className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                Analisa mensagens e decide quando acionar agentes especialistas
+              </p>
+            </div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={orchestratorEnabled}
+              onChange={(e) => {
+                setOrchestratorEnabled(e.target.checked);
+                setHasChanges(true);
+              }}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[#0169D9]"></div>
+          </label>
         </div>
 
         <p className={`text-sm mb-4 ${isDark ? 'text-white/60' : 'text-gray-600'}`}>

@@ -1,10 +1,9 @@
 /**
- * Serviço para gerenciar relação entre Agentes de IA e Atendentes
+ * AI Agent Attendants Service
+ * Gerencia atendentes vinculados a agentes de IA
  */
 
-import { createClient } from '../utils/supabase/client';
-
-const supabase = createClient();
+import { supabase } from '../utils/supabase/client';
 
 export interface AIAgentAttendant {
   id: string;
@@ -28,7 +27,6 @@ export interface AttendantConfig {
  * Buscar atendentes vinculados a um agente
  */
 export async function fetchAgentAttendants(agentId: string): Promise<AIAgentAttendant[]> {
-  const supabase = createClient();
   const { data, error } = await supabase
     .from('ai_agent_attendants')
     .select('*')
@@ -50,7 +48,6 @@ export async function updateAgentAttendants(
   agentId: string,
   attendants: AttendantConfig[]
 ): Promise<void> {
-  const supabase = createClient();
   
   // 1. Deletar todas as relações existentes
   const { error: deleteError } = await supabase
@@ -88,7 +85,6 @@ export async function addAgentAttendant(
   agentId: string,
   config: AttendantConfig
 ): Promise<AIAgentAttendant> {
-  const supabase = createClient();
   const { data, error } = await supabase
     .from('ai_agent_attendants')
     .insert({
@@ -110,7 +106,6 @@ export async function addAgentAttendant(
  * Remover um atendente
  */
 export async function removeAgentAttendant(attendantId: string): Promise<void> {
-  const supabase = createClient();
   const { error } = await supabase
     .from('ai_agent_attendants')
     .delete()
@@ -129,7 +124,6 @@ export async function updateAttendantConfig(
   attendantId: string,
   config: Partial<AttendantConfig>
 ): Promise<AIAgentAttendant> {
-  const supabase = createClient();
   const { data, error } = await supabase
     .from('ai_agent_attendants')
     .update({

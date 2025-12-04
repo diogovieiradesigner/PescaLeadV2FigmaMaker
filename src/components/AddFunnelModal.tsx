@@ -24,6 +24,8 @@ export function AddFunnelModal({ isOpen, onClose, onSave, theme }: AddFunnelModa
 
   const isDark = theme === 'dark';
 
+  console.log('[AddFunnelModal] Render:', { isOpen, theme });
+
   if (!isOpen) return null;
 
   const handleAddColumn = () => {
@@ -77,7 +79,7 @@ export function AddFunnelModal({ isOpen, onClose, onSave, theme }: AddFunnelModa
       <div
         className={`relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border shadow-2xl transition-colors ${
           isDark
-            ? 'bg-elevated border-white/[0.08]'
+            ? 'bg-[#0A0A0A] border-white/[0.08]'
             : 'bg-white border-border-light'
         }`}
       >

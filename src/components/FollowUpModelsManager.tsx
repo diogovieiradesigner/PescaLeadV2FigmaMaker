@@ -28,9 +28,11 @@ interface FollowUpCategory {
 
 interface FollowUpModelsManagerProps {
   isDark: boolean;
+  workspaceId: string | null; // ✅ WORKSPACE ID
+  categoriesRefreshTrigger: number; // ✅ Trigger para recarregar categorias
 }
 
-export function FollowUpModelsManager({ isDark }: FollowUpModelsManagerProps) {
+export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTrigger }: FollowUpModelsManagerProps) {
   const [models, setModels] = useState<FollowUpModel[]>([]);
   const [categories, setCategories] = useState<FollowUpCategory[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,8 +49,9 @@ export function FollowUpModelsManager({ isDark }: FollowUpModelsManagerProps) {
   });
 
   useEffect(() => {
+    console.log('[FollowUpModelsManager] Trigger de categorias mudou:', categoriesRefreshTrigger);
     loadData();
-  }, []);
+  }, [categoriesRefreshTrigger]); // ✅ Recarregar quando categorias mudarem
 
   const loadData = async () => {
     try {
@@ -62,6 +65,8 @@ export function FollowUpModelsManager({ isDark }: FollowUpModelsManagerProps) {
         .order('name');
 
       if (categoriesError) throw categoriesError;
+      
+      console.log('[FollowUpModelsManager] Categorias carregadas:', categoriesData?.length || 0);
       setCategories(categoriesData || []);
 
       // Load models with category names
@@ -121,10 +126,18 @@ export function FollowUpModelsManager({ isDark }: FollowUpModelsManagerProps) {
 
         if (error) throw error;
       } else {
-        // Create
+        // Create - ✅ ADICIONAR workspace_id
+        if (!workspaceId) {
+          alert('Workspace não identificado. Faça login novamente.');
+          return;
+        }
+
         const { error } = await supabase
           .from('follow_up_models')
-          .insert([formData]);
+          .insert([{
+            ...formData,
+            workspace_id: workspaceId, // ✅ OBRIGATÓRIO
+          }]);
 
         if (error) throw error;
       }
@@ -401,7 +414,7 @@ export function FollowUpModelsManager({ isDark }: FollowUpModelsManagerProps) {
             <button
               onClick={handleCloseModal}
               className={cn(
-                "px-4 py-2 text-sm transition-colors",
+                "px-4 py-2 text-sm transition-colors rounded-lg",
                 isDark
                   ? "text-white/70 hover:bg-white/[0.05]"
                   : "text-zinc-600 hover:bg-zinc-100"
@@ -412,7 +425,7 @@ export function FollowUpModelsManager({ isDark }: FollowUpModelsManagerProps) {
             <button
               onClick={handleSave}
               disabled={!formData.name || !formData.category_id || !formData.message}
-              className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white text-sm transition-colors rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {editingModel ? 'Salvar Alterações' : 'Criar Modelo'}
             </button>

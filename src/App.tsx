@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -11,7 +11,9 @@ import { EditLeadModal } from './components/EditLeadModal';
 import { LeadFullViewModal } from './components/LeadFullViewModal';
 import { AddFunnelModal } from './components/AddFunnelModal';
 import { EditFunnelModal } from './components/EditFunnelModal';
+import { DeleteFunnelModal } from './components/DeleteFunnelModal';
 import { CreateWorkspaceModal } from './components/CreateWorkspaceModal';
+import { WorkspaceMembersModal } from './components/WorkspaceMembersModal';
 import { StatsBar } from './components/StatsBar';
 import { DashboardView } from './components/DashboardView';
 import { ExtractionView } from './components/ExtractionView';
@@ -23,10 +25,12 @@ import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthWrapper } from './components/auth/AuthWrapper';
+import { AudioManagerProvider } from './contexts/AudioManagerContext'; // ✅ IMPORTAR PROVIDER
 import { useKanbanData } from './hooks/useKanbanData';
 import { useKanbanRealtime } from './hooks/useKanbanRealtime';
 import { useSettingsData } from './hooks/useSettingsData';
 import { toast } from 'sonner';
+import { Toaster } from './components/ui/sonner';
 
 // Create QueryClient instance outside component to avoid recreating on every render
 const queryClient = new QueryClient({
@@ -40,21 +44,155 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken } = useAuth();
+  const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
   const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs'>('dashboard');
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
   const [isAddFunnelModalOpen, setIsAddFunnelModalOpen] = useState(false);
   const [isEditFunnelModalOpen, setIsEditFunnelModalOpen] = useState(false);
+  const [isDeleteFunnelModalOpen, setIsDeleteFunnelModalOpen] = useState(false);
   const [isCreateWorkspaceModalOpen, setIsCreateWorkspaceModalOpen] = useState(false);
+  const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const { theme, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
-  const [selectedLeadColumnId, setSelectedLeadColumnId] = useState<string | null>(null); // ✅ Nova state para rastrear coluna
+  const [selectedLeadColumnId, setSelectedLeadColumnId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('edit');
   const [extractionRunId, setExtractionRunId] = useState<string | null>(null);
+  const [isProcessingInvite, setIsProcessingInvite] = useState(false);
+
+  // 🎯 SISTEMA DE CONVITES - DETECTAR E REDIRECIONAR
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteCode = urlParams.get('invite');
+    
+    if (inviteCode) {
+      console.log('🔍 Convite detectado, redirecionando para página de convite:', inviteCode);
+      // Redirecionar para página de convite usando hash router
+      window.location.hash = `#/invite/${inviteCode}`;
+      // Limpar query param da URL
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    }
+  }, []);
+
+  // 🎯 SISTEMA DE CONVITES POR QUERY PARAMS (LEGACY - mantido para compatibilidade)
+  useEffect(() => {
+    const processInvite = async (inviteCode: string) => {
+      console.log('🎯 Processando convite:', inviteCode);
+      setIsProcessingInvite(true);
+      
+      try {
+        const response = await fetch(
+          `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID || 'mdnvyvxkskbvvmuhfymn'}.supabase.co/functions/v1/make-server-e4f9d774/invites/${inviteCode}/accept`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok && data.workspace_id) {
+          toast.success('Convite aceito com sucesso!');
+          console.log('✅ Convite aceito, workspace:', data.workspace_id);
+          
+          // Atualizar lista de workspaces
+          if (refreshWorkspaces) {
+            await refreshWorkspaces();
+          }
+          
+          // Trocar para o novo workspace
+          setTimeout(() => {
+            switchWorkspace(data.workspace_id);
+          }, 500);
+        } else {
+          toast.error(data.error || 'Erro ao aceitar convite');
+          console.error('❌ Erro ao aceitar convite:', data.error);
+        }
+      } catch (error: any) {
+        toast.error('Erro ao processar convite');
+        console.error('❌ Erro ao processar convite:', error);
+      } finally {
+        setIsProcessingInvite(false);
+      }
+    };
+
+    // Detectar query param ?invite=CODE
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteCode = urlParams.get('invite');
+    
+    if (inviteCode) {
+      console.log('🔍 Convite detectado na URL:', inviteCode);
+      
+      if (!user) {
+        // Usuário não logado: salvar para processar depois
+        console.log('💾 Usuário não logado, salvando convite...');
+        localStorage.setItem('pendingInvite', inviteCode);
+        toast.info('Faça login para aceitar o convite');
+      } else if (accessToken) {
+        // Usuário logado: processar convite
+        console.log('✅ Usuário logado, processando convite...');
+        processInvite(inviteCode);
+      }
+      
+      // Limpar URL para ficar mais limpo
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+    }
+  }, [user, accessToken, switchWorkspace, refreshWorkspaces]);
+
+  // Processar convite pendente após login
+  useEffect(() => {
+    const processPendingInvite = async () => {
+      const pendingInvite = localStorage.getItem('pendingInvite');
+      
+      if (pendingInvite && user && accessToken && !isProcessingInvite) {
+        console.log('🎯 Processando convite pendente após login:', pendingInvite);
+        localStorage.removeItem('pendingInvite');
+        setIsProcessingInvite(true);
+        
+        try {
+          const response = await fetch(
+            `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID || 'mdnvyvxkskbvvmuhfymn'}.supabase.co/functions/v1/make-server-e4f9d774/invites/${pendingInvite}/accept`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`
+              }
+            }
+          );
+
+          const data = await response.json();
+
+          if (response.ok && data.workspace_id) {
+            toast.success('Convite aceito com sucesso!');
+            console.log('✅ Convite pendente aceito, workspace:', data.workspace_id);
+            
+            if (refreshWorkspaces) {
+              await refreshWorkspaces();
+            }
+            
+            setTimeout(() => {
+              switchWorkspace(data.workspace_id);
+            }, 500);
+          } else {
+            toast.error(data.error || 'Erro ao aceitar convite');
+            console.error('❌ Erro ao aceitar convite pendente:', data.error);
+          }
+        } catch (error: any) {
+          toast.error('Erro ao processar convite');
+          console.error('❌ Erro ao processar convite pendente:', error);
+        } finally {
+          setIsProcessingInvite(false);
+        }
+      }
+    };
+
+    processPendingInvite();
+  }, [user, accessToken, switchWorkspace, refreshWorkspaces, isProcessingInvite]);
 
   // Settings data (shared between ChatView and SettingsView)
   const settingsData = useSettingsData(currentWorkspace?.id || null);
@@ -82,33 +220,69 @@ function AppContent() {
     refetchFunnels,
   } = useKanbanData(currentWorkspace?.id || null, currentFunnelId);
 
+  // ✅ Criar ref para refetchFunnel (evita reconexões do realtime)
+  const refetchFunnelRef = useRef(refetchFunnel);
+  
+  useEffect(() => {
+    refetchFunnelRef.current = refetchFunnel;
+  }, [refetchFunnel]);
+
+  // ✅ Callbacks estáveis para realtime (não causam reconexões)
+  const handleLeadMoved = useCallback(() => {
+    refetchFunnelRef.current();
+  }, []);
+
+  const handleLeadCreated = useCallback(() => {
+    refetchFunnelRef.current();
+  }, []);
+
+  const handleLeadUpdated = useCallback(() => {
+    refetchFunnelRef.current();
+  }, []);
+
+  const handleLeadDeleted = useCallback(() => {
+    refetchFunnelRef.current();
+  }, []);
+
+  const handleFunnelUpdated = useCallback(() => {
+    refetchFunnelRef.current();
+  }, []);
+
   // Realtime polling - MUST be called before any conditional returns
   const { trackRecentMove } = useKanbanRealtime({
     workspaceId: currentWorkspace?.id || null,
     currentUserId: user?.id || null,
     enabled: currentView === 'pipeline' && !!currentFunnelId,
-    onLeadMoved: () => {
-      // Refresh when other users move leads
-      refetchFunnel();
-    },
-    onLeadCreated: () => {
-      refetchFunnel();
-    },
-    onLeadUpdated: () => {
-      refetchFunnel();
-    },
-    onLeadDeleted: () => {
-      refetchFunnel();
-    },
-    onFunnelUpdated: () => {
-      refetchFunnel();
-    },
+    onLeadMoved: handleLeadMoved,
+    onLeadCreated: handleLeadCreated,
+    onLeadUpdated: handleLeadUpdated,
+    onLeadDeleted: handleLeadDeleted,
+    onFunnelUpdated: handleFunnelUpdated,
   });
 
-  // Set first funnel as current when funnels load
+  // Set first funnel as current when funnels load OR when current funnel is deleted
   useEffect(() => {
+    // Se não há funil selecionado mas existem funis, selecionar o primeiro
     if (funnels.length > 0 && !currentFunnelId) {
+      console.log('[APP] 📌 Nenhum funil selecionado, selecionando primeiro:', funnels[0].id);
       setCurrentFunnelId(funnels[0].id);
+      return;
+    }
+
+    // Se o funil atual não existe mais na lista (foi deletado), selecionar outro
+    if (currentFunnelId && funnels.length > 0) {
+      const funnelExists = funnels.some(f => f.id === currentFunnelId);
+      if (!funnelExists) {
+        console.log('[APP] ⚠️ Funil atual não existe mais, selecionando primeiro:', funnels[0].id);
+        setCurrentFunnelId(funnels[0].id);
+        return;
+      }
+    }
+
+    // Se não há mais funis, limpar seleção
+    if (funnels.length === 0 && currentFunnelId) {
+      console.log('[APP] ❌ Não há mais funis, limpando seleção');
+      setCurrentFunnelId(null);
     }
   }, [funnels, currentFunnelId]);
 
@@ -154,7 +328,7 @@ function AppContent() {
     const totalValue = allLeads.reduce((sum, lead) => {
       if (!lead.value) return sum;
       const numValue = typeof lead.value === 'string' 
-        ? parseFloat(lead.value.replace(/[^\d.-]/g, ''))
+        ? parseFloat(lead.value.replace(/[^\\d.-]/g, ''))
         : lead.value;
       return sum + (isNaN(numValue) ? 0 : numValue);
     }, 0);
@@ -172,54 +346,14 @@ function AppContent() {
     
     console.log('[APP STATS] Manual calculation result:', calculatedStats);
     return calculatedStats;
-  }, [backendStats, columns, columnLeadsState]);
+  }, [backendStats]); // ✅ OTIMIZAÇÃO: Removido columns e columnLeadsState - stats só recalcula quando backend retorna novos valores
 
-  // Check if user has no workspace - show create workspace screen
-  if (!currentWorkspace && workspaces.length === 0) {
-    return (
-      <div className={`h-screen flex items-center justify-center transition-colors ${
-        theme === 'dark' ? 'bg-true-black' : 'bg-light-bg'
-      }`}>
-        <div className="max-w-md w-full px-6">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-xl bg-[#0169D9] flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-            </div>
-            <h1 className={`text-2xl font-semibold mb-2 ${
-              theme === 'dark' ? 'text-white' : 'text-text-primary-light'
-            }`}>
-              Bem-vindo!
-            </h1>
-            <p className={theme === 'dark' ? 'text-white/60' : 'text-text-secondary-light'}>
-              Crie seu primeiro workspace para começar a gerenciar seus leads
-            </p>
-          </div>
-          
-          <button
-            onClick={() => setIsCreateWorkspaceModalOpen(true)}
-            className="w-full px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
-          >
-            Criar Workspace
-          </button>
-        </div>
-
-        <CreateWorkspaceModal
-          isOpen={isCreateWorkspaceModalOpen}
-          onClose={() => setIsCreateWorkspaceModalOpen(false)}
-          theme={theme}
-        />
-      </div>
-    );
-  }
-
-  // Get all leads for list view
+  // Get all leads for list view - MUST be before conditional returns
   const allLeads = useMemo(() => {
     return columns.flatMap((col) => col.leads);
   }, [columns]);
 
-  // Filter leads based on search query (client-side for now, can move to backend later)
+  // Filter leads based on search query - MUST be before conditional returns
   const filteredColumns = useMemo(() => {
     if (!searchQuery.trim()) return columns;
 
@@ -246,6 +380,7 @@ function AppContent() {
     );
   }, [allLeads, searchQuery]);
 
+  // ALL CALLBACKS MUST BE BEFORE ANY CONDITIONAL RETURNS
   const handleLeadMove = useCallback(async (leadId: string, targetColumnId: string) => {
     try {
       trackRecentMove(leadId);
@@ -432,7 +567,7 @@ function AppContent() {
     setSelectedLeadColumnId(lead.columnId || lead.status); 
   }, []);
 
-  // ✅ Navegação entre leads tipo "stories"
+  // ✅ Navegação entre leads tipo \"stories\"
   const handleNavigateToNextLead = useCallback(() => {
     if (!selectedLead || !selectedLeadColumnId) return;
     
@@ -512,6 +647,7 @@ function AppContent() {
       console.log('[APP] handleSaveFunnel called:', {
         funnelName,
         cols: cols.length,
+        colsData: cols, // ✅ Log completo das colunas
         workspaceId: currentWorkspace?.id,
         hasCurrentWorkspace: !!currentWorkspace,
       });
@@ -524,7 +660,13 @@ function AppContent() {
         return;
       }
 
-      const newFunnel = await createFunnel(funnelName);
+      // ✅ Converter colunas para o formato esperado pelo backend
+      const columns = cols.map(col => ({
+        name: col.name,
+        color: '#10B981', // Cor padrão - pode ser customizado depois
+      }));
+
+      const newFunnel = await createFunnel(funnelName, undefined, columns);
 
       if (newFunnel) {
         console.log('[APP] ✅ Funil criado com sucesso:', newFunnel.id);
@@ -574,6 +716,33 @@ function AppContent() {
     }
   }, [currentFunnelId, updateFunnel, refetchFunnel, refetchFunnels]);
 
+  const handleDeleteFunnel = useCallback(async () => {
+    try {
+      if (!currentFunnelId) {
+        toast.error('Nenhum funil selecionado');
+        return;
+      }
+
+      console.log('[APP] Deletando funil:', currentFunnelId);
+
+      await deleteFunnel(currentFunnelId);
+
+      // Recarregar lista de funis
+      await refetchFunnels();
+
+      // ✅ O useEffect vai detectar automaticamente que o funil não existe mais
+      // e vai selecionar outro funil disponível
+
+      setIsDeleteFunnelModalOpen(false);
+      toast.success('Funil deletado com sucesso!');
+    } catch (error) {
+      console.error('[APP] Failed to delete funnel:', error);
+      toast.error('Erro ao deletar funil', { 
+        description: error instanceof Error ? error.message : 'Erro desconhecido' 
+      });
+    }
+  }, [currentFunnelId, deleteFunnel, refetchFunnels]);
+
   const handleLoadMore = useCallback((columnId: string) => {
     loadMoreLeads(columnId);
   }, [loadMoreLeads]);
@@ -595,16 +764,17 @@ function AppContent() {
         toast.error('Erro ao carregar lead. Tente novamente.');
         return;
       }
-      
-      // Abrir modal com os dados do lead
+
+      // Definir lead selecionado e sua coluna
       setSelectedLead(lead);
-      setModalMode('edit');
-      setIsEditLeadModalOpen(true);
+      setSelectedLeadColumnId(lead.columnId || lead.status);
       
-      console.log('[APP] Lead modal opened:', lead.name);
+      // Abrir modal full view
+      setIsEditLeadModalOpen(true);
+      setModalMode('edit');
     } catch (error) {
       console.error('[APP] Erro ao abrir lead do chat:', error);
-      toast.error('Erro ao abrir lead. Tente novamente.');
+      toast.error('Erro ao carregar lead. Tente novamente.');
     }
   }, []);
 
@@ -616,7 +786,58 @@ function AppContent() {
     }
   }, [currentFunnelId, refetchFunnel]);
 
-  // Loading state
+  // Check if user has no workspace - show create workspace screen
+  if (!currentWorkspace && workspaces.length === 0) {
+    return (
+      <div className={`h-screen flex items-center justify-center transition-colors ${
+        theme === 'dark' ? 'bg-true-black' : 'bg-light-bg'
+      }`}>
+        <div className="max-w-md w-full px-6">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 rounded-xl bg-[#0169D9] flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <h1 className={`text-2xl font-semibold mb-2 ${
+              theme === 'dark' ? 'text-white' : 'text-text-primary-light'
+            }`}>
+              Bem-vindo!
+            </h1>
+            <p className={theme === 'dark' ? 'text-white/60' : 'text-text-secondary-light'}>
+              Crie seu primeiro workspace para começar a gerenciar seus leads
+            </p>
+          </div>
+          
+          <button
+            onClick={() => setIsCreateWorkspaceModalOpen(true)}
+            className="w-full px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
+          >
+            Criar Workspace
+          </button>
+          
+          <button
+            onClick={logout}
+            className={`w-full mt-4 px-6 py-3 rounded-lg transition-colors font-medium ${
+              theme === 'dark' 
+                ? 'text-white/60 hover:text-white hover:bg-white/5' 
+                : 'text-text-secondary-light hover:text-text-primary-light hover:bg-black/5'
+            }`}
+          >
+            Sair da conta
+          </button>
+        </div>
+
+        <CreateWorkspaceModal
+          isOpen={isCreateWorkspaceModalOpen}
+          onClose={() => setIsCreateWorkspaceModalOpen(false)}
+          theme={theme}
+        />
+      </div>
+    );
+  }
+
+  // Loading state - AFTER ALL HOOKS
   if (loading && !currentFunnel && funnels.length === 0) {
     return (
       <div className={`h-screen flex overflow-hidden transition-colors ${
@@ -638,7 +859,7 @@ function AppContent() {
     );
   }
 
-  // No funnels state
+  // No funnels state - AFTER ALL HOOKS  
   if (!loading && funnels.length === 0 && currentView === 'pipeline') {
     return (
       <div className={`h-screen flex overflow-hidden transition-colors ${
@@ -651,60 +872,37 @@ function AppContent() {
           currentView={currentView}
           onViewChange={setCurrentView}
         />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <Header
-            currentFunnel={''}
-            funnels={[]}
-            onFunnelChange={setCurrentFunnelId}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            onSettingsClick={() => {}}
-            theme={theme}
-            onThemeToggle={toggleTheme}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            onNewFunnelClick={() => setIsAddFunnelModalOpen(true)}
-            onEditFunnelClick={() => setIsEditFunnelModalOpen(true)}
-            onNavigateToSettings={() => setCurrentView('account-settings')}
-          />
-
-          {/* Stats Bar */}
-          <StatsBar
-            totalDeals={0}
-            totalValue={0}
-            activeLeads={0}
-            conversionRate={0}
-            theme={theme}
-          />
-
-          {/* Empty State */}
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-            <div className="text-center max-w-md">
-              <div className="w-20 h-20 rounded-2xl bg-[#0169D9]/10 flex items-center justify-center mx-auto mb-6">
-                <svg className="w-10 h-10 text-[#0169D9]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-              </div>
-              <h2 className={`text-2xl font-semibold mb-3 ${
-                theme === 'dark' ? 'text-white' : 'text-text-primary-light'
-              }`}>
-                Nenhum funil configurado
-              </h2>
-              <p className={`mb-6 ${
-                theme === 'dark' ? 'text-white/60' : 'text-text-secondary-light'
-              }`}>
-                Crie seu primeiro funil de vendas para começar a organizar e gerenciar seus leads
-              </p>
-              <button
-                onClick={() => setIsAddFunnelModalOpen(true)}
-                className="px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
-              >
-                Criar Primeiro Funil
-              </button>
+        <div className="flex-1 flex flex-col items-center justify-center p-8">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 rounded-xl bg-[#0169D9] flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
             </div>
+            <h2 className={`text-xl font-semibold mb-2 ${
+              theme === 'dark' ? 'text-white' : 'text-text-primary-light'
+            }`}>
+              Nenhum funil encontrado
+            </h2>
+            <p className={`mb-6 ${
+              theme === 'dark' ? 'text-white/60' : 'text-text-secondary-light'
+            }`}>
+              Crie seu primeiro funil para começar a gerenciar seus leads
+            </p>
+            <button
+              onClick={() => {
+                console.log('[APP] 🔘 Botão "Criar Primeiro Funil" clicado');
+                console.log('[APP] Estado atual:', { isAddFunnelModalOpen, currentView, funnels: funnels.length });
+                setIsAddFunnelModalOpen(true);
+              }}
+              className="px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
+            >
+              Criar Primeiro Funil
+            </button>
           </div>
         </div>
+
+        {/* Add Funnel Modal - MUST BE HERE for no-funnels state */}
         <AddFunnelModal
           isOpen={isAddFunnelModalOpen}
           onClose={() => setIsAddFunnelModalOpen(false)}
@@ -715,8 +913,8 @@ function AppContent() {
     );
   }
 
-  // Debug logs
-  console.log('[APP RENDER] State:', {
+  // Log current funnel info - AFTER ALL HOOKS
+  console.log('[APP] Rendering with funnel:', {
     currentView,
     loading,
     hasFunnels: funnels.length > 0,
@@ -752,7 +950,7 @@ function AppContent() {
             inboxes={settingsData.inboxes}
           />
         ) : currentView === 'settings' ? (
-          <SettingsView 
+          <SettingsView
             theme={theme}
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
@@ -777,6 +975,7 @@ function AppContent() {
             theme={theme}
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
+            onManageMembersClick={() => setIsMembersModalOpen(true)}
             stats={stats}
           />
         ) : currentView === 'extraction' ? (
@@ -835,6 +1034,7 @@ function AppContent() {
               onEditFunnelClick={() => setIsEditFunnelModalOpen(true)}
               onNavigateToSettings={() => setCurrentView('account-settings')}
               onRefresh={refetchFunnel} // ✅ Recarregar leads do kanban
+              onManageMembersClick={() => setIsMembersModalOpen(true)}
             />
 
             {/* Stats Bar */}
@@ -920,11 +1120,28 @@ function AppContent() {
           onClose={() => setIsEditFunnelModalOpen(false)}
           theme={theme}
           onSave={handleEditFunnel}
+          onDeleteFunnel={() => {
+            setIsEditFunnelModalOpen(false);
+            setIsDeleteFunnelModalOpen(true);
+          }}
           currentFunnelName={currentFunnel.name}
           currentColumns={currentFunnel.columns.map((col) => ({
             id: col.id,
             name: col.title,
           }))}
+          currentRole={currentWorkspace?.role}
+        />
+      )}
+
+      {/* Delete Funnel Modal */}
+      {currentFunnel && currentFunnelId && (
+        <DeleteFunnelModal
+          isOpen={isDeleteFunnelModalOpen}
+          onClose={() => setIsDeleteFunnelModalOpen(false)}
+          theme={theme}
+          onConfirm={handleDeleteFunnel}
+          funnelId={currentFunnelId}
+          funnelName={currentFunnel.name}
         />
       )}
 
@@ -933,6 +1150,17 @@ function AppContent() {
         isOpen={isCreateWorkspaceModalOpen}
         onClose={() => setIsCreateWorkspaceModalOpen(false)}
         theme={theme}
+      />
+
+      {/* Workspace Members Modal */}
+      <WorkspaceMembersModal
+        isOpen={isMembersModalOpen}
+        onClose={() => setIsMembersModalOpen(false)}
+        theme={theme}
+        workspaceId={currentWorkspace?.id || null}
+        workspaceName={currentWorkspace?.name || ''}
+        accessToken={accessToken}
+        currentUserId={user?.id || ''}
       />
     </div>
   );
@@ -945,7 +1173,10 @@ export default function App() {
     <AuthProvider>
       <AuthWrapper theme={theme}>
         <QueryClientProvider client={queryClient}>
-          <AppContent />
+          <AudioManagerProvider>
+            <AppContent />
+            <Toaster />
+          </AudioManagerProvider>
         </QueryClientProvider>
       </AuthWrapper>
     </AuthProvider>

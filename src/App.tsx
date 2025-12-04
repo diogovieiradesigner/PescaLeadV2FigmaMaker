@@ -130,7 +130,7 @@ function AppContent() {
       if (!user) {
         // Usuário não logado: salvar para processar depois
         console.log('💾 Usuário não logado, salvando convite...');
-        localStorage.setItem('pendingInvite', inviteCode);
+        localStorage.setItem('pending_invite', inviteCode);
         toast.info('Faça login para aceitar o convite');
       } else if (accessToken) {
         // Usuário logado: processar convite
@@ -145,12 +145,12 @@ function AppContent() {
 
   // Processar convite pendente após login
   useEffect(() => {
-    const processPendingInvite = async () => {
-      const pendingInvite = localStorage.getItem('pendingInvite');
-      
+    const processPendingInviteCode = async () => {
+      const pendingInvite = localStorage.getItem('pending_invite');
+
       if (pendingInvite && user && accessToken && !isProcessingInvite) {
         console.log('🎯 Processando convite pendente após login:', pendingInvite);
-        localStorage.removeItem('pendingInvite');
+        localStorage.removeItem('pending_invite');
         setIsProcessingInvite(true);
         
         try {
@@ -190,7 +190,7 @@ function AppContent() {
       }
     };
 
-    processPendingInvite();
+    processPendingInviteCode();
   }, [user, accessToken, switchWorkspace, refreshWorkspaces, isProcessingInvite]);
 
   // Settings data (shared between ChatView and SettingsView)

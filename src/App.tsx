@@ -23,14 +23,13 @@ import { AIServiceView } from './components/AIServiceView';
 import { AgentLogsView } from './components/AgentLogsView';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
 import { AuthWrapper } from './components/auth/AuthWrapper';
 import { AudioManagerProvider } from './contexts/AudioManagerContext'; // ✅ IMPORTAR PROVIDER
 import { useKanbanData } from './hooks/useKanbanData';
 import { useKanbanRealtime } from './hooks/useKanbanRealtime';
 import { useSettingsData } from './hooks/useSettingsData';
 import { toast } from 'sonner';
-import { Toaster } from './components/ui/sonner';
 
 // Create QueryClient instance outside component to avoid recreating on every render
 const queryClient = new QueryClient({
@@ -1168,17 +1167,14 @@ function AppContent() {
 
 export default function App() {
   const { theme } = useTheme();
-  
+
   return (
-    <AuthProvider>
-      <AuthWrapper theme={theme}>
-        <QueryClientProvider client={queryClient}>
-          <AudioManagerProvider>
-            <AppContent />
-            <Toaster />
-          </AudioManagerProvider>
-        </QueryClientProvider>
-      </AuthWrapper>
-    </AuthProvider>
+    <AuthWrapper theme={theme}>
+      <QueryClientProvider client={queryClient}>
+        <AudioManagerProvider>
+          <AppContent />
+        </AudioManagerProvider>
+      </QueryClientProvider>
+    </AuthWrapper>
   );
 }

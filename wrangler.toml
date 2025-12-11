@@ -1,0 +1,18 @@
+name = "pesca-lead-v2"
+compatibility_date = "2024-12-10"
+pages_build_output_dir = "build"
+
+# Cloudflare Pages configuration for React/Vite app
+[build]
+command = "npm run build"
+cwd = ""
+
+[build.upload]
+format = "service-worker"
+
+# Environment variables (configure in Cloudflare dashboard)
+[env.production]
+# Add your production environment variables in Cloudflare Dashboard
+
+[env.preview]
+# Add your preview environment variables in Cloudflare Dashboard

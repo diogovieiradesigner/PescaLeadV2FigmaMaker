@@ -11,7 +11,10 @@
     "test:debug": "playwright test --debug",
     "test:ui": "playwright test --ui",
     "test:report": "playwright show-report",
-    "validate": "npm run test:visual && npm run test:kanban"
+    "validate": "npm run test:visual && npm run test:kanban",
+    "preview:cloudflare": "wrangler pages dev build",
+    "deploy:cloudflare": "wrangler pages deploy build --project-name=pesca-lead-v2",
+    "build:deploy": "npm run build && npm run deploy:cloudflare"
   },
   "dependencies": {
     "@jsr/supabase__functions-js": "*",
@@ -79,6 +82,7 @@
     "autoprefixer": "^10.4.22",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
-    "vite": "6.3.5"
+    "vite": "6.3.5",
+    "wrangler": "^3.86.1"
   }
 }

@@ -796,18 +796,15 @@ export interface CampaignRunForFilter {
  */
 export async function fetchCampaignRuns(workspaceId: string): Promise<CampaignRunForFilter[]> {
   try {
-    // Buscar runs com JOIN no funil para pegar o nome (campaign_configs não tem coluna name)
+    // Buscar runs usando o campo name diretamente da tabela campaign_runs
     const { data, error } = await supabase
       .from('campaign_runs')
       .select(`
         id,
+        name,
         run_date,
         campaign_configs!inner (
-          workspace_id,
-          source_funnel_id,
-          funnels:source_funnel_id (
-            name
-          )
+          workspace_id
         )
       `)
       .eq('campaign_configs.workspace_id', workspaceId)
@@ -816,28 +813,12 @@ export async function fetchCampaignRuns(workspaceId: string): Promise<CampaignRu
 
     if (error) throw error;
 
-    // Formatar para exibição com nome do funil + data
-    return (data || []).map((run: any) => {
-      const runDate = new Date(run.run_date);
-      const formattedDate = runDate.toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      });
-      const formattedTime = runDate.toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-
-      // Nome do funil vem do JOIN aninhado
-      const funnelName = run.campaign_configs?.funnels?.name || 'Campanha';
-
-      return {
-        id: run.id,
-        campaign_name: `${funnelName} - ${formattedDate} ${formattedTime}`,
-        run_date: run.run_date,
-      };
-    });
+    // Usar o nome da run diretamente (já vem formatado do banco)
+    return (data || []).map((run: any) => ({
+      id: run.id,
+      campaign_name: run.name || 'Campanha',
+      run_date: run.run_date,
+    }));
   } catch (error) {
     console.error('[CHAT SERVICE] Error fetching campaign runs:', error);
     return [];

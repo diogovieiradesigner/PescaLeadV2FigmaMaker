@@ -46,6 +46,7 @@ interface CampaignHistory {
 
 interface CampaignRun {
   id: string;
+  name: string; // Nome personalizado da run
   run_date: string;
   status: string;
   leads_total: number;
@@ -1251,7 +1252,7 @@ NUNCA:
                             <td className={`px-6 py-3 whitespace-nowrap ${
                               isDark ? 'text-white/70' : 'text-text-primary-light'
                             }`}>
-                              Campanha Diária
+                              {run.name || 'Campanha'}
                             </td>
 
                             {/* Leads */}

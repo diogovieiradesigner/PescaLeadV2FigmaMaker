@@ -10,12 +10,19 @@ export interface ConversationFiltersState {
   inboxes: string[];
   statuses: string[];
   attendantTypes: string[];
+  extractions: string[]; // IDs das extrações ou 'all', 'none' (sem extração)
+}
+
+export interface LeadExtraction {
+  id: string;
+  extraction_name: string;
 }
 
 interface ConversationFiltersProps {
   theme: Theme;
   agents: DbUser[];
   inboxes: Inbox[];
+  extractions: LeadExtraction[];
   filters: ConversationFiltersState;
   onFiltersChange: (filters: ConversationFiltersState) => void;
 }
@@ -132,6 +139,7 @@ export function ConversationFilters({
   theme,
   agents,
   inboxes,
+  extractions,
   filters,
   onFiltersChange,
 }: ConversationFiltersProps) {
@@ -222,7 +230,7 @@ export function ConversationFilters({
     } else {
       let newTypes = filters.attendantTypes.filter(t => t !== 'all');
       const index = newTypes.indexOf(type);
-      
+
       if (index > -1) {
         newTypes.splice(index, 1);
       } else {
@@ -234,6 +242,31 @@ export function ConversationFilters({
       }
 
       onFiltersChange({ ...filters, attendantTypes: newTypes });
+    }
+  };
+
+  const handleExtractionToggle = (extractionId: string) => {
+    if (extractionId === 'all') {
+      if (filters.extractions.includes('all')) {
+        onFiltersChange({ ...filters, extractions: [] });
+      } else {
+        onFiltersChange({ ...filters, extractions: ['all'] });
+      }
+    } else {
+      let newExtractions = filters.extractions.filter(e => e !== 'all');
+      const index = newExtractions.indexOf(extractionId);
+
+      if (index > -1) {
+        newExtractions.splice(index, 1);
+      } else {
+        newExtractions.push(extractionId);
+      }
+
+      if (newExtractions.length === 0) {
+        newExtractions = ['all'];
+      }
+
+      onFiltersChange({ ...filters, extractions: newExtractions });
     }
   };
 
@@ -259,6 +292,12 @@ export function ConversationFilters({
     { value: 'all', label: 'Tudo' },
     { value: 'human', label: 'Humano' },
     { value: 'ai', label: 'I.A' },
+  ];
+
+  const extractionOptions = [
+    { value: 'all', label: 'Tudo' },
+    { value: 'none', label: 'Sem extração' },
+    ...extractions.map(ext => ({ value: ext.id, label: ext.extraction_name })),
   ];
 
   return (
@@ -318,6 +357,13 @@ export function ConversationFilters({
             options={attendantTypeOptions}
             selectedValues={filters.attendantTypes}
             onToggle={handleAttendantTypeToggle}
+            theme={theme}
+          />
+          <FilterDropdown
+            label="Extração"
+            options={extractionOptions}
+            selectedValues={filters.extractions}
+            onToggle={handleExtractionToggle}
             theme={theme}
           />
         </div>

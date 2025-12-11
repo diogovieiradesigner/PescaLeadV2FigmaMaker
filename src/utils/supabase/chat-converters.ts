@@ -114,6 +114,7 @@ export function dbConversationToFrontend(
     lastUpdate: lastMessageDate.toLocaleString('pt-BR'),
     tags: dbConversation.tags || [],
     leadId: dbConversation.lead_id,
+    leadExtractionId: dbConversation.lead_extraction_id || null, // ✅ ID da extração para filtro
     attendantType: dbConversation.attendant_type || 'human', // ✅ Tipo de atendente
     workspaceId: dbConversation.workspace_id, // ✅ Workspace ID para filtrar realtime
   };

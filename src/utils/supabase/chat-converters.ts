@@ -19,7 +19,9 @@ export function dbMessageToFrontend(dbMessage: DbMessage): Message {
     audioDuration: dbMessage.media_duration,
     type: dbMessage.message_type, // ✅ Usa diretamente message_type do banco
     status: dbMessage.message_type === 'sent' ? 'sent' : undefined, // ✅ Define status enviado para mensagens do banco
-    timestamp: new Date(dbMessage.created_at).toLocaleTimeString('pt-BR', {
+    timestamp: new Date(dbMessage.created_at).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
     }),

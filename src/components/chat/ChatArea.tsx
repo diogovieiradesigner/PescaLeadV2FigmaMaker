@@ -5,7 +5,59 @@ import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { ChatActionsMenu } from './ChatActionsMenu';
 import { AudioPlayer } from './AudioPlayer';
 import { MessageBubble } from './MessageBubble';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+// ============================================
+// 📅 Componente de Separador de Data (estilo WhatsApp)
+// ============================================
+function DateSeparator({ date, isDark }: { date: string; isDark: boolean }) {
+  return (
+    <div className="flex items-center justify-center my-4">
+      <div className={`px-3 py-1 rounded-lg text-xs ${
+        isDark
+          ? 'bg-white/[0.08] text-white/60'
+          : 'bg-gray-200 text-gray-600'
+      }`}>
+        {date}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// 🔧 Função para formatar data como "Hoje", "Ontem", ou "DD/MM/YYYY"
+// ============================================
+function formatDateLabel(dateString: string): string {
+  const messageDate = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // Normalizar para comparar apenas datas (sem hora)
+  const messageDateOnly = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const yesterdayOnly = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+  if (messageDateOnly.getTime() === todayOnly.getTime()) {
+    return 'Hoje';
+  } else if (messageDateOnly.getTime() === yesterdayOnly.getTime()) {
+    return 'Ontem';
+  } else {
+    return messageDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }
+}
+
+// ============================================
+// 🔧 Função para extrair chave de data (YYYY-MM-DD) de uma mensagem
+// ============================================
+function getDateKey(dateString: string): string {
+  const date = new Date(dateString);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 interface ChatAreaProps {
   conversation: Conversation | null;

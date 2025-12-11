@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Funnel, CRMLead, KanbanColumn } from '../types/crm';
 import * as funnelsService from '../services/funnels-service';
 import * as leadsService from '../services/leads-service';
@@ -884,31 +884,29 @@ export function useKanbanData(
   // EFFECTS
   // ============================================
 
-  // ✅ Track previous workspace to detect changes
-  const [previousWorkspaceId, setPreviousWorkspaceId] = useState<string | null>(null);
+  // ✅ Ref para rastrear workspace anterior (não causa re-render)
+  const previousWorkspaceRef = useRef<string | null>(null);
 
-  // Initial load - funnels - ✅ EXECUTAR APENAS UMA VEZ
+  // Initial load - funnels
   useEffect(() => {
-    console.log('[KANBAN] useEffect funnels triggered:', { workspaceId, previousWorkspaceId, hasWorkspace: !!workspaceId });
+    console.log('[KANBAN] useEffect funnels triggered:', { workspaceId, hasWorkspace: !!workspaceId });
 
-    // ✅ CRÍTICO: Detectar se o workspace mudou
-    const workspaceChanged = workspaceId !== previousWorkspaceId;
-
-    // ✅ CRÍTICO: Limpar estado ao trocar de workspace
     if (workspaceId) {
-      if (workspaceChanged) {
-        console.log('[KANBAN] 🔄 Workspace MUDOU de', previousWorkspaceId, 'para', workspaceId, '- limpando estado...');
+      // ✅ Detectar mudança de workspace usando ref (síncrono, sem delay)
+      const workspaceChanged = previousWorkspaceRef.current !== null && previousWorkspaceRef.current !== workspaceId;
 
-        // Resetar TODOS os estados para evitar mostrar dados do workspace anterior
+      if (workspaceChanged) {
+        console.log('[KANBAN] 🔄 Workspace MUDOU de', previousWorkspaceRef.current, 'para', workspaceId, '- limpando estado...');
+
+        // Resetar estados imediatamente
         setCurrentFunnel(null);
         setColumnLeadsState({});
         setStats(null);
-        setFunnels([]); // ✅ IMPORTANTE: Limpar funis também!
-        setLoading(true); // ✅ Mostrar loading enquanto carrega
-
-        // Atualizar previousWorkspaceId
-        setPreviousWorkspaceId(workspaceId);
+        setFunnels([]);
       }
+
+      // Atualizar ref
+      previousWorkspaceRef.current = workspaceId;
 
       loadFunnels();
     } else {
@@ -921,27 +919,18 @@ export function useKanbanData(
       setCurrentFunnel(null);
       setColumnLeadsState({});
       setStats(null);
-      setPreviousWorkspaceId(null);
+      previousWorkspaceRef.current = null;
     }
-    // ✅ CRÍTICO: Remover loadFunnels das dependências para evitar loop infinito
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  // Load funnel when currentFunnelId changes - ✅ EXECUTAR APENAS QUANDO ID MUDA
+  // Load funnel when currentFunnelId changes
   useEffect(() => {
     console.log('[KANBAN] useEffect funnel triggered:', {
       currentFunnelId,
       workspaceId,
-      previousWorkspaceId,
       hasBoth: !!(currentFunnelId && workspaceId)
     });
-
-    // ✅ CRÍTICO: Não carregar funil se o workspace acabou de mudar (prevenir dados misturados)
-    // O estado previousWorkspaceId é atualizado no outro useEffect
-    if (workspaceId !== previousWorkspaceId) {
-      console.log('[KANBAN] ⏸️ Aguardando workspace se estabilizar...');
-      return;
-    }
 
     if (currentFunnelId && workspaceId) {
       loadFunnel(currentFunnelId);
@@ -950,9 +939,8 @@ export function useKanbanData(
       console.log('[KANBAN] No funnel selected, turning off loading');
       setLoading(false);
     }
-    // ✅ CRÍTICO: Remover loadFunnel das dependências para evitar loop infinito
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFunnelId, workspaceId, previousWorkspaceId, funnelsLoading]);
+  }, [currentFunnelId, workspaceId, funnelsLoading]);
 
   // ============================================
   // CONVERT TO COLUMNS FORMAT

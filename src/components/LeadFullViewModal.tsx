@@ -461,10 +461,16 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   // Inicializar dados quando abrir
   useEffect(() => {
     if (isOpen && lead) {
-      setFormData(lead);
-      
-      // ✅ Custom Fields agora são carregados automaticamente pelo hook useLeadCustomFields
-      // Não é mais necessário carregar manualmente aqui
+      // ✅ CORREÇÃO: Inicializar formData com customFields do hook quando disponíveis
+      const initialData: CRMLead = {
+        ...lead,
+        customFields: lead.customFields && lead.customFields.length > 0 
+          ? lead.customFields 
+          : customFields.length > 0 
+            ? customFields 
+            : undefined
+      };
+      setFormData(initialData);
       
       // Carregar atividades
       fetchActivities();
@@ -474,7 +480,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
         loadAvailableInboxes();
       }
     }
-  }, [isOpen, lead, currentWorkspace?.id]); // ✅ Agora reage a mudanças no lead
+  }, [isOpen, lead, currentWorkspace?.id, customFields]); // ✅ Incluir customFields nas dependências
 
   // ✅ Gerenciar seleção de telefone
   useEffect(() => {
@@ -492,12 +498,19 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
   // ✅ Handler para alteração de campos personalizados
   const handleCustomFieldChange = (fieldId: string, value: string) => {
-    // ✅ Custom fields agora vêm do hook (read-only)
-    // Atualizar apenas no formData para salvar depois
-    const updatedFields = customFields.map(f => 
+    // ✅ CORREÇÃO: Atualizar customFields no formData
+    // Usar customFields do hook como base se formData não tiver customFields
+    const baseFields = formData?.customFields && formData.customFields.length > 0 
+      ? formData.customFields 
+      : customFields;
+    
+    const updatedFields = baseFields.map(f => 
       f.id === fieldId ? { ...f, fieldValue: value } : f
     );
+    
     setFormData(prev => prev ? ({ ...prev, customFields: updatedFields }) : null);
+    
+    console.log('[LeadFullViewModal] Custom field alterado:', { fieldId, value, updatedFieldsCount: updatedFields.length });
   };
 
   // ✅ Carregar inboxes disponíveis
@@ -558,10 +571,25 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     try {
       setIsSaving(true);
       
-      console.log('[LeadFullViewModal] Salvando alterações:', formData);
+      // ✅ CORREÇÃO: Garantir que customFields atualizados sejam incluídos
+      const dataToSave: CRMLead = {
+        ...formData,
+        customFields: formData.customFields || customFields, // Usar customFields do hook se formData não tiver
+      };
+      
+      console.log('[LeadFullViewModal] Salvando alterações:', {
+        leadId: dataToSave.id,
+        customFieldsCount: dataToSave.customFields?.length || 0,
+        customFields: dataToSave.customFields
+      });
       
       // Chamar onSave para que o componente pai gerencie a atualização
-      await onSave(formData);
+      await onSave(dataToSave);
+      
+      // ✅ Recarregar custom fields após salvar para garantir sincronização
+      if (lead?.id) {
+        refreshCustomFields();
+      }
       
       // Recarregar atividades para mostrar logs de alteração
       fetchActivities();
@@ -896,9 +924,15 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                           <h3 className={`text-lg font-medium mb-6 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                              Campos Personalizados
                           </h3>
-                          {customFields.length > 0 ? (
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {customFields.map(field => {
+                          {(() => {
+                             // ✅ CORREÇÃO: Usar customFields do formData se disponível (valores editados), senão usar do hook
+                             const fieldsToRender = formData?.customFields && formData.customFields.length > 0 
+                                ? formData.customFields 
+                                : customFields;
+                             
+                             return fieldsToRender.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                   {fieldsToRender.map(field => {
                                    const isJsonField = field.fieldName.toLowerCase().includes('json');
                                    return (
                                       <div key={field.id} className={`p-4 rounded-lg border ${
@@ -1278,15 +1312,16 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                          })()}
                                       </div>
                                    );
-                                })}
-                             </div>
-                          ) : (
-                             <div className={`text-center py-12 rounded-lg border border-dashed ${
-                                isDark ? 'border-white/[0.08] text-white/40' : 'border-gray-300 text-gray-500'
-                             }`}>
-                                Nenhum campo personalizado configurado.
-                             </div>
-                          )}
+                                   })}
+                                </div>
+                             ) : (
+                                <div className={`text-center py-12 rounded-lg border border-dashed ${
+                                   isDark ? 'border-white/[0.08] text-white/40' : 'border-gray-300 text-gray-500'
+                                }`}>
+                                   Nenhum campo personalizado configurado.
+                                </div>
+                             );
+                          })()}
                        </div>
                     </div>
                  )}

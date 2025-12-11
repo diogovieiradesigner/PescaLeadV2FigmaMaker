@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, ArrowRight } from 'lucide-react';
 import { KanbanCard } from './KanbanCard';
 import { CRMLead } from '../types/crm';
 import { useDrop, useDrag } from 'react-dnd';
@@ -24,6 +24,8 @@ interface KanbanColumnProps {
   total?: number;
   hasMore?: boolean;
   loading?: boolean;
+  funnelId?: string;
+  funnelName?: string;
   onDrop: (leadId: string, columnId: string) => void;
   onDropAtPosition: (leadId: string, columnId: string, index: number) => void;
   onAddCard: (columnId: string) => void;
@@ -31,6 +33,7 @@ interface KanbanColumnProps {
   onLoadMore?: (columnId: string) => void;
   onDeleteLead?: (leadId: string) => void;
   onDeleteAllLeads?: (columnId: string) => void;
+  onMoveColumnLeads?: (columnId: string, columnTitle: string, funnelId: string, funnelName: string, leadCount: number) => void;
   theme: Theme;
 }
 
@@ -41,6 +44,8 @@ function KanbanColumnComponent({
   total,
   hasMore,
   loading,
+  funnelId,
+  funnelName,
   onDrop, 
   onDropAtPosition, 
   onAddCard, 
@@ -48,6 +53,7 @@ function KanbanColumnComponent({
   onLoadMore,
   onDeleteLead,
   onDeleteAllLeads,
+  onMoveColumnLeads,
   theme 
 }: KanbanColumnProps) {
   const isDark = theme === 'dark';
@@ -159,6 +165,25 @@ function KanbanColumnComponent({
           </div>
           
           <div className="flex items-center gap-1">
+            {/* Move All Leads Button */}
+            {onMoveColumnLeads && displayTotal > 0 && (
+              <button
+                onClick={() => {
+                  if (onMoveColumnLeads && funnelId && funnelName) {
+                    onMoveColumnLeads(id, title, funnelId, funnelName, displayTotal);
+                  }
+                }}
+                className={`p-1 rounded-lg transition-all ${
+                  isDark
+                    ? 'text-blue-400/60 hover:text-blue-400 hover:bg-blue-500/10'
+                    : 'text-blue-500/60 hover:text-blue-600 hover:bg-blue-50'
+                }`}
+                title={`Mover todos os ${displayTotal} leads desta coluna`}
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+            
             {/* Delete All Button */}
             {onDeleteAllLeads && displayTotal > 0 && (
               <button

@@ -492,11 +492,11 @@ export async function updateFunnel(
     }
     
     const workspaceId = funnelData.workspace_id;
-    const { projectId, publicAnonKey } = await import('../utils/supabase/info');
+    const { projectId } = await import('../utils/supabase/info');
     
-    // Use backend API to update funnel (handles column deletion)
+    // ✅ CORREÇÃO: Usar kanban-api em vez de make-server-e4f9d774
     const response = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/workspaces/${workspaceId}/funnels/${funnelId}`,
+      `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}`,
       {
         method: 'PUT',
         headers: {
@@ -505,7 +505,6 @@ export async function updateFunnel(
         },
         body: JSON.stringify({
           name: data.name,
-          description: data.description,
           columns: data.columns,
         }),
       }

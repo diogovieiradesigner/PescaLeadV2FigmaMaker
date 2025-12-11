@@ -37,9 +37,11 @@ export function useKanbanData(
   const leadsMap = useMemo(() => {
     const map = new Map<string, CRMLead>();
     Object.values(columnLeadsState).forEach(column => {
-      column.leads.forEach(lead => {
-        map.set(lead.id, lead);
-      });
+      if (column && column.leads) {
+        column.leads.forEach(lead => {
+          map.set(lead.id, lead);
+        });
+      }
     });
     return map;
   }, [columnLeadsState]);
@@ -48,9 +50,11 @@ export function useKanbanData(
   const leadToColumnMap = useMemo(() => {
     const map = new Map<string, string>();
     Object.entries(columnLeadsState).forEach(([columnId, column]) => {
-      column.leads.forEach(lead => {
-        map.set(lead.id, columnId);
-      });
+      if (column && column.leads) {
+        column.leads.forEach(lead => {
+          map.set(lead.id, columnId);
+        });
+      }
     });
     return map;
   }, [columnLeadsState]);
@@ -329,6 +333,12 @@ export function useKanbanData(
 
           // Atualizar estado e filtrar duplicatas
           setColumnLeadsState(prev => {
+            // ✅ Verificar se a coluna existe no estado antes de acessar
+            if (!prev[columnId]) {
+              console.warn('[KANBAN] Coluna não encontrada no estado:', columnId);
+              return prev;
+            }
+
             // ✅ Filtrar duplicatas antes de adicionar (silenciosamente - duplicatas são esperadas após movimentações)
             const existingIds = new Set(prev[columnId].leads.map(l => l.id));
             const uniqueNewLeads = newLeads.filter(lead => !existingIds.has(lead.id));
@@ -485,6 +495,9 @@ export function useKanbanData(
         
         // 1. Encontrar e remover da coluna antiga
         for (const columnId in newState) {
+          // ✅ Verificar se a coluna existe e tem leads
+          if (!newState[columnId] || !newState[columnId].leads) continue;
+          
           const leadIndex = newState[columnId].leads.findIndex(l => l.id === leadId);
           if (leadIndex !== -1) {
             oldColumnId = columnId;
@@ -497,7 +510,7 @@ export function useKanbanData(
               newState[columnId] = {
                 ...newState[columnId],
                 leads: newLeads,
-                total: newState[columnId].total - 1,
+                total: (newState[columnId].total || 0) - 1,
               };
             } else {
               // Mesma coluna, apenas atualizar
@@ -513,7 +526,7 @@ export function useKanbanData(
         }
         
         // 2. Se mudou de coluna, adicionar na nova
-        if (newColumnId && oldColumnId && oldColumnId !== newColumnId && newState[newColumnId]) {
+        if (newColumnId && oldColumnId && oldColumnId !== newColumnId && newState[newColumnId] && newState[newColumnId].leads) {
           const newLeads = [updatedLead, ...newState[newColumnId].leads];
           newState[newColumnId] = {
             ...newState[newColumnId],
@@ -587,6 +600,9 @@ export function useKanbanData(
       
       // ✅ DEDUPLICAÇÃO: Primeiro remover o lead de TODAS as colunas (caso esteja duplicado)
       for (const columnId in newState) {
+        // ✅ Verificar se a coluna existe e tem leads
+        if (!newState[columnId] || !newState[columnId].leads) continue;
+        
         newState[columnId] = {
           ...newState[columnId],
           leads: newState[columnId].leads.filter(l => l.id !== leadId),
@@ -595,6 +611,9 @@ export function useKanbanData(
       
       // Find lead data from original state
       for (const columnId in prev) {
+        // ✅ Verificar se a coluna existe e tem leads
+        if (!prev[columnId] || !prev[columnId].leads) continue;
+        
         const leadIndex = prev[columnId].leads.findIndex(l => l.id === leadId);
         if (leadIndex !== -1) {
           fromColumnId = columnId;
@@ -603,16 +622,16 @@ export function useKanbanData(
           // ✅ Atualizar total e offset da coluna de origem
           newState[columnId] = {
             ...newState[columnId],
-            total: Math.max(0, prev[columnId].total - 1),
+            total: Math.max(0, (prev[columnId].total || 0) - 1),
             // ✅ Decrementar offset se o lead estava nos primeiros carregados
-            offset: leadIndex < prev[columnId].offset ? Math.max(0, prev[columnId].offset - 1) : prev[columnId].offset,
+            offset: leadIndex < (prev[columnId].offset || 0) ? Math.max(0, (prev[columnId].offset || 0) - 1) : (prev[columnId].offset || 0),
           };
           break;
         }
       }
 
       // Add to target column at position
-      if (movedLead && newState[toColumnId]) {
+      if (movedLead && newState[toColumnId] && newState[toColumnId].leads) {
         const newLeads = [...newState[toColumnId].leads];
         newLeads.splice(toPosition, 0, movedLead);
         
@@ -689,6 +708,9 @@ export function useKanbanData(
         const newState = { ...prev };
         
         for (const columnId in newState) {
+          // ✅ Verificar se a coluna existe e tem leads
+          if (!newState[columnId] || !newState[columnId].leads) continue;
+          
           const leadIndex = newState[columnId].leads.findIndex(l => l.id === leadId);
           if (leadIndex !== -1) {
             const newLeads = [...newState[columnId].leads];

@@ -15,6 +15,8 @@ interface ColumnState {
 interface KanbanBoardProps {
   columns: KanbanColumnType[];
   columnStates?: { [columnId: string]: ColumnState };
+  funnelId?: string;
+  funnelName?: string;
   onLeadMove: (leadId: string, targetColumnId: string) => void;
   onLeadMoveWithPosition: (leadId: string, targetColumnId: string, targetIndex: number) => void;
   onAddCard: (columnId: string) => void;
@@ -22,12 +24,15 @@ interface KanbanBoardProps {
   onLoadMore?: (columnId: string) => void;
   onDeleteLead?: (leadId: string) => void;
   onDeleteAllLeads?: (columnId: string) => void;
+  onMoveColumnLeads?: (columnId: string, columnTitle: string, funnelId: string, funnelName: string, leadCount: number) => void;
   theme: Theme;
 }
 
 export function KanbanBoard({ 
   columns, 
   columnStates,
+  funnelId,
+  funnelName,
   onLeadMove, 
   onLeadMoveWithPosition, 
   onAddCard, 
@@ -35,6 +40,7 @@ export function KanbanBoard({
   onLoadMore,
   onDeleteLead,
   onDeleteAllLeads,
+  onMoveColumnLeads,
   theme 
 }: KanbanBoardProps) {
   const isDark = theme === 'dark';
@@ -57,6 +63,8 @@ export function KanbanBoard({
                 total={columnState?.total}
                 hasMore={columnState?.hasMore}
                 loading={columnState?.loading}
+                funnelId={funnelId}
+                funnelName={funnelName}
                 onDrop={onLeadMove}
                 onDropAtPosition={onLeadMoveWithPosition}
                 onAddCard={onAddCard}
@@ -64,6 +72,7 @@ export function KanbanBoard({
                 onLoadMore={onLoadMore}
                 onDeleteLead={onDeleteLead}
                 onDeleteAllLeads={onDeleteAllLeads}
+                onMoveColumnLeads={onMoveColumnLeads}
                 theme={theme}
               />
             );

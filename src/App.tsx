@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { MobileSidebar } from './components/MobileSidebar';
@@ -23,6 +24,7 @@ import { ExtractionProgress } from './components/ExtractionProgress';
 import { CampaignView } from './components/CampaignView';
 import { AIServiceView } from './components/AIServiceView';
 import { AgentLogsView } from './components/AgentLogsView';
+import { MoveColumnLeadsModal } from './components/MoveColumnLeadsModal';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -56,6 +58,14 @@ function AppContent() {
   const [isDeleteFunnelModalOpen, setIsDeleteFunnelModalOpen] = useState(false);
   const [isCreateWorkspaceModalOpen, setIsCreateWorkspaceModalOpen] = useState(false);
   const [isWorkspaceMembersOpen, setIsWorkspaceMembersOpen] = useState(false);
+  const [isMoveColumnLeadsModalOpen, setIsMoveColumnLeadsModalOpen] = useState(false);
+  const [moveColumnLeadsData, setMoveColumnLeadsData] = useState<{
+    columnId: string;
+    columnTitle: string;
+    funnelId: string;
+    funnelName: string;
+    leadCount: number;
+  } | null>(null);
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false); // ✅ NOVO: Estado do drawer mobile
@@ -107,6 +117,9 @@ function AppContent() {
     refetchFunnels,
   } = useKanbanData(currentWorkspace?.id || null, currentFunnelId, hookFilters);
 
+  // ✅ Estado de loading específico para filtros
+  const [isFiltering, setIsFiltering] = useState(false);
+
   // ✅ OTIMIZADO: Recarregar leads quando filtros mudarem (incluindo quando são removidos)
   const prevFiltersRef = useRef(hookFilters);
   
@@ -125,7 +138,14 @@ function AppContent() {
         depois: hookFilters 
       });
       prevFiltersRef.current = hookFilters;
-      refetchFunnel();
+      
+      // ✅ Mostrar loading ao aplicar filtros
+      setIsFiltering(true);
+      
+      // Aguardar refetchFunnel completar
+      refetchFunnel().finally(() => {
+        setIsFiltering(false);
+      });
     }
   }, [currentFunnelId, hookFilters, refetchFunnel]);
 
@@ -365,6 +385,17 @@ function AppContent() {
       toast.error('Erro ao deletar lead. Tente novamente.');
     }
   }, [refetchFunnel, selectedLead]);
+
+  const handleMoveColumnLeads = useCallback((columnId: string, columnTitle: string, funnelId: string, funnelName: string, leadCount: number) => {
+    setMoveColumnLeadsData({
+      columnId,
+      columnTitle,
+      funnelId,
+      funnelName,
+      leadCount,
+    });
+    setIsMoveColumnLeadsModalOpen(true);
+  }, []);
 
   const handleDeleteAllLeads = useCallback(async (columnId: string) => {
     try {
@@ -1053,18 +1084,38 @@ function AppContent() {
 
             {/* View Content */}
             {viewMode === 'kanban' ? (
-              <KanbanBoard
-                columns={columns}
-                columnStates={columnLeadsState}
-                onLeadMove={handleLeadMove}
-                onLeadMoveWithPosition={handleLeadMoveWithPosition}
-                onAddCard={handleAddCard}
-                onLeadClick={handleLeadClick}
-                onLoadMore={handleLoadMore}
-                onDeleteLead={handleDeleteLead}
-                onDeleteAllLeads={handleDeleteAllLeads}
-                theme={theme}
-              />
+              <div className="relative flex-1">
+                <KanbanBoard
+                  columns={columns}
+                  columnStates={columnLeadsState}
+                  funnelId={currentFunnelId || undefined}
+                  funnelName={currentFunnel?.name || undefined}
+                  onLeadMove={handleLeadMove}
+                  onLeadMoveWithPosition={handleLeadMoveWithPosition}
+                  onAddCard={handleAddCard}
+                  onLeadClick={handleLeadClick}
+                  onLoadMore={handleLoadMore}
+                  onDeleteLead={handleDeleteLead}
+                  onDeleteAllLeads={handleDeleteAllLeads}
+                  onMoveColumnLeads={handleMoveColumnLeads}
+                  theme={theme}
+                />
+                {/* ✅ Overlay de loading apenas quando filtros estão sendo aplicados */}
+                {isFiltering && (
+                  <div className={`absolute inset-0 flex items-center justify-center z-50 backdrop-blur-sm`}>
+                    <div className="flex flex-col items-center gap-4">
+                      <Loader2 className={`w-8 h-8 animate-spin ${
+                        theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
+                      }`} />
+                      <p className={`text-sm font-medium ${
+                        theme === 'dark' ? 'text-white' : 'text-gray-900'
+                      }`}>
+                        Aplicando filtros...
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <ListView 
                 leads={allLeads}
@@ -1171,6 +1222,24 @@ function AppContent() {
         accessToken={accessToken}
         currentUserId={user?.id || ''}
       />
+
+      {/* Move Column Leads Modal */}
+      {moveColumnLeadsData && (
+        <MoveColumnLeadsModal
+          open={isMoveColumnLeadsModalOpen}
+          onOpenChange={setIsMoveColumnLeadsModalOpen}
+          theme={theme}
+          sourceColumnId={moveColumnLeadsData.columnId}
+          sourceColumnTitle={moveColumnLeadsData.columnTitle}
+          sourceFunnelId={moveColumnLeadsData.funnelId}
+          sourceFunnelName={moveColumnLeadsData.funnelName}
+          leadCount={moveColumnLeadsData.leadCount}
+          onSuccess={() => {
+            // Recarregar dados após movimentação
+            refetchFunnel();
+          }}
+        />
+      )}
     </div>
   );
 }

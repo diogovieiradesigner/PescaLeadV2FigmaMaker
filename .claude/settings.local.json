@@ -3,7 +3,23 @@
     "allow": [
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File:*)",
+      "Bash(powershell.exe -Command \"Test-Path ''$env:APPDATA\\Cursor\\User\\settings.json''\")",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(npm view:*)",
+      "Bash(npx:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(git rm:*)",
+      "Bash(npm run build:*)",
+      "Bash(cat:*)",
+      "Bash(npm run build:deploy:*)"
     ]
   }
 }

@@ -80,15 +80,15 @@ function KanbanCardComponent({ lead, isDragging, theme, onClick, onDelete }: Kan
   const isDark = theme === 'dark';
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  // 🔍 DEBUG: Ver dados do lead
-  console.log('[KanbanCard] Lead data:', {
-    id: lead.id,
-    clientName: lead.clientName,
-    email: lead.email,
-    phone: lead.phone,
-    dealValue: lead.dealValue,
-    assignee: lead.assignee,
-  });
+  // 🔍 DEBUG desativado para produção
+  // console.log('[KanbanCard] Lead data:', {
+  //   id: lead.id,
+  //   clientName: lead.clientName,
+  //   email: lead.email,
+  //   phone: lead.phone,
+  //   dealValue: lead.dealValue,
+  //   assignee: lead.assignee,
+  // });
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -109,7 +109,9 @@ function KanbanCardComponent({ lead, isDragging, theme, onClick, onDelete }: Kan
   const dealValueNum = typeof lead.dealValue === 'number' ? lead.dealValue : Number(lead.dealValue) || 0;
   const shouldShowDealValue = !isNaN(dealValueNum) && dealValueNum > 0;
   const shouldShowAssignee = lead.assignee && lead.assignee.name && lead.assignee.name !== 'Sem responsável';
-  const shouldShowEmailCount = lead.activities?.emails && lead.activities.emails > 0;
+  // ✅ Mostrar contador de emails apenas se existir e for maior que 0
+  const emailCount = lead.activities?.emails ?? 0;
+  const shouldShowEmailCount = emailCount > 0;
   const shouldShowPriority = lead.priority && lead.priority !== 'medium'; // Mostrar apenas se não for padrão
 
   const priorityData = priorityConfig[lead.priority as keyof typeof priorityConfig] || priorityConfig.medium;

@@ -626,18 +626,20 @@ export function ContactInfo({
                 </div>
               ) : (
                 <>
-                  {/* Valor do Negócio */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <DollarSign className={`w-4 h-4 ${isDark ? 'text-green-400' : 'text-green-600'}`} />
-                      <span className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                        Valor
+                  {/* Valor do Negócio - apenas se > 0 */}
+                  {leadData.dealValue > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className={`w-4 h-4 ${isDark ? 'text-green-400' : 'text-green-600'}`} />
+                        <span className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                          Valor
+                        </span>
+                      </div>
+                      <span className={`text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                        R$ {leadData.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
-                    <span className={`text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                      R$ {leadData.dealValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
+                  )}
 
                   {/* Etapa */}
                   <div className="flex items-center justify-between">

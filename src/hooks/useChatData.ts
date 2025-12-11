@@ -548,10 +548,7 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
         conversationId,
         sender: 'agent',
         text: messageData.text || '',
-        timestamp: now.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
+        timestamp: `${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ${now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
         createdAt: now.toISOString(), // ✅ Timestamp completo para ordenação
         read: true,
         contentType: messageData.contentType,

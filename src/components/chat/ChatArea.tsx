@@ -5,7 +5,59 @@ import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { ChatActionsMenu } from './ChatActionsMenu';
 import { AudioPlayer } from './AudioPlayer';
 import { MessageBubble } from './MessageBubble';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+// ============================================
+// 📅 Componente de Separador de Data (estilo WhatsApp)
+// ============================================
+function DateSeparator({ date, isDark }: { date: string; isDark: boolean }) {
+  return (
+    <div className="flex items-center justify-center my-6">
+      <div className={`px-5 py-2 rounded-xl text-sm font-medium shadow-sm ${
+        isDark
+          ? 'bg-white/[0.12] text-white/80'
+          : 'bg-gray-200 text-gray-700'
+      }`}>
+        {date}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// 🔧 Função para formatar data como "Hoje", "Ontem", ou "DD/MM/YYYY"
+// ============================================
+function formatDateLabel(dateString: string): string {
+  const messageDate = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // Normalizar para comparar apenas datas (sem hora)
+  const messageDateOnly = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const yesterdayOnly = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+  if (messageDateOnly.getTime() === todayOnly.getTime()) {
+    return 'Hoje';
+  } else if (messageDateOnly.getTime() === yesterdayOnly.getTime()) {
+    return 'Ontem';
+  } else {
+    return messageDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }
+}
+
+// ============================================
+// 🔧 Função para extrair chave de data (YYYY-MM-DD) de uma mensagem
+// ============================================
+function getDateKey(dateString: string): string {
+  const date = new Date(dateString);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 interface ChatAreaProps {
   conversation: Conversation | null;
@@ -438,20 +490,31 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
 
         {conversation.messages.map((message, index) => {
           // ✅ Verificar se esta mensagem é a última do grupo com o mesmo pipelineId
-          const isLastInPipelineGroup = message.pipelineId ? 
-            index === conversation.messages.length - 1 || 
+          const isLastInPipelineGroup = message.pipelineId ?
+            index === conversation.messages.length - 1 ||
             conversation.messages[index + 1]?.pipelineId !== message.pipelineId
             : true;
-          
+
+          // ✅ Verificar se precisa mostrar separador de data
+          const currentDateKey = message.createdAt ? getDateKey(message.createdAt) : null;
+          const prevMessage = index > 0 ? conversation.messages[index - 1] : null;
+          const prevDateKey = prevMessage?.createdAt ? getDateKey(prevMessage.createdAt) : null;
+          const showDateSeparator = currentDateKey && currentDateKey !== prevDateKey;
+
           return (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              isDark={isDark}
-              onDeleteMessage={onDeleteMessage}
-              onExpandImage={handleExpandImage}
-              showPipeline={isLastInPipelineGroup}
-            />
+            <div key={message.id}>
+              {/* 📅 Separador de data (estilo WhatsApp) */}
+              {showDateSeparator && message.createdAt && (
+                <DateSeparator date={formatDateLabel(message.createdAt)} isDark={isDark} />
+              )}
+              <MessageBubble
+                message={message}
+                isDark={isDark}
+                onDeleteMessage={onDeleteMessage}
+                onExpandImage={handleExpandImage}
+                showPipeline={isLastInPipelineGroup}
+              />
+            </div>
           );
         })}
         <div ref={messagesEndRef} />

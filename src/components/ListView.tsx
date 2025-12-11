@@ -106,9 +106,12 @@ export function ListView({ leads, theme, onLeadClick }: ListViewProps) {
                     {lead.company || '-'}
                   </div>
 
-                  {/* Deal Value */}
+                  {/* Deal Value - mostrar apenas se > 0 */}
                   <div className={`font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(lead.dealValue)}
+                    {lead.dealValue > 0 
+                      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(lead.dealValue)
+                      : '-'
+                    }
                   </div>
 
                   {/* Status */}

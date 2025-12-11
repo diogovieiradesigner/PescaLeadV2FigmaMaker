@@ -124,31 +124,33 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
           {/* Main Info Grid */}
           <div className="grid grid-cols-2 gap-4">
-            {/* Deal Value */}
-            <div className={`p-4 rounded-lg border ${
-              isDark 
-                ? 'bg-white/[0.02] border-white/[0.05]' 
-                : 'bg-light-elevated border-border-light-elevated'
-            }`}>
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className={`w-4 h-4 ${
-                  isDark ? 'text-white/50' : 'text-text-secondary-light'
-                }`} />
-                <span className={`text-xs ${
-                  isDark ? 'text-white/50' : 'text-text-secondary-light'
-                }`}>
-                  Valor do Negócio
-                </span>
-              </div>
-              <p className={`text-lg ${
-                isDark ? 'text-white' : 'text-text-primary-light'
+            {/* Deal Value - apenas se > 0 */}
+            {lead.dealValue > 0 && (
+              <div className={`p-4 rounded-lg border ${
+                isDark 
+                  ? 'bg-white/[0.02] border-white/[0.05]' 
+                  : 'bg-light-elevated border-border-light-elevated'
               }`}>
-                {lead.dealValue.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </p>
-            </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className={`w-4 h-4 ${
+                    isDark ? 'text-white/50' : 'text-text-secondary-light'
+                  }`} />
+                  <span className={`text-xs ${
+                    isDark ? 'text-white/50' : 'text-text-secondary-light'
+                  }`}>
+                    Valor do Negócio
+                  </span>
+                </div>
+                <p className={`text-lg ${
+                  isDark ? 'text-white' : 'text-text-primary-light'
+                }`}>
+                  {lead.dealValue.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+                </p>
+              </div>
+            )}
 
             {/* Priority */}
             <div className={`p-4 rounded-lg border ${

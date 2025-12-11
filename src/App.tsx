@@ -1085,21 +1085,21 @@ function AppContent() {
             {/* View Content */}
             {viewMode === 'kanban' ? (
               <div className="relative flex-1">
-                <KanbanBoard
-                  columns={columns}
-                  columnStates={columnLeadsState}
+              <KanbanBoard
+                columns={columns}
+                columnStates={columnLeadsState}
                   funnelId={currentFunnelId || undefined}
                   funnelName={currentFunnel?.name || undefined}
-                  onLeadMove={handleLeadMove}
-                  onLeadMoveWithPosition={handleLeadMoveWithPosition}
-                  onAddCard={handleAddCard}
-                  onLeadClick={handleLeadClick}
-                  onLoadMore={handleLoadMore}
-                  onDeleteLead={handleDeleteLead}
-                  onDeleteAllLeads={handleDeleteAllLeads}
+                onLeadMove={handleLeadMove}
+                onLeadMoveWithPosition={handleLeadMoveWithPosition}
+                onAddCard={handleAddCard}
+                onLeadClick={handleLeadClick}
+                onLoadMore={handleLoadMore}
+                onDeleteLead={handleDeleteLead}
+                onDeleteAllLeads={handleDeleteAllLeads}
                   onMoveColumnLeads={handleMoveColumnLeads}
-                  theme={theme}
-                />
+                theme={theme}
+              />
                 {/* ✅ Overlay de loading apenas quando filtros estão sendo aplicados */}
                 {isFiltering && (
                   <div className={`absolute inset-0 flex items-center justify-center z-50 backdrop-blur-sm`}>

@@ -19,10 +19,12 @@ export function dbMessageToFrontend(dbMessage: DbMessage): Message {
     audioDuration: dbMessage.media_duration,
     type: dbMessage.message_type, // ✅ Usa diretamente message_type do banco
     status: dbMessage.message_type === 'sent' ? 'sent' : undefined, // ✅ Define status enviado para mensagens do banco
-    timestamp: new Date(dbMessage.created_at).toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
+    timestamp: (() => {
+      const date = new Date(dbMessage.created_at);
+      const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      return `${time} ${dateStr}`;
+    })(),
     createdAt: dbMessage.created_at, // ✅ Timestamp completo para ordenação
     read: dbMessage.is_read,
     pipelineId: dbMessage.pipeline_id, // ✅ ID do pipeline de IA

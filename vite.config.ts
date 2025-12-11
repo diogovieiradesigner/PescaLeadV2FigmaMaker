@@ -55,6 +55,22 @@
     build: {
       target: 'esnext',
       outDir: 'build',
+      modulePreload: {
+        polyfill: true,
+      },
+      rollupOptions: {
+        output: {
+          // Garantir que os arquivos JS sejam servidos com o MIME type correto
+          entryFileNames: 'assets/[name]-[hash].js',
+          chunkFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: (assetInfo) => {
+            if (assetInfo.name?.endsWith('.js')) {
+              return 'assets/[name]-[hash][extname]';
+            }
+            return 'assets/[name]-[hash][extname]';
+          },
+        },
+      },
     },
     server: {
       port: 3000,

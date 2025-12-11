@@ -13,7 +13,7 @@
     "test:report": "playwright show-report",
     "validate": "npm run test:visual && npm run test:kanban",
     "preview:cloudflare": "wrangler pages dev build",
-    "deploy:cloudflare": "wrangler pages deploy build --project-name=pesca-lead-figma-maker",
+    "deploy:cloudflare": "wrangler pages deploy build --project-name=pescaleadv2figmamaker",
     "build:deploy": "npm run build && npm run deploy:cloudflare"
   },
   "dependencies": {

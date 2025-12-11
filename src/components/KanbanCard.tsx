@@ -80,15 +80,7 @@ function KanbanCardComponent({ lead, isDragging, theme, onClick, onDelete }: Kan
   const isDark = theme === 'dark';
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  // 🔍 DEBUG desativado para produção
-  // console.log('[KanbanCard] Lead data:', {
-  //   id: lead.id,
-  //   clientName: lead.clientName,
-  //   email: lead.email,
-  //   phone: lead.phone,
-  //   dealValue: lead.dealValue,
-  //   assignee: lead.assignee,
-  // });
+  // DEBUG removido - código limpo para produção
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();

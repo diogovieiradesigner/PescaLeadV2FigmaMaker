@@ -140,15 +140,15 @@ export function ChatView({
       });
     }
 
-    // ✅ Aplicar filtro de extração
+    // ✅ Aplicar filtro de run de extração
     if (!filters.extractions.includes('all')) {
       result = result.filter((conv) => {
         // 'none' = conversas sem extração (orgânicas)
         if (filters.extractions.includes('none')) {
-          return !conv.leadExtractionId || filters.extractions.includes(conv.leadExtractionId);
+          return !conv.leadExtractionRunId || filters.extractions.includes(conv.leadExtractionRunId);
         }
-        // Filtrar por IDs de extração específicas
-        return conv.leadExtractionId && filters.extractions.includes(conv.leadExtractionId);
+        // Filtrar por IDs de run de extração específicas
+        return conv.leadExtractionRunId && filters.extractions.includes(conv.leadExtractionRunId);
       });
     }
 

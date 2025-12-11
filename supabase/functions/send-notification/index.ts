@@ -372,21 +372,32 @@ async function sendWhatsAppViaInstance(
         
         const userName = user?.name || "Atendente";
         
-        const { data: existingConv } = await supabase
+        // ✅ NORMALIZAÇÃO: Buscar conversa comparando últimos 8 dígitos
+        // Números brasileiros: 55 + DDD (2) + número (8 ou 9 dígitos)
+        // Queremos comparar os últimos 8 dígitos para ignorar o 9º dígito adicional
+        const last8Digits = cleanNumber.slice(-8);
+        console.log(`[WhatsApp] Looking for conversation with last 8 digits: ${last8Digits}`);
+        
+        // Buscar todas as conversas da inbox e filtrar pelos últimos 8 dígitos
+        const { data: allConversations } = await supabase
           .from("conversations")
-          .select("id")
+          .select("id, contact_phone")
           .eq("workspace_id", workspaceId)
-          .eq("contact_phone", cleanNumber)
           .eq("channel", "whatsapp")
-          .eq("inbox_id", inboxId)
-          .limit(1)
-          .maybeSingle();
+          .eq("inbox_id", inboxId);
         
         let conversationId: string | null = null;
         
-        if (existingConv) {
-          conversationId = existingConv.id;
-          console.log(`[WhatsApp] Using existing conversation: ${conversationId}`);
+        // Filtrar conversas que tenham os mesmos últimos 8 dígitos
+        const matchingConv = allConversations?.find((conv: any) => {
+          const convLast8 = conv.contact_phone.replace(/\D/g, "").slice(-8);
+          return convLast8 === last8Digits;
+        });
+        
+        if (matchingConv) {
+          conversationId = matchingConv.id;
+          console.log(`[WhatsApp] ✅ Found existing conversation (matched by last 8 digits): ${conversationId}`);
+          console.log(`   Original: ${matchingConv.contact_phone} | New: ${cleanNumber}`);
           
           // Update conversation
           await supabase

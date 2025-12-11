@@ -36,13 +36,13 @@ export async function fetchConversations(
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    // Buscar conversas com JOIN no lead para trazer lead_extraction_id
+    // Buscar conversas com JOIN no lead para trazer lead_extraction_run_id
     let query = supabase
       .from('conversations')
       .select(`
         *,
         leads:lead_id (
-          lead_extraction_id
+          lead_extraction_run_id
         )
       `)
       .eq('workspace_id', workspaceId)
@@ -69,10 +69,10 @@ export async function fetchConversations(
     if (convError) throw convError;
     if (!conversations) return [];
 
-    // ✅ Extrair lead_extraction_id do JOIN e adicionar à conversa
+    // ✅ Extrair lead_extraction_run_id do JOIN e adicionar à conversa
     const conversationsWithExtraction = conversations.map((conv: any) => ({
       ...conv,
-      lead_extraction_id: conv.leads?.lead_extraction_id || null,
+      lead_extraction_run_id: conv.leads?.lead_extraction_run_id || null,
       leads: undefined, // Remove o objeto leads do resultado final
     }));
 
@@ -172,13 +172,13 @@ export async function fetchConversation(
   conversationId: string
 ): Promise<Conversation | null> {
   try {
-    // Buscar conversa com JOIN no lead para trazer lead_extraction_id
+    // Buscar conversa com JOIN no lead para trazer lead_extraction_run_id
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select(`
         *,
         leads:lead_id (
-          lead_extraction_id
+          lead_extraction_run_id
         )
       `)
       .eq('id', conversationId)
@@ -191,10 +191,10 @@ export async function fetchConversation(
     }
     if (!conversation) return null;
 
-    // ✅ Extrair lead_extraction_id do JOIN
+    // ✅ Extrair lead_extraction_run_id do JOIN
     const conversationWithExtraction = {
       ...conversation,
-      lead_extraction_id: (conversation as any).leads?.lead_extraction_id || null,
+      lead_extraction_run_id: (conversation as any).leads?.lead_extraction_run_id || null,
       leads: undefined,
     };
 
@@ -746,30 +746,36 @@ export interface ContactProfile {
 }
 
 // ============================================
-// LEAD EXTRACTIONS (para filtros de chat)
+// LEAD EXTRACTION RUNS (para filtros de chat)
 // ============================================
 
 export interface LeadExtractionForFilter {
   id: string;
-  extraction_name: string;
+  extraction_name: string; // Mantido para compatibilidade (agora é run_name)
 }
 
 /**
- * Busca todas as extrações de um workspace (para filtro de conversas)
+ * Busca todas as runs de extração de um workspace (para filtro de conversas)
+ * Retorna apenas runs que geraram leads vinculados a conversas
  */
 export async function fetchLeadExtractions(workspaceId: string): Promise<LeadExtractionForFilter[]> {
   try {
     const { data, error } = await supabase
-      .from('lead_extractions')
-      .select('id, extraction_name')
+      .from('lead_extraction_runs')
+      .select('id, run_name')
       .eq('workspace_id', workspaceId)
-      .order('extraction_name', { ascending: true });
+      .not('run_name', 'is', null)
+      .order('created_at', { ascending: false }); // Mais recentes primeiro
 
     if (error) throw error;
 
-    return (data || []) as LeadExtractionForFilter[];
+    // Mapear run_name para extraction_name (compatibilidade com interface existente)
+    return (data || []).map(run => ({
+      id: run.id,
+      extraction_name: run.run_name || 'Sem nome',
+    }));
   } catch (error) {
-    console.error('[CHAT SERVICE] Error fetching lead extractions:', error);
+    console.error('[CHAT SERVICE] Error fetching lead extraction runs:', error);
     return [];
   }
 }

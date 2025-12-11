@@ -47,7 +47,7 @@ export interface Conversation {
   lastUpdate: string;
   tags?: string[];
   leadId?: string; // Link para o lead no pipeline
-  leadExtractionId?: string | null; // ✅ ID da extração que gerou o lead (para filtro)
+  leadExtractionRunId?: string | null; // ✅ ID da run de extração que gerou o lead (para filtro)
   leadCustomFields?: Array<{ // ✅ Campos personalizados do lead
     id: string;
     fieldName: string;

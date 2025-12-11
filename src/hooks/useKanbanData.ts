@@ -898,6 +898,10 @@ export function useKanbanData(
       if (workspaceChanged) {
         console.log('[KANBAN] 🔄 Workspace MUDOU de', previousWorkspaceRef.current, 'para', workspaceId, '- limpando estado...');
 
+        // ✅ CRÍTICO: Setar loading ANTES de resetar, para evitar flash de "Nenhum funil"
+        setFunnelsLoading(true);
+        setLoading(true);
+
         // Resetar estados imediatamente
         setCurrentFunnel(null);
         setColumnLeadsState({});
@@ -929,10 +933,23 @@ export function useKanbanData(
     console.log('[KANBAN] useEffect funnel triggered:', {
       currentFunnelId,
       workspaceId,
-      hasBoth: !!(currentFunnelId && workspaceId)
+      hasBoth: !!(currentFunnelId && workspaceId),
+      funnelsLoading,
+      funnelsCount: funnels.length
     });
 
     if (currentFunnelId && workspaceId) {
+      // ✅ PROTEÇÃO: Se os funis já carregaram, verificar se o funnel existe na lista
+      // Isso evita carregar um funnel do workspace anterior
+      if (!funnelsLoading && funnels.length > 0) {
+        const funnelExistsInCurrentWorkspace = funnels.some(f => f.id === currentFunnelId);
+        if (!funnelExistsInCurrentWorkspace) {
+          console.log('[KANBAN] ⚠️ Funnel', currentFunnelId, 'não existe no workspace atual - ignorando');
+          setLoading(false);
+          return;
+        }
+      }
+
       loadFunnel(currentFunnelId);
     } else if (!currentFunnelId && funnelsLoading === false) {
       // Se não tem funnel selecionado mas os funis já carregaram, pode desligar loading
@@ -940,7 +957,7 @@ export function useKanbanData(
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFunnelId, workspaceId, funnelsLoading]);
+  }, [currentFunnelId, workspaceId, funnelsLoading, funnels]);
 
   // ============================================
   // CONVERT TO COLUMNS FORMAT
@@ -960,6 +977,7 @@ export function useKanbanData(
     columnLeadsState,
     stats,
     loading,
+    funnelsLoading, // ✅ Expor estado de loading dos funis separadamente
     loadMoreLeads,
     createLead,
     updateLead,

@@ -105,6 +105,7 @@ function AppContent() {
     columnLeadsState,
     stats: backendStats,
     loading,
+    funnelsLoading, // ✅ Estado de loading específico para funis
     loadMoreLeads,
     createLead: createLeadBackend,
     updateLead: updateLeadBackend,
@@ -157,25 +158,24 @@ function AppContent() {
   }, [refetchFunnel]);
 
   // ✅ Reset funnel quando workspace muda (força reload completo)
+  // ⚠️ IMPORTANTE: NÃO chamar refetchFunnels aqui - o useKanbanData já faz isso automaticamente
+  const previousWorkspaceIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    console.log('[APP] 🔄 Workspace mudou, resetando funnel:', currentWorkspace?.id);
-    setCurrentFunnelId(null);
-    // Também resetar outros estados relacionados
-    setSelectedLead(null);
-    setSelectedLeadColumnId(null);
-    setIsEditLeadModalOpen(false);
-    
-    // 🔥 Forçar refetch dos funnels após troca de workspace
-    if (currentWorkspace?.id) {
-      console.log('[APP] 🔄 Agendando refetch de funnels após mudança de workspace...');
-      // Pequeno delay para garantir que o useKanbanData processou a mudança
-      const timer = setTimeout(() => {
-        console.log('[APP] 🔄 Executando refetch de funnels...');
-        refetchFunnels();
-      }, 100);
-      return () => clearTimeout(timer);
+    const workspaceChanged = previousWorkspaceIdRef.current !== null &&
+                             previousWorkspaceIdRef.current !== currentWorkspace?.id;
+
+    if (workspaceChanged) {
+      console.log('[APP] 🔄 Workspace mudou:', previousWorkspaceIdRef.current, '->', currentWorkspace?.id);
+      // Apenas resetar estados locais - useKanbanData cuida do carregamento
+      setCurrentFunnelId(null);
+      setSelectedLead(null);
+      setSelectedLeadColumnId(null);
+      setIsEditLeadModalOpen(false);
     }
-  }, [currentWorkspace?.id, refetchFunnels]);
+
+    previousWorkspaceIdRef.current = currentWorkspace?.id || null;
+  }, [currentWorkspace?.id]);
 
   // ✅ Callbacks estáveis para realtime (não causam reconexões)
   const handleLeadMoved = useCallback(() => {
@@ -249,12 +249,21 @@ function AppContent() {
     };
   }, []);
 
-  // ✅ NOVO: Recarregar dados quando voltar para a tela de Pipeline
+  // ✅ Recarregar dados APENAS quando voltar para Pipeline de outra view
+  // ⚠️ NÃO recarrega quando currentFunnelId muda (isso é feito pelo useKanbanData)
+  const previousViewRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (currentView === 'pipeline' && currentFunnelId) {
-      console.log('[APP] 🔄 Voltou para tela Pipeline, recarregando dados...');
+    const returningToPipeline = previousViewRef.current !== null &&
+                                previousViewRef.current !== 'pipeline' &&
+                                currentView === 'pipeline';
+
+    if (returningToPipeline && currentFunnelId) {
+      console.log('[APP] 🔄 Voltou para tela Pipeline de:', previousViewRef.current);
       refetchFunnel();
     }
+
+    previousViewRef.current = currentView;
   }, [currentView, currentFunnelId, refetchFunnel]);
 
   // ✅ NOVO: Recarregar dados quando voltar para a tela de Dashboard
@@ -844,13 +853,14 @@ function AppContent() {
   }
 
   // Loading state - AFTER ALL HOOKS
-  if (loading && !currentFunnel && funnels.length === 0) {
+  // ✅ Mostrar loading se os funis estão carregando OU se loading geral está ativo
+  if ((loading || funnelsLoading) && !currentFunnel && funnels.length === 0) {
     return (
       <div className={`h-screen flex overflow-hidden transition-colors ${
         theme === 'dark' ? 'bg-true-black' : 'bg-light-bg'
       }`}>
-        <Sidebar 
-          isCollapsed={isSidebarCollapsed} 
+        <Sidebar
+          isCollapsed={isSidebarCollapsed}
           onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           theme={theme}
           currentView={currentView}
@@ -865,8 +875,9 @@ function AppContent() {
     );
   }
 
-  // No funnels state - AFTER ALL HOOKS  
-  if (!loading && funnels.length === 0 && currentView === 'pipeline') {
+  // No funnels state - AFTER ALL HOOKS
+  // ✅ Só mostrar "nenhum funil" se NÃO está carregando funis
+  if (!loading && !funnelsLoading && funnels.length === 0 && currentView === 'pipeline') {
     return (
       <div className={`h-screen flex overflow-hidden transition-colors ${
         theme === 'dark' ? 'bg-true-black' : 'bg-light-bg'

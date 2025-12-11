@@ -98,7 +98,7 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
               conversationId: payload.new.conversation_id,
               sender: payload.new.sent_by === 'user' ? 'user' : 'agent',
               text: payload.new.text_content || '',
-              timestamp: new Date(payload.new.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+              timestamp: new Date(payload.new.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
               createdAt: payload.new.created_at,
               read: payload.new.is_read,
               contentType: payload.new.content_type,

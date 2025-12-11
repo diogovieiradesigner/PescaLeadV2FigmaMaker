@@ -2,3 +2,32 @@ name = "pescaleadv2figmamaker"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "build"
 
+[[headers]]
+for = "/assets/*.js"
+[headers.values]
+Content-Type = "text/javascript"
+X-Content-Type-Options = "nosniff"
+
+[[headers]]
+for = "/assets/*.mjs"
+[headers.values]
+Content-Type = "text/javascript"
+X-Content-Type-Options = "nosniff"
+
+[[headers]]
+for = "/assets/*.css"
+[headers.values]
+Content-Type = "text/css"
+
+[[headers]]
+for = "/*.js"
+[headers.values]
+Content-Type = "text/javascript"
+X-Content-Type-Options = "nosniff"
+
+[[headers]]
+for = "/*"
+[headers.values]
+X-Frame-Options = "DENY"
+X-XSS-Protection = "1; mode=block"
+

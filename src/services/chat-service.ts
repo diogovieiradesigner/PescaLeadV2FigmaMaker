@@ -780,6 +780,63 @@ export async function fetchLeadExtractions(workspaceId: string): Promise<LeadExt
   }
 }
 
+// ============================================
+// CAMPAIGN RUNS (para filtros de chat)
+// ============================================
+
+export interface CampaignRunForFilter {
+  id: string;
+  campaign_name: string; // Nome da configuração da campanha
+  run_date: string; // Data da execução
+}
+
+/**
+ * Busca todas as runs de campanha de um workspace (para filtro de conversas)
+ * Retorna apenas runs que geraram conversas
+ */
+export async function fetchCampaignRuns(workspaceId: string): Promise<CampaignRunForFilter[]> {
+  try {
+    const { data, error } = await supabase
+      .from('campaign_runs')
+      .select(`
+        id,
+        run_date,
+        campaign_configs!inner (
+          name,
+          workspace_id
+        )
+      `)
+      .eq('campaign_configs.workspace_id', workspaceId)
+      .in('status', ['running', 'completed', 'paused']) // Excluir failed/cancelled
+      .order('run_date', { ascending: false }); // Mais recentes primeiro
+
+    if (error) throw error;
+
+    // Formatar para exibição com nome da campanha + data
+    return (data || []).map((run: any) => {
+      const runDate = new Date(run.run_date);
+      const formattedDate = runDate.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+      const formattedTime = runDate.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      return {
+        id: run.id,
+        campaign_name: `${run.campaign_configs?.name || 'Campanha'} - ${formattedDate} ${formattedTime}`,
+        run_date: run.run_date,
+      };
+    });
+  } catch (error) {
+    console.error('[CHAT SERVICE] Error fetching campaign runs:', error);
+    return [];
+  }
+}
+
 /**
  * Busca perfil completo do contato via Evolution API
  */

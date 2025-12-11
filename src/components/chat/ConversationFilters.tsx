@@ -11,6 +11,7 @@ export interface ConversationFiltersState {
   statuses: string[];
   attendantTypes: string[];
   extractions: string[]; // IDs das extrações ou 'all', 'none' (sem extração)
+  campaigns: string[]; // IDs das runs de campanha ou 'all', 'none' (sem campanha)
 }
 
 export interface LeadExtraction {
@@ -18,11 +19,17 @@ export interface LeadExtraction {
   extraction_name: string;
 }
 
+export interface CampaignRun {
+  id: string;
+  campaign_name: string;
+}
+
 interface ConversationFiltersProps {
   theme: Theme;
   agents: DbUser[];
   inboxes: Inbox[];
   extractions: LeadExtraction[];
+  campaigns: CampaignRun[];
   filters: ConversationFiltersState;
   onFiltersChange: (filters: ConversationFiltersState) => void;
 }
@@ -140,6 +147,7 @@ export function ConversationFilters({
   agents,
   inboxes,
   extractions,
+  campaigns,
   filters,
   onFiltersChange,
 }: ConversationFiltersProps) {
@@ -270,6 +278,31 @@ export function ConversationFilters({
     }
   };
 
+  const handleCampaignToggle = (campaignId: string) => {
+    if (campaignId === 'all') {
+      if (filters.campaigns.includes('all')) {
+        onFiltersChange({ ...filters, campaigns: [] });
+      } else {
+        onFiltersChange({ ...filters, campaigns: ['all'] });
+      }
+    } else {
+      let newCampaigns = filters.campaigns.filter(c => c !== 'all');
+      const index = newCampaigns.indexOf(campaignId);
+
+      if (index > -1) {
+        newCampaigns.splice(index, 1);
+      } else {
+        newCampaigns.push(campaignId);
+      }
+
+      if (newCampaigns.length === 0) {
+        newCampaigns = ['all'];
+      }
+
+      onFiltersChange({ ...filters, campaigns: newCampaigns });
+    }
+  };
+
   const assigneeOptions = [
     { value: 'all', label: 'Tudo' },
     { value: 'unassigned', label: 'Não atribuído' },
@@ -298,6 +331,12 @@ export function ConversationFilters({
     { value: 'all', label: 'Tudo' },
     { value: 'none', label: 'Sem extração' },
     ...extractions.map(ext => ({ value: ext.id, label: ext.extraction_name })),
+  ];
+
+  const campaignOptions = [
+    { value: 'all', label: 'Tudo' },
+    { value: 'none', label: 'Sem campanha' },
+    ...campaigns.map(camp => ({ value: camp.id, label: camp.campaign_name })),
   ];
 
   return (
@@ -364,6 +403,13 @@ export function ConversationFilters({
             options={extractionOptions}
             selectedValues={filters.extractions}
             onToggle={handleExtractionToggle}
+            theme={theme}
+          />
+          <FilterDropdown
+            label="Campanha"
+            options={campaignOptions}
+            selectedValues={filters.campaigns}
+            onToggle={handleCampaignToggle}
             theme={theme}
           />
         </div>

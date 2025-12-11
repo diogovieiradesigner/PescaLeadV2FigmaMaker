@@ -12,11 +12,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 // ============================================
 function DateSeparator({ date, isDark }: { date: string; isDark: boolean }) {
   return (
-    <div className="flex items-center justify-center my-4">
-      <div className={`px-3 py-1 rounded-lg text-xs ${
+    <div className="flex items-center justify-center my-6">
+      <div className={`px-5 py-2 rounded-xl text-sm font-medium shadow-sm ${
         isDark
-          ? 'bg-white/[0.08] text-white/60'
-          : 'bg-gray-200 text-gray-600'
+          ? 'bg-white/[0.12] text-white/80'
+          : 'bg-gray-200 text-gray-700'
       }`}>
         {date}
       </div>

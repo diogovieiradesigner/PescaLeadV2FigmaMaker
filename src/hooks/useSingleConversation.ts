@@ -204,7 +204,7 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
       conversationId,
       sender: 'agent',
       text: messageData.text || '',
-      timestamp: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: now.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
       createdAt: now.toISOString(),
       read: true,
       contentType: messageData.contentType,

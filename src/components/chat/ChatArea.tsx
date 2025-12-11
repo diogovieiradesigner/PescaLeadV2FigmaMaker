@@ -490,20 +490,31 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
 
         {conversation.messages.map((message, index) => {
           // ✅ Verificar se esta mensagem é a última do grupo com o mesmo pipelineId
-          const isLastInPipelineGroup = message.pipelineId ? 
-            index === conversation.messages.length - 1 || 
+          const isLastInPipelineGroup = message.pipelineId ?
+            index === conversation.messages.length - 1 ||
             conversation.messages[index + 1]?.pipelineId !== message.pipelineId
             : true;
-          
+
+          // ✅ Verificar se precisa mostrar separador de data
+          const currentDateKey = message.createdAt ? getDateKey(message.createdAt) : null;
+          const prevMessage = index > 0 ? conversation.messages[index - 1] : null;
+          const prevDateKey = prevMessage?.createdAt ? getDateKey(prevMessage.createdAt) : null;
+          const showDateSeparator = currentDateKey && currentDateKey !== prevDateKey;
+
           return (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              isDark={isDark}
-              onDeleteMessage={onDeleteMessage}
-              onExpandImage={handleExpandImage}
-              showPipeline={isLastInPipelineGroup}
-            />
+            <div key={message.id}>
+              {/* 📅 Separador de data (estilo WhatsApp) */}
+              {showDateSeparator && message.createdAt && (
+                <DateSeparator date={formatDateLabel(message.createdAt)} isDark={isDark} />
+              )}
+              <MessageBubble
+                message={message}
+                isDark={isDark}
+                onDeleteMessage={onDeleteMessage}
+                onExpandImage={handleExpandImage}
+                showPipeline={isLastInPipelineGroup}
+              />
+            </div>
           );
         })}
         <div ref={messagesEndRef} />

@@ -21,9 +21,15 @@
       "Bash(cat:*)",
       "Bash(npm run build:deploy:*)",
       "Bash(git checkout:*)",
-      "Bash(echo PUSH_TO_DEV)"
+      "Bash(echo PUSH_TO_DEV)",
+      "Bash(curl:*)",
+      "mcp__supabase__list_projects"
     ]
   },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
   "hooks": {
     "PostToolUse": [
       {

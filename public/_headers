@@ -1,16 +1,18 @@
 /assets/*.js
-  Content-Type: application/javascript; charset=utf-8
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
 
 /assets/*.mjs
-  Content-Type: application/javascript; charset=utf-8
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
 
 /*.js
-  Content-Type: application/javascript; charset=utf-8
+  Content-Type: application/javascript
+  X-Content-Type-Options: nosniff
 
 /assets/*.css
-  Content-Type: text/css; charset=utf-8
+  Content-Type: text/css
 
 /*
-  X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   X-XSS-Protection: 1; mode=block

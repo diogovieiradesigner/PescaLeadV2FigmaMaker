@@ -1,0 +1,33 @@
+# Supabase
+.supabase/
+
+# Edge Functions
+supabase/functions/**/node_modules/
+supabase/functions/**/*.log
+supabase/functions/**/.env
+supabase/functions/**/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test results
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local

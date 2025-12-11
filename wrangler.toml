@@ -3,13 +3,7 @@ compatibility_date = "2024-01-01"
 pages_build_output_dir = "build"
 
 [[headers]]
-for = "/assets/*.js"
-[headers.values]
-Content-Type = "text/javascript"
-X-Content-Type-Options = "nosniff"
-
-[[headers]]
-for = "/assets/*.mjs"
+for = "/assets/*"
 [headers.values]
 Content-Type = "text/javascript"
 X-Content-Type-Options = "nosniff"

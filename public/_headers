@@ -1,8 +1,4 @@
-/assets/*.js
-  Content-Type: text/javascript
-  X-Content-Type-Options: nosniff
-
-/assets/*.mjs
+/assets/*
   Content-Type: text/javascript
   X-Content-Type-Options: nosniff
 

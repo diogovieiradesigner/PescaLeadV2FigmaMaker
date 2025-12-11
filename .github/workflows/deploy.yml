@@ -38,7 +38,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: pesca-lead-v2
+          projectName: pesca-lead-figma-maker
           directory: build
           # Optional: Use wrangler.toml configuration
           wranglerVersion: '3'

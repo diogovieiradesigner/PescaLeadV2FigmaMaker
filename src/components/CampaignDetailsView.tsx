@@ -179,6 +179,67 @@ interface QueueSummary {
   last_lead_name: string | null;
 }
 
+// ============================================
+// 🕐 Função para formatar horário de envio de forma legível
+// ============================================
+function formatScheduledTime(scheduledAt: string | null, timeUntilSend: string | null): string {
+  if (!scheduledAt) return 'Horário não definido';
+
+  try {
+    const scheduled = new Date(scheduledAt);
+    const now = new Date();
+
+    // Formatar horário absoluto (HH:mm:ss)
+    const timeStr = scheduled.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
+    // Calcular diferença em segundos
+    const diffMs = scheduled.getTime() - now.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+
+    if (diffSeconds < 0) {
+      // Já passou do horário - está atrasado
+      const absSeconds = Math.abs(diffSeconds);
+      if (absSeconds < 60) {
+        return `${timeStr} (atrasado ${absSeconds}s)`;
+      } else if (absSeconds < 3600) {
+        const mins = Math.floor(absSeconds / 60);
+        return `${timeStr} (atrasado ${mins}min)`;
+      } else {
+        const hours = Math.floor(absSeconds / 3600);
+        const mins = Math.floor((absSeconds % 3600) / 60);
+        return `${timeStr} (atrasado ${hours}h ${mins}min)`;
+      }
+    } else {
+      // Falta tempo para enviar
+      if (diffSeconds < 60) {
+        return `${timeStr} (em ${diffSeconds}s)`;
+      } else if (diffSeconds < 3600) {
+        const mins = Math.floor(diffSeconds / 60);
+        const secs = diffSeconds % 60;
+        return `${timeStr} (em ${mins}min ${secs}s)`;
+      } else {
+        const hours = Math.floor(diffSeconds / 3600);
+        const mins = Math.floor((diffSeconds % 3600) / 60);
+        return `${timeStr} (em ${hours}h ${mins}min)`;
+      }
+    }
+  } catch (e) {
+    // Se falhar, tentar usar o time_until_send diretamente
+    if (timeUntilSend) {
+      // Verificar se é negativo (atrasado)
+      if (timeUntilSend.startsWith('-')) {
+        return `Atrasado: ${timeUntilSend.substring(1)}`;
+      }
+      return `Em: ${timeUntilSend}`;
+    }
+    return 'Horário inválido';
+  }
+}
+
 // Donut Chart Component with Hover
 interface DonutChartProps {
   data: Array<{ name: string; value: number }>;
@@ -1833,11 +1894,14 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
                                   <span className={cn("ml-2 font-medium", isDark ? "text-white" : "text-zinc-900")}>
                                     {queueSummary.next_lead_name}
                                   </span>
-                                  {queueSummary.time_until_next && (
-                                    <span className={cn("ml-2", isDark ? "text-zinc-500" : "text-zinc-600")}>
-                                      em {queueSummary.time_until_next}
-                                    </span>
-                                  )}
+                                  <span className={cn(
+                                    "ml-2 font-medium",
+                                    queueSummary.time_until_next?.startsWith('-')
+                                      ? 'text-orange-500'
+                                      : isDark ? 'text-emerald-400' : 'text-emerald-600'
+                                  )}>
+                                    {formatScheduledTime(queueSummary.next_scheduled_at, queueSummary.time_until_next)}
+                                  </span>
                                 </div>
                               )}
                             </div>
@@ -1895,14 +1959,14 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
                                         )}>
                                           {msg.phone_number}
                                         </p>
-                                        {msg.time_until_send && (
-                                          <p className={cn(
-                                            "text-xs mt-1",
-                                            isDark ? 'text-zinc-600' : 'text-zinc-500'
-                                          )}>
-                                            Envia em: {msg.time_until_send}
-                                          </p>
-                                        )}
+                                        <p className={cn(
+                                          "text-xs mt-1 font-medium",
+                                          msg.time_until_send?.startsWith('-')
+                                            ? 'text-orange-500'
+                                            : isDark ? 'text-emerald-400' : 'text-emerald-600'
+                                        )}>
+                                          {formatScheduledTime(msg.scheduled_at, msg.time_until_send)}
+                                        </p>
                                         {msg.generated_message && (
                                           <p className={cn(
                                             "text-xs mt-2 p-2 rounded border",
@@ -1970,8 +2034,13 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
                                     <p className={cn("text-sm font-medium", isDark ? 'text-white' : 'text-zinc-900')}>
                                       {msg.lead_name}
                                     </p>
-                                    <p className={cn("text-xs", isDark ? 'text-zinc-500' : 'text-zinc-600')}>
-                                      {msg.time_until_send ? `Envia em ${msg.time_until_send}` : 'Agendado'}
+                                    <p className={cn(
+                                      "text-xs font-medium",
+                                      msg.time_until_send?.startsWith('-')
+                                        ? 'text-orange-500'
+                                        : isDark ? 'text-emerald-400' : 'text-emerald-600'
+                                    )}>
+                                      {formatScheduledTime(msg.scheduled_at, msg.time_until_send)}
                                     </p>
                                   </div>
                                 </div>

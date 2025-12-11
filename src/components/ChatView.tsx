@@ -10,7 +10,7 @@ import { Message } from '../types/chat';
 import { Instance, Inbox } from './SettingsView';
 import { useChatData } from '../hooks/useChatData';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchAgents, fetchLeadExtractions, LeadExtractionForFilter } from '../services/chat-service';
+import { fetchAgents, fetchLeadExtractions, LeadExtractionForFilter, fetchCampaignRuns, CampaignRunForFilter } from '../services/chat-service';
 import { DbUser } from '../types/database-chat';
 import { ConversationFiltersState } from './chat/ConversationFilters';
 import { useDebounce } from '../hooks/useDebounce'; // ✅ Importar hook de debounce
@@ -40,6 +40,7 @@ export function ChatView({
   const [searchQuery, setSearchQuery] = useState('');
   const [dbAgents, setDbAgents] = useState<DbUser[]>([]);
   const [dbExtractions, setDbExtractions] = useState<LeadExtractionForFilter[]>([]);
+  const [dbCampaigns, setDbCampaigns] = useState<CampaignRunForFilter[]>([]);
   const [isNewConversationModalOpen, setIsNewConversationModalOpen] = useState(false);
   
   // ✅ Debounce do searchQuery para evitar muitas requisições
@@ -51,7 +52,8 @@ export function ChatView({
     inboxes: ['all'],
     statuses: ['all'],
     attendantTypes: ['all'],
-    extractions: ['all'], // ✅ Novo filtro de extração
+    extractions: ['all'], // ✅ Filtro de extração
+    campaigns: ['all'], // ✅ Filtro de campanha
   });
 
   // Hook de chat com Supabase (agora com searchQuery)
@@ -87,6 +89,13 @@ export function ChatView({
   useEffect(() => {
     if (currentWorkspace?.id) {
       fetchLeadExtractions(currentWorkspace.id).then(setDbExtractions).catch(console.error);
+    }
+  }, [currentWorkspace?.id]);
+
+  // ✅ Carregar campanhas do workspace (para filtro)
+  useEffect(() => {
+    if (currentWorkspace?.id) {
+      fetchCampaignRuns(currentWorkspace.id).then(setDbCampaigns).catch(console.error);
     }
   }, [currentWorkspace?.id]);
 
@@ -149,6 +158,18 @@ export function ChatView({
         }
         // Filtrar por IDs de run de extração específicas
         return conv.leadExtractionRunId && filters.extractions.includes(conv.leadExtractionRunId);
+      });
+    }
+
+    // ✅ Aplicar filtro de run de campanha
+    if (!filters.campaigns.includes('all')) {
+      result = result.filter((conv) => {
+        // 'none' = conversas sem campanha (orgânicas)
+        if (filters.campaigns.includes('none')) {
+          return !conv.campaignRunId || filters.campaigns.includes(conv.campaignRunId);
+        }
+        // Filtrar por IDs de run de campanha específicas
+        return conv.campaignRunId && filters.campaigns.includes(conv.campaignRunId);
       });
     }
 
@@ -379,6 +400,7 @@ export function ChatView({
             agents={dbAgents}
             inboxes={inboxes}
             extractions={dbExtractions} // ✅ Passar extrações para filtro
+            campaigns={dbCampaigns} // ✅ Passar campanhas para filtro
             filters={filters}
             onFiltersChange={setFilters}
             loadMore={loadMore}

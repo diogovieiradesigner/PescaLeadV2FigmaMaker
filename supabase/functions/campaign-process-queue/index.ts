@@ -673,6 +673,12 @@ async function processSingleMessage(
 
     if (existingConv) {
       conversationId = existingConv.id;
+      // ✅ Atualizar campaign_run_id se ainda não estiver setado
+      await supabase
+        .from('conversations')
+        .update({ campaign_run_id: runId })
+        .eq('id', existingConv.id)
+        .is('campaign_run_id', null);
     } else {
       const { data: convByPhone } = await supabase
         .from('conversations')
@@ -683,9 +689,13 @@ async function processSingleMessage(
 
       if (convByPhone) {
         conversationId = convByPhone.id;
+        // ✅ Atualizar lead_id e campaign_run_id
         await supabase
           .from('conversations')
-          .update({ lead_id: msg.lead_id })
+          .update({
+            lead_id: msg.lead_id,
+            campaign_run_id: runId
+          })
           .eq('id', convByPhone.id);
       } else {
         const { data: newConv, error: convError } = await supabase
@@ -697,7 +707,8 @@ async function processSingleMessage(
             channel: 'whatsapp',
             status: 'waiting',
             lead_id: msg.lead_id,
-            inbox_id: config.inbox_id
+            inbox_id: config.inbox_id,
+            campaign_run_id: runId  // ✅ Salvar campaign_run_id
           })
           .select('id')
           .single();

@@ -27,6 +27,7 @@ export interface DbConversation {
   tags?: string[];
   lead_id?: string;
   lead_extraction_run_id?: string | null; // ✅ ID da run de extração (vem do lead via JOIN)
+  campaign_run_id?: string | null; // ✅ ID da run de campanha que iniciou a conversa
   attendant_type?: 'human' | 'ai'; // ✅ Tipo de atendente
   unread_count?: number; // ✅ Contador de mensagens não lidas
   total_messages?: number; // ✅ Total de mensagens na conversa

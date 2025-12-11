@@ -33,6 +33,14 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Verify _headers file
+        run: |
+          echo "Verifying _headers file..."
+          cat build/_headers || echo "ERROR: _headers file not found!"
+          echo ""
+          echo "Checking for CSS rule..."
+          grep -q "/assets/\*\.css" build/_headers && echo "✅ CSS rule found" || echo "❌ CSS rule missing"
+
       - name: Publish to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:

@@ -548,7 +548,9 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
         conversationId,
         sender: 'agent',
         text: messageData.text || '',
-        timestamp: now.toLocaleTimeString('pt-BR', {
+        timestamp: now.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
           hour: '2-digit',
           minute: '2-digit',
         }),

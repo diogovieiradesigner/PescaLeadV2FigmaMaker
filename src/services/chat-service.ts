@@ -36,10 +36,15 @@ export async function fetchConversations(
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    // Buscar conversas
+    // Buscar conversas com JOIN no lead para trazer lead_extraction_id
     let query = supabase
       .from('conversations')
-      .select('*')
+      .select(`
+        *,
+        leads:lead_id (
+          lead_extraction_id
+        )
+      `)
       .eq('workspace_id', workspaceId)
       .neq('channel', 'preview'); // ✅ Excluir conversas de preview do chat real
 
@@ -51,7 +56,7 @@ export async function fetchConversations(
         .replace(/\\/g, '\\\\')  // Escapar backslash
         .replace(/'/g, "''")      // Escapar aspas simples
         .replace(/"/g, '\\"');    // Escapar aspas duplas
-      
+
       const search = `%${sanitized}%`;
       query = query.or(`contact_name.ilike.${search},contact_phone.ilike.${search}`);
     }
@@ -63,6 +68,13 @@ export async function fetchConversations(
 
     if (convError) throw convError;
     if (!conversations) return [];
+
+    // ✅ Extrair lead_extraction_id do JOIN e adicionar à conversa
+    const conversationsWithExtraction = conversations.map((conv: any) => ({
+      ...conv,
+      lead_extraction_id: conv.leads?.lead_extraction_id || null,
+      leads: undefined, // Remove o objeto leads do resultado final
+    }));
 
     // Buscar mensagens de cada conversa
     const conversationIds = conversations.map((c) => c.id);
@@ -106,8 +118,8 @@ export async function fetchConversations(
       messagesByConversation.get(msg.conversation_id)!.push(msg);
     });
 
-    // Converter para formato frontend
-    return conversations.map((conv) =>
+    // Converter para formato frontend (usando conversationsWithExtraction que tem lead_extraction_id)
+    return conversationsWithExtraction.map((conv) =>
       dbConversationToFrontend(
         conv as DbConversation,
         messagesByConversation.get(conv.id) || [],
@@ -160,10 +172,15 @@ export async function fetchConversation(
   conversationId: string
 ): Promise<Conversation | null> {
   try {
-    // Buscar conversa
+    // Buscar conversa com JOIN no lead para trazer lead_extraction_id
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('*')
+      .select(`
+        *,
+        leads:lead_id (
+          lead_extraction_id
+        )
+      `)
       .eq('id', conversationId)
       .single();
 
@@ -173,6 +190,13 @@ export async function fetchConversation(
       throw convError;
     }
     if (!conversation) return null;
+
+    // ✅ Extrair lead_extraction_id do JOIN
+    const conversationWithExtraction = {
+      ...conversation,
+      lead_extraction_id: (conversation as any).leads?.lead_extraction_id || null,
+      leads: undefined,
+    };
 
     // Buscar mensagens
     const { data: messages, error: msgError } = await supabase
@@ -186,18 +210,18 @@ export async function fetchConversation(
 
     // Buscar usuário atribuído
     let assignedUser: DbUser | undefined;
-    if (conversation.assigned_to) {
+    if (conversationWithExtraction.assigned_to) {
       const { data: user } = await supabase
         .from('users')
         .select('*')
-        .eq('id', conversation.assigned_to)
+        .eq('id', conversationWithExtraction.assigned_to)
         .single();
 
       assignedUser = user || undefined;
     }
 
     return dbConversationToFrontend(
-      conversation as DbConversation,
+      conversationWithExtraction as DbConversation,
       (messages || []) as DbMessage[],
       assignedUser
     );
@@ -719,6 +743,35 @@ export interface ContactProfile {
   picture: string | null;
   isBusiness: boolean;
   status: string | null;
+}
+
+// ============================================
+// LEAD EXTRACTIONS (para filtros de chat)
+// ============================================
+
+export interface LeadExtractionForFilter {
+  id: string;
+  extraction_name: string;
+}
+
+/**
+ * Busca todas as extrações de um workspace (para filtro de conversas)
+ */
+export async function fetchLeadExtractions(workspaceId: string): Promise<LeadExtractionForFilter[]> {
+  try {
+    const { data, error } = await supabase
+      .from('lead_extractions')
+      .select('id, extraction_name')
+      .eq('workspace_id', workspaceId)
+      .order('extraction_name', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []) as LeadExtractionForFilter[];
+  } catch (error) {
+    console.error('[CHAT SERVICE] Error fetching lead extractions:', error);
+    return [];
+  }
 }
 
 /**

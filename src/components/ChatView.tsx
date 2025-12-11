@@ -10,7 +10,7 @@ import { Message } from '../types/chat';
 import { Instance, Inbox } from './SettingsView';
 import { useChatData } from '../hooks/useChatData';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchAgents } from '../services/chat-service';
+import { fetchAgents, fetchLeadExtractions, LeadExtractionForFilter } from '../services/chat-service';
 import { DbUser } from '../types/database-chat';
 import { ConversationFiltersState } from './chat/ConversationFilters';
 import { useDebounce } from '../hooks/useDebounce'; // ✅ Importar hook de debounce
@@ -39,6 +39,7 @@ export function ChatView({
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [dbAgents, setDbAgents] = useState<DbUser[]>([]);
+  const [dbExtractions, setDbExtractions] = useState<LeadExtractionForFilter[]>([]);
   const [isNewConversationModalOpen, setIsNewConversationModalOpen] = useState(false);
   
   // ✅ Debounce do searchQuery para evitar muitas requisições
@@ -50,6 +51,7 @@ export function ChatView({
     inboxes: ['all'],
     statuses: ['all'],
     attendantTypes: ['all'],
+    extractions: ['all'], // ✅ Novo filtro de extração
   });
 
   // Hook de chat com Supabase (agora com searchQuery)
@@ -78,6 +80,13 @@ export function ChatView({
   useEffect(() => {
     if (currentWorkspace?.id) {
       fetchAgents(currentWorkspace.id).then(setDbAgents).catch(console.error);
+    }
+  }, [currentWorkspace?.id]);
+
+  // ✅ Carregar extrações do workspace (para filtro)
+  useEffect(() => {
+    if (currentWorkspace?.id) {
+      fetchLeadExtractions(currentWorkspace.id).then(setDbExtractions).catch(console.error);
     }
   }, [currentWorkspace?.id]);
 
@@ -128,6 +137,18 @@ export function ChatView({
       result = result.filter((conv) => {
         const attendantType = conv.attendantType || 'human';
         return filters.attendantTypes.includes(attendantType);
+      });
+    }
+
+    // ✅ Aplicar filtro de extração
+    if (!filters.extractions.includes('all')) {
+      result = result.filter((conv) => {
+        // 'none' = conversas sem extração (orgânicas)
+        if (filters.extractions.includes('none')) {
+          return !conv.leadExtractionId || filters.extractions.includes(conv.leadExtractionId);
+        }
+        // Filtrar por IDs de extração específicas
+        return conv.leadExtractionId && filters.extractions.includes(conv.leadExtractionId);
       });
     }
 
@@ -357,6 +378,7 @@ export function ChatView({
             onSearchChange={setSearchQuery}
             agents={dbAgents}
             inboxes={inboxes}
+            extractions={dbExtractions} // ✅ Passar extrações para filtro
             filters={filters}
             onFiltersChange={setFilters}
             loadMore={loadMore}

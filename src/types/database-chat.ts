@@ -26,6 +26,7 @@ export interface DbConversation {
   channel: 'whatsapp' | 'email' | 'chat';
   tags?: string[];
   lead_id?: string;
+  lead_extraction_id?: string | null; // ✅ ID da extração (vem do lead via JOIN)
   attendant_type?: 'human' | 'ai'; // ✅ Tipo de atendente
   unread_count?: number; // ✅ Contador de mensagens não lidas
   total_messages?: number; // ✅ Total de mensagens na conversa

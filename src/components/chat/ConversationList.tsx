@@ -3,7 +3,7 @@ import { Theme } from '../../hooks/useTheme';
 import { Conversation, ConversationStatus } from '../../types/chat';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { useState, useRef, useEffect } from 'react';
-import { ConversationFilters, ConversationFiltersState } from './ConversationFilters';
+import { ConversationFilters, ConversationFiltersState, LeadExtraction } from './ConversationFilters';
 import { DbUser } from '../../types/database-chat';
 import { Inbox } from '../SettingsView';
 
@@ -16,6 +16,7 @@ interface ConversationListProps {
   onSearchChange: (query: string) => void;
   agents?: DbUser[];
   inboxes?: Inbox[];
+  extractions?: LeadExtraction[];
   filters: ConversationFiltersState;
   onFiltersChange: (filters: ConversationFiltersState) => void;
   loadMore?: () => void;
@@ -46,6 +47,7 @@ export function ConversationList({
   onSearchChange,
   agents,
   inboxes,
+  extractions,
   filters,
   onFiltersChange,
   loadMore,
@@ -67,7 +69,8 @@ export function ConversationList({
     (!filters.assignees.includes('all') ? 1 : 0) +
     (!filters.inboxes.includes('all') ? 1 : 0) +
     (!filters.statuses.includes('all') ? 1 : 0) +
-    (!filters.attendantTypes.includes('all') ? 1 : 0);
+    (!filters.attendantTypes.includes('all') ? 1 : 0) +
+    (!filters.extractions.includes('all') ? 1 : 0);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -170,6 +173,7 @@ export function ConversationList({
           theme={theme}
           agents={agents || []}
           inboxes={inboxes || []}
+          extractions={extractions || []}
           filters={filters}
           onFiltersChange={onFiltersChange}
         />

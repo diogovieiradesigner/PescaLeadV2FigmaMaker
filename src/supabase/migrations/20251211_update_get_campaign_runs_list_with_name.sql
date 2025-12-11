@@ -48,7 +48,7 @@ BEGIN
       COALESCE((
         SELECT COUNT(*)
         FROM campaign_messages cm
-        WHERE cm.run_id = cr.id AND cm.replied = true
+        WHERE cm.run_id = cr.id AND cm.replied_at IS NOT NULL
       ), 0) as replied_count,
       CASE
         WHEN cr.completed_at IS NOT NULL AND cr.started_at IS NOT NULL

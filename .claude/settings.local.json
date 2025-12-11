@@ -20,7 +20,21 @@
       "Bash(npm run build:*)",
       "Bash(cat:*)",
       "Bash(npm run build:deploy:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(echo PUSH_TO_DEV)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_OUTPUT\" | grep -q 'PUSH_TO_DEV'; then git add -A && git commit -m \"auto: update via Claude Code\" --allow-empty && git push origin dev; fi"
+          }
+        ]
+      }
     ]
   }
 }

@@ -711,6 +711,18 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ status: "blocked", reason: "guardrail_blocked", pipeline_id: pipelineId, preview_mode: isPreviewMode, response_sent: sendResult.success, tokens_used: totalTokens }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!guardrailResult.enable_response) {
+      // ✅ CORREÇÃO: Resetar debouncer para 'waiting' para permitir reprocessamento de novas mensagens
+      // Quando o guardrail bloqueia resposta (mensagem automática detectada), o debouncer deve
+      // voltar ao estado 'waiting' para que quando o cliente enviar uma mensagem humana real,
+      // o sistema possa reprocessar e responder adequadamente.
+      if (payload.debouncer_id) {
+        await supabase.from("ai_debouncer_queue").update({
+          status: "waiting",
+          process_after: new Date(Date.now() + 15000).toISOString(), // Resetar debounce para 15 segundos
+          updated_at: new Date().toISOString()
+        }).eq("id", payload.debouncer_id);
+        console.log(`[ai-process-conversation] Debouncer ${payload.debouncer_id} reset to waiting for future messages`);
+      }
       await logger.complete("skipped", "⏸️ Aguardando interação humana: " + guardrailResult.context_summary, null, false, null, guardrailResult.context_summary, "guardrail");
       return new Response(JSON.stringify({ status: "waiting", reason: "guardrail_waiting", pipeline_id: pipelineId, preview_mode: isPreviewMode, tokens_used: guardrailTokensUsed }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { PipelineInfo, PipelineStep } from '../hooks/useAIBuilderChat';
-import { 
-  ChevronDown, 
+import {
+  ChevronDown,
   ChevronRight,
-  CheckCircle2, 
-  XCircle, 
+  CheckCircle2,
+  XCircle,
   MinusCircle,
   Clock,
   Zap,
@@ -13,7 +13,13 @@ import {
   Brain,
   BookOpen,
   MessageSquare,
-  Save
+  Save,
+  Calendar,
+  UserCheck,
+  Phone,
+  Search,
+  Edit3,
+  Wrench
 } from 'lucide-react';
 
 // ==================== MAPEAMENTO DE ÍCONES ====================
@@ -26,7 +32,27 @@ const STEP_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   rag: BookOpen,
   llm: MessageSquare,
   preview_save: Save,
+  // Tool icons
+  tool_agendar_reuniao: Calendar,
+  tool_consultar_disponibilidade: Search,
+  tool_transferir_para_humano: UserCheck,
+  tool_finalizar_atendimento: Phone,
+  tool_buscar_informacoes_lead: Search,
+  tool_atualizar_informacoes_lead: Edit3,
 };
+
+// Mapeamento de nomes amigáveis para tools
+const TOOL_FRIENDLY_NAMES: Record<string, string> = {
+  tool_agendar_reuniao: '📅 Agendar Reunião',
+  tool_consultar_disponibilidade: '🕐 Consultar Disponibilidade',
+  tool_transferir_para_humano: '👤 Transferir para Humano',
+  tool_finalizar_atendimento: '✅ Finalizar Atendimento',
+  tool_buscar_informacoes_lead: '🔍 Buscar Info do Lead',
+  tool_atualizar_informacoes_lead: '✏️ Atualizar Lead',
+};
+
+// Verifica se é um step de tool
+const isToolStep = (stepKey: string): boolean => stepKey.startsWith('tool_');
 
 // ==================== COMPONENTE DE STEP ====================
 
@@ -38,11 +64,18 @@ interface StepItemProps {
 
 const StepItem: React.FC<StepItemProps> = ({ step, isLast, isDark = false }) => {
   const [expanded, setExpanded] = useState(false);
-  
+  const isTool = isToolStep(step.key);
+
   const getIcon = () => {
+    // Primeiro verifica se é uma tool específica pelo key
+    if (isTool) {
+      const ToolIcon = STEP_ICONS[step.key] || Wrench;
+      return <ToolIcon size={14} className={isDark ? 'text-amber-400' : 'text-amber-600'} />;
+    }
+
     switch (step.type) {
       case 'rag': return <BookOpen size={14} className={isDark ? 'text-blue-400' : 'text-blue-600'} />;
-      case 'tool': return <Zap size={14} className={isDark ? 'text-yellow-400' : 'text-yellow-600'} />;
+      case 'tool': return <Wrench size={14} className={isDark ? 'text-amber-400' : 'text-amber-600'} />;
       case 'guardrail': return <Shield size={14} className={isDark ? 'text-purple-400' : 'text-purple-600'} />;
       case 'message_grouping': return <MessageSquare size={14} className={isDark ? 'text-green-400' : 'text-green-600'} />;
       case 'email': return <Mail size={14} className={isDark ? 'text-red-400' : 'text-red-600'} />;
@@ -50,6 +83,14 @@ const StepItem: React.FC<StepItemProps> = ({ step, isLast, isDark = false }) => 
       case 'save': return <Save size={14} className={isDark ? 'text-cyan-400' : 'text-cyan-600'} />;
       default: return <Zap size={14} className={isDark ? 'text-gray-400' : 'text-gray-600'} />;
     }
+  };
+
+  // Nome amigável para tools
+  const getDisplayName = () => {
+    if (isTool && TOOL_FRIENDLY_NAMES[step.key]) {
+      return TOOL_FRIENDLY_NAMES[step.key];
+    }
+    return step.name;
   };
   
   const getStatusIcon = () => {
@@ -77,8 +118,10 @@ const StepItem: React.FC<StepItemProps> = ({ step, isLast, isDark = false }) => 
         
         <div className="flex-1 min-w-0 text-left">
           <div className="flex items-center justify-between gap-2">
-            <span className={`text-xs text-left ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{step.name}</span>
-            
+            <span className={`text-xs text-left ${isTool ? (isDark ? 'text-amber-300' : 'text-amber-700') : (isDark ? 'text-gray-300' : 'text-gray-700')}`}>
+              {getDisplayName()}
+            </span>
+
             <div className="flex-shrink-0">
               {expanded ? <ChevronDown size={12} className={isDark ? 'text-gray-400' : 'text-gray-600'} /> : <ChevronRight size={12} className={isDark ? 'text-gray-400' : 'text-gray-600'} />}
             </div>
@@ -125,6 +168,50 @@ const StepItem: React.FC<StepItemProps> = ({ step, isLast, isDark = false }) => 
             </div>
           )}
           
+          {/* Detalhes especiais para Tool Calls */}
+          {isTool && (step.inputData || step.outputData) && (
+            <div className={`text-[10px] space-y-1.5 pt-1.5 border-t ${isDark ? 'border-amber-500/30' : 'border-amber-200'}`}>
+              {/* Parâmetros de entrada */}
+              {step.inputData && Object.keys(step.inputData).length > 0 && (
+                <div>
+                  <span className={`font-medium ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>Parâmetros:</span>
+                  <div className={`mt-1 p-1.5 rounded ${isDark ? 'bg-amber-500/10' : 'bg-amber-50'}`}>
+                    {Object.entries(step.inputData).map(([key, value]) => (
+                      <div key={key} className="flex gap-1">
+                        <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>{key}:</span>
+                        <span className={isDark ? 'text-gray-300' : 'text-gray-800'}>
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Resultado da tool */}
+              {step.outputData && Object.keys(step.outputData).length > 0 && (
+                <div>
+                  <span className={`font-medium ${isDark ? 'text-green-400' : 'text-green-600'}`}>Resultado:</span>
+                  <div className={`mt-1 p-1.5 rounded ${isDark ? 'bg-green-500/10' : 'bg-green-50'}`}>
+                    {Object.entries(step.outputData).map(([key, value]) => (
+                      <div key={key} className="flex gap-1">
+                        <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>{key}:</span>
+                        <span className={isDark ? 'text-gray-300' : 'text-gray-800'}>
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Preview mode badge */}
+              {step.config?.preview_mode && (
+                <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] ${isDark ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+                  🔬 Modo Preview (não executou ação real)
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Detalhes especiais para Transcrição */}
           {step.key === 'transcription' && (step.inputData || step.config) && (
             <div className="text-[10px] space-y-1 pt-1 border-t border-white/10">
@@ -216,26 +303,35 @@ export const PipelineLogsViewer: React.FC<PipelineLogsViewerProps> = ({
   const successSteps = pipeline.steps.filter(s => s.status === 'success').length;
   const errorSteps = pipeline.steps.filter(s => s.status === 'error').length;
   const totalSteps = pipeline.steps.length;
-  
+  const toolSteps = pipeline.steps.filter(s => isToolStep(s.key));
+  const toolCount = toolSteps.length;
+
   return (
     <div className="inline-block w-full">
       {/* Header - Inline compacto */}
-      <button 
+      <button
         onClick={() => setIsExpanded(!isExpanded)}
         className={`inline-flex items-center gap-1 ${inline ? 'px-0' : 'px-2 py-1.5'} ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'} transition-colors ${inline ? '' : 'w-full justify-start rounded'}`}
       >
         {isExpanded ? <ChevronDown size={10} className={isDark ? 'text-gray-400' : 'text-gray-500'} /> : <ChevronRight size={10} className={isDark ? 'text-gray-400' : 'text-gray-500'} />}
         <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Pipeline</span>
-        
+
         {/* Badge de status */}
         <span className={`px-1 py-0.5 text-[9px] font-medium rounded ${
-          errorSteps > 0 
-            ? 'bg-red-500/20 text-red-300' 
+          errorSteps > 0
+            ? 'bg-red-500/20 text-red-300'
             : 'bg-green-500/20 text-green-300'
         }`}>
           {successSteps}/{totalSteps}
         </span>
-        
+
+        {/* Badge de Tools */}
+        {toolCount > 0 && (
+          <span className={`px-1 py-0.5 text-[9px] font-medium rounded ${isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
+            🔧 {toolCount} tool{toolCount > 1 ? 's' : ''}
+          </span>
+        )}
+
         {/* Tokens e Tempo quando fechado */}
         {!isExpanded && (
           <>

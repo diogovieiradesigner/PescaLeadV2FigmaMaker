@@ -11,7 +11,6 @@ import {
   User,
   FileText,
   Trash2,
-  Check,
   XCircle,
   Search,
   Loader2,
@@ -22,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Theme } from '../../hooks/useTheme';
 import {
   InternalEventWithRelations,
@@ -379,7 +379,7 @@ export function EventModal({
 
       // Validar que não está criando evento no passado (apenas para novos eventos)
       if (!isEditing && startDateTime < new Date()) {
-        alert('Não é possível criar eventos em datas/horários passados.');
+        toast.error('Não é possível criar eventos em datas/horários passados.');
         setIsSubmitting(false);
         return;
       }

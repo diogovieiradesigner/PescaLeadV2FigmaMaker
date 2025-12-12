@@ -1,13 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Resizable } from 're-resizable';
-import { 
+import {
   Bot,
   Save,
   RotateCcw,
   Trash2,
   Sun,
   Moon,
-  ScrollText
+  ScrollText,
+  Calendar,
+  Search,
+  UserCheck,
+  PhoneOff,
+  Wrench
 } from 'lucide-react';
 import { useAIBuilderChat } from '../hooks/useAIBuilderChat';
 import { AgentConfigForm } from './AgentConfigForm';
@@ -552,19 +557,62 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                       {/* Metadata + Pipeline (inline) */}
                       {!message.isLoading && message.metadata && (
                         <div className="mt-1 px-1">
+                          {/* Tool Calls Badge (destaque) */}
+                          {message.metadata.toolCalls && message.metadata.toolCalls.length > 0 && (
+                            <div className="mb-1 flex flex-wrap gap-1">
+                              {message.metadata.toolCalls.map((tool, idx) => {
+                                const getToolIcon = () => {
+                                  switch (tool.name) {
+                                    case 'agendar_reuniao': return <Calendar size={10} />;
+                                    case 'consultar_disponibilidade': return <Search size={10} />;
+                                    case 'transferir_para_humano': return <UserCheck size={10} />;
+                                    case 'finalizar_atendimento': return <PhoneOff size={10} />;
+                                    default: return <Wrench size={10} />;
+                                  }
+                                };
+                                const getToolLabel = () => {
+                                  switch (tool.name) {
+                                    case 'agendar_reuniao': return 'Agendar';
+                                    case 'consultar_disponibilidade': return 'Disponibilidade';
+                                    case 'transferir_para_humano': return 'Transferir';
+                                    case 'finalizar_atendimento': return 'Finalizar';
+                                    default: return tool.displayName || tool.name;
+                                  }
+                                };
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
+                                      tool.status === 'success'
+                                        ? isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700'
+                                        : tool.status === 'error'
+                                          ? isDark ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700'
+                                          : isDark ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                    }`}
+                                    title={`Tool: ${tool.name}${tool.isPreview ? ' (Preview)' : ''}`}
+                                  >
+                                    {getToolIcon()}
+                                    {getToolLabel()}
+                                    {tool.isPreview && <span className="opacity-60">(P)</span>}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
                           {/* Linha de métricas */}
                           <div className={`text-[10px] flex items-center gap-2 flex-wrap ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
                             {/* Pipeline Logs (primeiro) */}
                             {message.metadata.pipeline && (
                               <div className="flex-shrink-0">
-                                <PipelineLogsViewer 
+                                <PipelineLogsViewer
                                   pipeline={message.metadata.pipeline}
                                   defaultExpanded={false}
                                   isDark={isDark}
                                 />
                               </div>
                             )}
-                            
+
                             {/* Tokens e Tempo: só mostrar se NÃO houver pipeline (para evitar duplicação) */}
                             {!message.metadata.pipeline && (
                               <>
@@ -572,14 +620,14 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                                 {message.metadata.tokensUsed != null && message.metadata.tokensUsed > 0 && (
                                   <span>🎫 {message.metadata.tokensUsed} tokens</span>
                                 )}
-                                
+
                                 {/* Tempo */}
                                 {message.metadata.durationMs != null && message.metadata.durationMs > 0 && (
                                   <span>⏱️ {(message.metadata.durationMs / 1000).toFixed(1)}s</span>
                                 )}
                               </>
                             )}
-                            
+
                             {/* Outras métricas */}
                             {message.metadata.model && (
                               <span>🤖 {message.metadata.model.split('/').pop()}</span>

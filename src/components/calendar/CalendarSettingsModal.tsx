@@ -1,9 +1,8 @@
-import { useState } from 'react';
-import { X, Clock, Plus, Trash2, Save, Loader2, Settings } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Clock, Plus, Trash2, Save, Loader2, Settings, RotateCcw } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import {
   CalendarSettings,
-  CalendarSettingsUpdate,
   WeeklyAvailability,
   DefaultDurations,
   DAYS_OF_WEEK,
@@ -50,6 +49,21 @@ export function CalendarSettingsModal({
   const isDark = theme === 'dark';
   const queryClient = useQueryClient();
 
+  // DEBUG: Log quando componente renderiza
+  console.log('[CalendarSettingsModal] Render:', {
+    isOpen,
+    hasSettings: !!settings,
+    settingsId: settings?.id,
+    workspaceId,
+    settingsFromProps: settings ? {
+      availability: settings.availability,
+      default_durations: settings.default_durations,
+      buffer_between_events: settings.buffer_between_events,
+      min_booking_notice_hours: settings.min_booking_notice_hours,
+      max_booking_days_ahead: settings.max_booking_days_ahead,
+    } : null,
+  });
+
   // Form state - usar valores padrão se settings não existir
   const [availability, setAvailability] = useState<WeeklyAvailability>(
     settings?.availability || DEFAULT_AVAILABILITY
@@ -76,25 +90,48 @@ export function CalendarSettingsModal({
     settings?.whatsapp_reminder_hours_before ?? 24
   );
 
-  // Mutation para atualizar configurações existentes
-  const updateMutation = useMutation({
-    mutationFn: (data: CalendarSettingsUpdate) =>
-      calendarService.updateCalendarSettings(settings!.id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calendar-settings'] });
-      toast.success('Configurações salvas!');
-      onClose();
-    },
-    onError: (error: any) => {
-      console.error('[CalendarSettings] Error updating:', error);
-      toast.error('Erro ao salvar configurações');
-    },
-  });
+  // Sincronizar estados quando settings mudar ou modal abrir
+  useEffect(() => {
+    console.log('[CalendarSettingsModal] useEffect triggered:', {
+      isOpen,
+      hasSettings: !!settings,
+      settingsId: settings?.id,
+    });
 
-  // Mutation para criar configurações novas
-  const createMutation = useMutation({
-    mutationFn: () =>
-      calendarService.upsertCalendarSettings({
+    if (isOpen && settings) {
+      console.log('[CalendarSettingsModal] Syncing from settings:', {
+        availability: settings.availability,
+        default_durations: settings.default_durations,
+        buffer_between_events: settings.buffer_between_events,
+        min_booking_notice_hours: settings.min_booking_notice_hours,
+        max_booking_days_ahead: settings.max_booking_days_ahead,
+      });
+      setAvailability(settings.availability || DEFAULT_AVAILABILITY);
+      setDefaultDurations(settings.default_durations || DEFAULT_DURATIONS);
+      setBufferBetweenEvents(settings.buffer_between_events ?? 15);
+      setMinBookingNotice(settings.min_booking_notice_hours ?? 1);
+      setMaxBookingDays(settings.max_booking_days_ahead ?? 30);
+      setWhatsappConfirmation(settings.whatsapp_confirmation_enabled ?? false);
+      setWhatsappReminder(settings.whatsapp_reminder_enabled ?? false);
+      setReminderHours(settings.whatsapp_reminder_hours_before ?? 24);
+    } else if (isOpen && !settings) {
+      console.log('[CalendarSettingsModal] No settings, using defaults');
+      // Reset para valores padrão se não há settings
+      setAvailability(DEFAULT_AVAILABILITY);
+      setDefaultDurations(DEFAULT_DURATIONS);
+      setBufferBetweenEvents(15);
+      setMinBookingNotice(1);
+      setMaxBookingDays(30);
+      setWhatsappConfirmation(false);
+      setWhatsappReminder(false);
+      setReminderHours(24);
+    }
+  }, [isOpen, settings]);
+
+  // Mutation unificada usando upsert (criar ou atualizar)
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const dataToSave = {
         workspace_id: workspaceId,
         availability,
         default_durations: defaultDurations,
@@ -104,36 +141,29 @@ export function CalendarSettingsModal({
         whatsapp_confirmation_enabled: whatsappConfirmation,
         whatsapp_reminder_enabled: whatsappReminder,
         whatsapp_reminder_hours_before: reminderHours,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calendar-settings'] });
+      };
+      console.log('[CalendarSettingsModal] Saving data:', dataToSave);
+      return calendarService.upsertCalendarSettings(dataToSave);
+    },
+    onSuccess: (savedData) => {
+      console.log('[CalendarSettingsModal] Save SUCCESS, returned data:', savedData);
+      // Invalidar todas as queries de calendar-settings para garantir refresh
+      queryClient.invalidateQueries({ queryKey: ['calendar-settings', workspaceId] });
       toast.success('Configurações salvas!');
       onClose();
     },
     onError: (error: any) => {
-      console.error('[CalendarSettings] Error creating:', error);
+      console.error('[CalendarSettings] Error saving:', error);
       toast.error('Erro ao salvar configurações');
     },
   });
 
   const handleSave = () => {
-    if (settings?.id) {
-      updateMutation.mutate({
-        availability,
-        default_durations: defaultDurations,
-        buffer_between_events: bufferBetweenEvents,
-        min_booking_notice_hours: minBookingNotice,
-        max_booking_days_ahead: maxBookingDays,
-        whatsapp_confirmation_enabled: whatsappConfirmation,
-        whatsapp_reminder_enabled: whatsappReminder,
-        whatsapp_reminder_hours_before: reminderHours,
-      });
-    } else {
-      createMutation.mutate();
-    }
+    console.log('[CalendarSettingsModal] handleSave called');
+    saveMutation.mutate();
   };
 
-  const isSaving = updateMutation.isPending || createMutation.isPending;
+  const isSaving = saveMutation.isPending;
 
   // Add slot to a day
   const addSlot = (day: keyof WeeklyAvailability) => {
@@ -166,6 +196,18 @@ export function CalendarSettingsModal({
     }));
   };
 
+  // Resetar para valores padrão
+  const resetToDefaults = () => {
+    setAvailability(DEFAULT_AVAILABILITY);
+    setDefaultDurations(DEFAULT_DURATIONS);
+    setBufferBetweenEvents(15);
+    setMinBookingNotice(1);
+    setMaxBookingDays(30);
+    setWhatsappConfirmation(false);
+    setWhatsappReminder(false);
+    setReminderHours(24);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -189,14 +231,28 @@ export function CalendarSettingsModal({
               Configurações do Calendário
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className={`p-2 rounded-lg transition-colors ${
-              isDark ? 'hover:bg-white/[0.05] text-white/50' : 'hover:bg-light-elevated-hover text-text-secondary-light'
-            }`}
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={resetToDefaults}
+              disabled={isSaving}
+              className={`p-2 rounded-lg transition-colors ${
+                isDark
+                  ? 'hover:bg-white/[0.05] text-white/50 hover:text-white/70'
+                  : 'hover:bg-light-elevated-hover text-text-secondary-light hover:text-text-primary-light'
+              }`}
+              title="Restaurar padrões"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onClose}
+              className={`p-2 rounded-lg transition-colors ${
+                isDark ? 'hover:bg-white/[0.05] text-white/50' : 'hover:bg-light-elevated-hover text-text-secondary-light'
+              }`}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

@@ -87,14 +87,34 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
     enabled: !!workspaceId,
   });
 
-  // Buscar configurações do calendário
+  // Buscar configurações do calendário (por workspace, não por calendário específico)
   const {
     data: settings,
     isLoading: isLoadingSettings,
+    dataUpdatedAt,
   } = useQuery({
-    queryKey: ['calendar-settings', workspaceId, activeCalendarId],
-    queryFn: () => calendarService.fetchCalendarSettings(workspaceId, activeCalendarId),
+    queryKey: ['calendar-settings', workspaceId],
+    queryFn: async () => {
+      console.log('[useCalendar] Fetching calendar settings for workspace:', workspaceId);
+      // Buscar settings do workspace (sem filtro de calendário específico)
+      const result = await calendarService.fetchCalendarSettings(workspaceId);
+      console.log('[useCalendar] Calendar settings fetched:', {
+        hasResult: !!result,
+        resultId: result?.id,
+        availability: result?.availability,
+        buffer_between_events: result?.buffer_between_events,
+      });
+      return result;
+    },
     enabled: !!workspaceId,
+  });
+
+  // DEBUG: Log quando settings muda
+  console.log('[useCalendar] Current settings state:', {
+    hasSettings: !!settings,
+    settingsId: settings?.id,
+    dataUpdatedAt,
+    isLoadingSettings,
   });
 
   // ============================================
@@ -104,10 +124,11 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
   // Criar evento
   const createEventMutation = useMutation({
     mutationFn: (data: InternalEventCreate) => calendarService.createEvent(data),
-    onSuccess: () => {
+    onSuccess: (event) => {
       queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
       toast.success('Evento criado com sucesso!');
       setIsEventModalOpen(false);
+      return event;
     },
     onError: (error: any) => {
       console.error('[useCalendar] Error creating event:', error);
@@ -256,17 +277,32 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
   }, []);
 
   // Criar evento
-  const createEvent = useCallback(async (data: Omit<InternalEventCreate, 'workspace_id' | 'internal_calendar_id'>) => {
+  const createEvent = useCallback(async (
+    data: Omit<InternalEventCreate, 'workspace_id' | 'internal_calendar_id'>,
+    reminders?: { remind_before_minutes: number; inbox_id?: string; message_template?: string }[]
+  ): Promise<InternalEvent | null> => {
     if (!activeCalendarId) {
       toast.error('Nenhum calendário disponível');
-      return;
+      return null;
     }
 
-    await createEventMutation.mutateAsync({
+    const event = await createEventMutation.mutateAsync({
       ...data,
       workspace_id: workspaceId,
       internal_calendar_id: activeCalendarId,
     });
+
+    // Salvar lembretes se houver
+    if (reminders && reminders.length > 0 && event?.id) {
+      try {
+        await calendarService.createEventReminders(event.id, workspaceId, reminders);
+      } catch (error) {
+        console.error('[useCalendar] Error creating reminders:', error);
+        toast.error('Evento criado, mas houve erro ao salvar lembretes');
+      }
+    }
+
+    return event;
   }, [workspaceId, activeCalendarId, createEventMutation]);
 
   // Atualizar evento

@@ -16,6 +16,7 @@ import {
   Menu,
   Settings,
   GripVertical,
+  Trash2,
 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { ProfileMenu } from './ProfileMenu';
@@ -29,6 +30,7 @@ import {
 } from '../types/calendar.types';
 import { EventModal } from './calendar/EventModal';
 import { CalendarSettingsModal } from './calendar/CalendarSettingsModal';
+import { ConfirmDialog } from './ui/confirm-dialog';
 import { cn } from './ui/utils';
 
 interface CalendarViewProps {
@@ -57,6 +59,11 @@ export function CalendarView({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [draggedEvent, setDraggedEvent] = useState<InternalEventWithRelations | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; event: InternalEventWithRelations | null; isLoading: boolean }>({
+    isOpen: false,
+    event: null,
+    isLoading: false,
+  });
 
   const {
     currentDate,
@@ -247,77 +254,100 @@ export function CalendarView({
     const Icon = EVENT_ICONS[event.event_type];
     const isCancelled = event.event_status === 'cancelled';
 
+    const handleDeleteClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setDeleteConfirm({ isOpen: true, event, isLoading: false });
+    };
+
     return (
       <div
         key={event.id}
-        onClick={() => openEditEventModal(event)}
         className={cn(
-          'p-3 rounded-lg cursor-pointer transition-all',
+          'p-3 rounded-lg transition-all group relative',
           isCancelled && 'opacity-60',
           isDark
             ? 'bg-white/5 hover:bg-white/10 border border-white/10'
             : 'bg-white hover:bg-gray-50 border border-gray-200 shadow-sm'
         )}
       >
-        <div className="flex items-start gap-3">
-          <div
-            className="p-2 rounded-lg"
-            style={{ backgroundColor: isCancelled ? (isDark ? 'rgba(107,114,128,0.2)' : 'rgba(156,163,175,0.2)') : `${config.color}20` }}
-          >
-            <Icon className="w-4 h-4" style={{ color: isCancelled ? '#9ca3af' : config.color }} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <h4
-                className={cn(
-                  'font-medium truncate',
-                  isCancelled && 'line-through',
-                  isDark ? 'text-white' : 'text-gray-900'
-                )}
-              >
-                {event.title}
-              </h4>
-              <span
-                className="text-xs px-2 py-0.5 rounded-full"
-                style={{
-                  backgroundColor: `${statusConfig.color}20`,
-                  color: statusConfig.color,
-                }}
-              >
-                {statusConfig.label}
-              </span>
-            </div>
+        {/* Delete button */}
+        <button
+          onClick={handleDeleteClick}
+          className={cn(
+            'absolute top-2 right-2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity z-10',
+            isDark
+              ? 'hover:bg-red-500/20 text-red-400 hover:text-red-300'
+              : 'hover:bg-red-50 text-red-400 hover:text-red-500'
+          )}
+          title="Excluir evento"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
 
-            <div className="flex items-center gap-2 mt-1">
-              <Clock className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
-              <span className={cn('text-xs', isCancelled && 'line-through', isDark ? 'text-white/50' : 'text-gray-500')}>
-                {formatTime(event.start_time)} - {formatTime(event.end_time)}
-              </span>
+        <div
+          onClick={() => openEditEventModal(event)}
+          className="cursor-pointer"
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="p-2 rounded-lg"
+              style={{ backgroundColor: isCancelled ? (isDark ? 'rgba(107,114,128,0.2)' : 'rgba(156,163,175,0.2)') : `${config.color}20` }}
+            >
+              <Icon className="w-4 h-4" style={{ color: isCancelled ? '#9ca3af' : config.color }} />
             </div>
-
-            {event.lead && (
-              <div className="flex items-center gap-2 mt-1">
-                <User className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
-                <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
-                  {event.lead.client_name}
+            <div className="flex-1 min-w-0 pr-6">
+              <div className="flex items-center justify-between gap-2">
+                <h4
+                  className={cn(
+                    'font-medium truncate',
+                    isCancelled && 'line-through',
+                    isDark ? 'text-white' : 'text-gray-900'
+                  )}
+                >
+                  {event.title}
+                </h4>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor: `${statusConfig.color}20`,
+                    color: statusConfig.color,
+                  }}
+                >
+                  {statusConfig.label}
                 </span>
               </div>
-            )}
 
-            {event.location && (
               <div className="flex items-center gap-2 mt-1">
-                <MapPin className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
-                <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
-                  {event.location}
+                <Clock className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
+                <span className={cn('text-xs', isCancelled && 'line-through', isDark ? 'text-white/50' : 'text-gray-500')}>
+                  {formatTime(event.start_time)} - {formatTime(event.end_time)}
                 </span>
               </div>
-            )}
 
-            {isCancelled && event.cancelled_reason && (
-              <div className={cn('text-xs mt-2 italic', isDark ? 'text-white/40' : 'text-gray-400')}>
-                Motivo: {event.cancelled_reason}
-              </div>
-            )}
+              {event.lead && (
+                <div className="flex items-center gap-2 mt-1">
+                  <User className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
+                  <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
+                    {event.lead.client_name}
+                  </span>
+                </div>
+              )}
+
+              {event.location && (
+                <div className="flex items-center gap-2 mt-1">
+                  <MapPin className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
+                  <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
+                    {event.location}
+                  </span>
+                </div>
+              )}
+
+              {isCancelled && event.cancelled_reason && (
+                <div className={cn('text-xs mt-2 italic', isDark ? 'text-white/40' : 'text-gray-400')}>
+                  Motivo: {event.cancelled_reason}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -342,58 +372,73 @@ export function CalendarView({
     )}>
       {/* Header */}
       <header className={cn(
-        'h-16 flex items-center justify-between px-4 md:px-6 border-b flex-shrink-0',
-        isDark ? 'border-white/10' : 'border-gray-200'
+        'h-16 border-b flex items-center justify-between px-4 md:px-6 transition-colors',
+        isDark ? 'bg-black border-white/[0.08]' : 'bg-white border-zinc-200'
       )}>
-        <div className="flex items-center gap-4">
-          {/* Mobile menu button */}
-          <button
-            onClick={onMobileMenuClick}
-            className={cn(
-              'md:hidden p-2 rounded-lg transition-colors',
-              isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'
-            )}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+        {/* Left Section */}
+        <div className="flex items-center gap-2 md:gap-3">
+          {/* Mobile Menu Button */}
+          {onMobileMenuClick && (
+            <button
+              onClick={onMobileMenuClick}
+              className={cn(
+                'md:hidden h-9 w-9 rounded-lg transition-colors flex items-center justify-center',
+                isDark
+                  ? 'hover:bg-white/10 text-white/70 hover:text-white'
+                  : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'
+              )}
+              title="Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
 
-          <div className="flex items-center gap-2">
-            <CalendarIcon className={cn('w-6 h-6', isDark ? 'text-white' : 'text-gray-900')} />
-            <h1 className={cn(
-              'text-xl font-semibold hidden sm:block',
-              isDark ? 'text-white' : 'text-gray-900'
-            )}>
-              Calendário
-            </h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
+          {/* Calendar Settings */}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className={cn(
-              'p-2 rounded-lg transition-colors',
-              isDark ? 'hover:bg-white/5 text-white/70' : 'hover:bg-gray-100 text-gray-500'
+              'h-9 w-9 rounded-lg transition-colors flex items-center justify-center',
+              isDark
+                ? 'hover:bg-white/10 text-white/70 hover:text-white'
+                : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'
             )}
             title="Configurações do calendário"
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="w-4 h-4" />
           </button>
 
+          {/* Title */}
+          <div>
+            <h1 className={cn('text-lg font-semibold', isDark ? 'text-white' : 'text-zinc-900')}>
+              Calendário
+            </h1>
+            <p className={cn('text-xs mt-0.5 hidden sm:block', isDark ? 'text-zinc-400' : 'text-zinc-600')}>
+              Gerencie seus eventos e compromissos
+            </p>
+          </div>
+        </div>
+
+        {/* Right Section */}
+        <div className="flex items-center gap-2 md:gap-4">
+          {/* Theme Toggle */}
           <button
             onClick={onThemeToggle}
             className={cn(
-              'p-2 rounded-lg transition-colors',
-              isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+              'h-9 w-9 rounded-lg transition-colors flex items-center justify-center',
+              isDark
+                ? 'hover:bg-white/10 text-white/70 hover:text-white'
+                : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'
             )}
+            title={isDark ? 'Alternar para modo claro' : 'Alternar para modo escuro'}
           >
             {isDark ? (
-              <Sun className="w-5 h-5 text-white/70" />
+              <Sun className="w-4 h-4" />
             ) : (
-              <Moon className="w-5 h-5 text-gray-500" />
+              <Moon className="w-4 h-4" />
             )}
           </button>
 
+          {/* User Profile */}
           <ProfileMenu theme={theme} onNavigateToSettings={onNavigateToSettings} />
         </div>
       </header>
@@ -709,6 +754,26 @@ export function CalendarView({
           workspaceId={currentWorkspace?.id || ''}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, event: null, isLoading: false })}
+        onConfirm={async () => {
+          if (deleteConfirm.event) {
+            setDeleteConfirm(prev => ({ ...prev, isLoading: true }));
+            await deleteEvent(deleteConfirm.event.id);
+            setDeleteConfirm({ isOpen: false, event: null, isLoading: false });
+          }
+        }}
+        title="Excluir evento"
+        description={`Tem certeza que deseja excluir "${deleteConfirm.event?.title}"? Esta ação não pode ser desfeita.`}
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        variant="danger"
+        isDark={isDark}
+        isLoading={deleteConfirm.isLoading}
+      />
     </div>
   );
 }

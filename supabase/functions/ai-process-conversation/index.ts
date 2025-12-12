@@ -6,7 +6,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 // VERSION 39 - FIX: Client name info moved to TOP of system prompt with explicit labels
-const FUNCTION_VERSION = "v39";
+const FUNCTION_VERSION = "v40-transcription-wait";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -680,7 +680,94 @@ Deno.serve(async (req) => {
       const { data: lead } = await supabase.from("leads").select("id, client_name, company").eq("id", conversation.lead_id).single();
       leadInfo = lead;
     }
-    const { data: messages } = await supabase.from("messages").select("id, text_content, content_type, message_type, transcription, created_at").eq("conversation_id", payload.conversation_id).order("created_at", { ascending: true }).limit(50);
+    let { data: messages } = await supabase.from("messages").select("id, text_content, content_type, message_type, transcription, transcription_status, created_at").eq("conversation_id", payload.conversation_id).order("created_at", { ascending: true }).limit(50);
+
+    // ✅ AGUARDAR TRANSCRIÇÕES PENDENTES (máx 30s)
+    // Verifica se há mensagens de mídia com transcrição pendente e aguarda completar
+    const mediaTypes = ["audio", "ptt", "image", "video"];
+    const pendingTranscriptions = (messages || []).filter(
+      (m: any) => mediaTypes.includes(m.content_type) &&
+                  m.message_type === "received" &&
+                  ["pending", "processing"].includes(m.transcription_status)
+    );
+
+    if (pendingTranscriptions.length > 0) {
+      const transcriptionWaitStart = Date.now();
+      const maxWaitMs = 30000; // 30 segundos máximo
+      const checkIntervalMs = 2000; // Verificar a cada 2 segundos
+      let waitedMs = 0;
+      let transcriptionsReady = false;
+
+      console.log(`[ai-process-conversation] ⏳ Aguardando ${pendingTranscriptions.length} transcrição(ões) pendente(s)...`);
+
+      while (waitedMs < maxWaitMs && !transcriptionsReady) {
+        await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
+        waitedMs += checkIntervalMs;
+
+        // Re-verificar status das transcrições
+        const { data: updatedMessages } = await supabase
+          .from("messages")
+          .select("id, transcription, transcription_status")
+          .in("id", pendingTranscriptions.map((m: any) => m.id));
+
+        const stillPending = (updatedMessages || []).filter(
+          (m: any) => ["pending", "processing"].includes(m.transcription_status)
+        );
+
+        if (stillPending.length === 0) {
+          transcriptionsReady = true;
+          // Atualizar as mensagens com as transcrições prontas
+          for (const updated of updatedMessages || []) {
+            const original = messages?.find((m: any) => m.id === updated.id);
+            if (original) {
+              original.transcription = updated.transcription;
+              original.transcription_status = updated.transcription_status;
+            }
+          }
+          console.log(`[ai-process-conversation] ✅ Transcrições prontas após ${waitedMs}ms`);
+        } else {
+          console.log(`[ai-process-conversation] ⏳ Ainda aguardando ${stillPending.length} transcrição(ões)... (${waitedMs}ms/${maxWaitMs}ms)`);
+        }
+      }
+
+      if (!transcriptionsReady) {
+        console.log(`[ai-process-conversation] ⚠️ Timeout de transcrição atingido (${maxWaitMs}ms). Processando com conteúdo disponível.`);
+        // Buscar o que tiver disponível mesmo após timeout
+        const { data: finalMessages } = await supabase
+          .from("messages")
+          .select("id, transcription, transcription_status")
+          .in("id", pendingTranscriptions.map((m: any) => m.id));
+
+        for (const updated of finalMessages || []) {
+          const original = messages?.find((m: any) => m.id === updated.id);
+          if (original) {
+            original.transcription = updated.transcription;
+            original.transcription_status = updated.transcription_status;
+          }
+        }
+      }
+
+      // Logar tempo de espera
+      const totalWaitTime = Date.now() - transcriptionWaitStart;
+      await logger.step(
+        "transcription_wait",
+        "Aguardando Transcrições",
+        "🎤",
+        transcriptionsReady ? "success" : "warning",
+        transcriptionsReady
+          ? `✅ ${pendingTranscriptions.length} transcrição(ões) pronta(s) em ${totalWaitTime}ms`
+          : `⚠️ Timeout após ${totalWaitTime}ms - ${pendingTranscriptions.length} mídia(s)`,
+        { pending_count: pendingTranscriptions.length, wait_time_ms: totalWaitTime, completed: transcriptionsReady }, // config
+        `${pendingTranscriptions.length} mídia(s) aguardando`, // inputSummary
+        { media_ids: pendingTranscriptions.map((m: any) => m.id) }, // inputData
+        transcriptionsReady ? "Transcrições completadas" : "Timeout - processando com conteúdo parcial", // outputSummary
+        { media_types: pendingTranscriptions.map((m: any) => m.content_type) }, // outputData
+        0, // tokensInput
+        0, // tokensOutput
+        totalWaitTime // durationMs
+      );
+    }
+
     const messageCount = payload.message_ids?.length || 1;
     const debounceMs = debounceSeconds * 1000;
     await logger.step("debouncer", "Agrupamento de Mensagens", "📨", "success", `📨 ${messageCount} mensagem(ns) recebida(s) (aguardou ${debounceSeconds}s)`, { debounce_seconds: debounceSeconds }, messageCount + " mensagem(ns) do cliente", null, "Mensagens prontas para processamento", { message_count: messageCount, wait_time_seconds: debounceSeconds }, 0, 0, debounceMs);

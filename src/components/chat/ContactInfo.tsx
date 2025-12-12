@@ -843,14 +843,37 @@ export function ContactInfo({
           </h4>
           <div className="space-y-2">
             <button
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border border-red-500/20 ${
-                isDark
-                  ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400'
-                  : 'bg-red-500/5 hover:bg-red-500/10 text-red-600'
+              onClick={async () => {
+                if (!conversation?.id) return;
+                try {
+                  const newStatus = conversation.status === 'resolved' ? 'waiting' : 'resolved';
+                  await updateConversation(conversation.id, { status: newStatus });
+                  onStatusChange?.(conversation.id, newStatus);
+                } catch (error) {
+                  console.error('Erro ao alterar status:', error);
+                }
+              }}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border ${
+                conversation?.status === 'resolved'
+                  ? isDark
+                    ? 'border-green-500/20 bg-green-500/10 hover:bg-green-500/20 text-green-400'
+                    : 'border-green-500/20 bg-green-500/5 hover:bg-green-500/10 text-green-600'
+                  : isDark
+                    ? 'border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-400'
+                    : 'border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-600'
               }`}
             >
-              <X className="w-4 h-4" />
-              Encerrar Atendimento
+              {conversation?.status === 'resolved' ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Retomar Atendimento
+                </>
+              ) : (
+                <>
+                  <X className="w-4 h-4" />
+                  Marcar como Resolvido
+                </>
+              )}
             </button>
           </div>
         </div>

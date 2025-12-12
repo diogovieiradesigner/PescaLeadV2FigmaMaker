@@ -12,6 +12,7 @@ interface UseSingleConversationReturn {
   error: string | null;
   sendMessage: (messageData: any) => Promise<void>;
   markAsResolved: () => Promise<void>;
+  changeStatus: (status: string) => Promise<void>;
   clearHistory: () => Promise<void>;
   deleteConversation: () => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -264,12 +265,26 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
     }
   }, [conversationId, workspaceId]);
 
-  const markAsResolved = useCallback(async () => {
+  const changeStatus = useCallback(async (status: string) => {
       if(!conversationId) return;
-      // Logic to update status
-      // For now just a log, implementation depends on updating conversation table
-      console.log('Mark as resolved not implemented in hook yet');
+      try {
+        const { error } = await supabase
+          .from('conversations')
+          .update({ status })
+          .eq('id', conversationId);
+
+        if (error) throw error;
+
+        setConversation(prev => prev ? { ...prev, status } : null);
+      } catch (err) {
+        console.error('Erro ao alterar status:', err);
+        toast.error('Erro ao alterar status da conversa');
+      }
   }, [conversationId]);
+
+  const markAsResolved = useCallback(async () => {
+      await changeStatus('resolved');
+  }, [changeStatus]);
   
   const clearHistory = useCallback(async () => {
       if(!conversationId) return;
@@ -366,6 +381,7 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
     error,
     sendMessage,
     markAsResolved,
+    changeStatus,
     clearHistory,
     deleteConversation,
     deleteMessage,

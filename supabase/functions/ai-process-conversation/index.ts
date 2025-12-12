@@ -5,8 +5,8 @@
 // ============================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-// VERSION 39 - FIX: Client name info moved to TOP of system prompt with explicit labels
-const FUNCTION_VERSION = "v41-tools-prompt";
+// VERSION 42 - FIX: Get tools directly from ai_agent_system_tools table
+const FUNCTION_VERSION = "v42-tools-direct";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -90,6 +90,165 @@ class PipelineLogger {
     return this.pipelineId;
   }
 }
+
+// ==================== GET AGENT TOOLS DIRECTLY ====================
+// Busca tools diretamente das tabelas ai_system_tools e ai_agent_system_tools
+// Substitui a RPC get_agent_tools que usava tabela errada
+async function getAgentToolsDirect(supabase: any, agentId: string) {
+  // Buscar tools habilitadas para este agente
+  const { data: agentTools, error } = await supabase
+    .from('ai_agent_system_tools')
+    .select(`
+      system_tool_id,
+      is_enabled,
+      ai_system_tools (
+        id,
+        name,
+        description,
+        category,
+        is_active
+      )
+    `)
+    .eq('agent_id', agentId)
+    .eq('is_enabled', true);
+
+  if (error) {
+    console.error('[Tools] Error fetching agent tools:', error);
+    return [];
+  }
+
+  if (!agentTools || agentTools.length === 0) {
+    console.log('[Tools] No tools enabled for this agent');
+    return [];
+  }
+
+  // Construir tools no formato OpenAI/OpenRouter
+  const tools: any[] = [];
+
+  for (const at of agentTools) {
+    const st = at.ai_system_tools;
+    if (!st || !st.is_active) continue;
+
+    switch (st.name) {
+      case 'transferir_para_humano':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'transferir_para_humano',
+            description: 'Transfere a conversa para um atendente humano quando o cliente solicita ou em situações que exigem atenção humana. Use quando: cliente pede explicitamente, reclamação grave, situação complexa, cliente muito insatisfeito.',
+            parameters: {
+              type: 'object',
+              properties: {
+                motivo: { type: 'string', description: 'Motivo claro da transferência' },
+                resumo_conversa: { type: 'string', description: 'Resumo breve do que foi conversado' },
+                prioridade: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'Urgência da transferência' }
+              },
+              required: ['motivo', 'resumo_conversa']
+            }
+          }
+        });
+        break;
+
+      case 'finalizar_atendimento':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'finalizar_atendimento',
+            description: 'Marca o atendimento como concluído quando a demanda do cliente foi totalmente resolvida.',
+            parameters: {
+              type: 'object',
+              properties: {
+                resumo: { type: 'string', description: 'Resumo do que foi resolvido no atendimento' }
+              },
+              required: ['resumo']
+            }
+          }
+        });
+        break;
+
+      case 'atualizar_crm':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'atualizar_crm',
+            description: 'Atualiza informações do lead no CRM quando o cliente fornece dados importantes.',
+            parameters: {
+              type: 'object',
+              properties: {
+                campo: { type: 'string', description: 'Campo a atualizar (empresa, cargo, email, telefone)' },
+                valor: { type: 'string', description: 'Novo valor para o campo' },
+                observacao: { type: 'string', description: 'Observação adicional (opcional)' }
+              },
+              required: ['campo', 'valor']
+            }
+          }
+        });
+        break;
+
+      case 'agendar_reuniao':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'agendar_reuniao',
+            description: 'Agenda uma reunião ou compromisso no calendário. Use quando o cliente quiser marcar reunião, visita ou demonstração.',
+            parameters: {
+              type: 'object',
+              properties: {
+                titulo: { type: 'string', description: 'Título do evento' },
+                data: { type: 'string', description: 'Data (YYYY-MM-DD)' },
+                hora_inicio: { type: 'string', description: 'Hora início (HH:MM)' },
+                hora_fim: { type: 'string', description: 'Hora fim (HH:MM)' },
+                descricao: { type: 'string', description: 'Descrição ou notas (opcional)' }
+              },
+              required: ['titulo', 'data', 'hora_inicio', 'hora_fim']
+            }
+          }
+        });
+        break;
+
+      case 'consultar_disponibilidade':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'consultar_disponibilidade',
+            description: 'Consulta horários disponíveis no calendário para agendamento.',
+            parameters: {
+              type: 'object',
+              properties: {
+                data: { type: 'string', description: 'Data (YYYY-MM-DD)' },
+                periodo: { type: 'string', enum: ['manha', 'tarde', 'dia_todo'], description: 'Período do dia' }
+              },
+              required: ['data']
+            }
+          }
+        });
+        break;
+
+      case 'enviar_documento':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'enviar_documento',
+            description: 'Envia um documento ou arquivo para o cliente.',
+            parameters: {
+              type: 'object',
+              properties: {
+                tipo_documento: { type: 'string', enum: ['catalogo', 'proposta', 'contrato', 'apresentacao', 'outro'], description: 'Tipo de documento' },
+                nome_documento: { type: 'string', description: 'Nome específico (opcional)' },
+                mensagem: { type: 'string', description: 'Mensagem para acompanhar (opcional)' }
+              },
+              required: ['tipo_documento']
+            }
+          }
+        });
+        break;
+    }
+  }
+
+  console.log(`[Tools] Loaded ${tools.length} tools for agent ${agentId}`);
+  return tools;
+}
+
 // ==================== AUTO CRM LEAD CREATION ====================
 async function createLeadIfNeeded(supabase, conversationId, agentId, crmAutoConfig, logger) {
   const stepStart = Date.now();
@@ -991,8 +1150,8 @@ Deno.serve(async (req) => {
     } else {
       await logger.step("orchestrator", "Orquestrador", "🧠", "skipped", "ℹ️ Orquestrador desabilitado", { orchestrator_enabled: false }, null, null, "Feature desabilitada", null, 0, 0, 1);
     }
-    // TOOLS
-    const { data: tools } = await supabase.rpc("get_agent_tools", { p_agent_id: payload.agent_id });
+    // TOOLS - Busca direta das tabelas (substituindo RPC que usava tabela errada)
+    const tools = await getAgentToolsDirect(supabase, payload.agent_id);
     const conversationHistory = (messages || []).map((msg) => { let content = msg.text_content || ""; if (msg.transcription && ["audio", "image", "video"].includes(msg.content_type)) content = "[" + msg.content_type.toUpperCase() + "] " + msg.transcription; return { role: msg.message_type === "received" ? "user" : "assistant", content }; }).filter((msg) => msg.content.trim() !== "");
     // RAG
     let ragContext = "";

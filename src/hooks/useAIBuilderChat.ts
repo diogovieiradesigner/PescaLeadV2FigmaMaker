@@ -43,6 +43,15 @@ export interface PipelineInfo {
   steps: PipelineStep[];
 }
 
+export interface ToolCall {
+  name: string;
+  status: 'success' | 'error' | 'skipped';
+  displayName?: string;
+  params?: Record<string, any>;
+  result?: Record<string, any>;
+  isPreview?: boolean;
+}
+
 export interface MessageMetadata {
   tokensUsed?: number;
   durationMs?: number;
@@ -51,6 +60,7 @@ export interface MessageMetadata {
   guardrailPassed?: boolean;
   pipelineId?: string;
   pipeline?: PipelineInfo | null;
+  toolCalls?: ToolCall[];
 }
 
 export interface Message {
@@ -188,13 +198,26 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
                 }))
               };
 
+              // Extrair tool calls dos steps do pipeline
+              const toolCalls: ToolCall[] = transformedPipeline.steps
+                .filter(step => step.key.startsWith('tool_'))
+                .map(step => ({
+                  name: step.key.replace('tool_', ''),
+                  status: step.status as 'success' | 'error' | 'skipped',
+                  displayName: step.name,
+                  params: step.inputData || undefined,
+                  result: step.outputData || undefined,
+                  isPreview: step.config?.preview_mode || false
+                }));
+
               return {
                 ...baseMessage,
                 metadata: {
                   pipelineId: pipelineData.id,
                   tokensUsed: pipelineData.total_tokens_used,
                   durationMs: pipelineData.total_duration_ms,
-                  pipeline: transformedPipeline
+                  pipeline: transformedPipeline,
+                  toolCalls: toolCalls.length > 0 ? toolCalls : undefined
                 }
               };
             }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -15,7 +15,7 @@ import {
   User,
   Menu,
   Settings,
-  MoreVertical,
+  GripVertical,
 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { ProfileMenu } from './ProfileMenu';
@@ -55,6 +55,8 @@ export function CalendarView({
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [draggedEvent, setDraggedEvent] = useState<InternalEventWithRelations | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
 
   const {
     currentDate,
@@ -147,6 +149,83 @@ export function CalendarView({
     const dateKey = formatLocalDate(date);
     return eventsByDate[dateKey] || [];
   };
+
+  // Drag and Drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, event: InternalEventWithRelations) => {
+    e.stopPropagation();
+    setDraggedEvent(event);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', event.id);
+    // Add a slight delay to show the dragging state
+    setTimeout(() => {
+      (e.target as HTMLElement).style.opacity = '0.5';
+    }, 0);
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    (e.target as HTMLElement).style.opacity = '1';
+    setDraggedEvent(null);
+    setDragOverDate(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, dateKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverDate !== dateKey) {
+      setDragOverDate(dateKey);
+    }
+  }, [dragOverDate]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    // Only clear if leaving the cell entirely
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      setDragOverDate(null);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetDate: Date) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverDate(null);
+
+    if (!draggedEvent) return;
+
+    // Calculate the new start and end times
+    const originalStart = new Date(draggedEvent.start_time);
+    const originalEnd = new Date(draggedEvent.end_time);
+    const duration = originalEnd.getTime() - originalStart.getTime();
+
+    // Keep the same time, just change the date
+    const newStart = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      targetDate.getDate(),
+      originalStart.getHours(),
+      originalStart.getMinutes(),
+      originalStart.getSeconds()
+    );
+    const newEnd = new Date(newStart.getTime() + duration);
+
+    // Don't update if dropped on the same day
+    if (formatLocalDate(originalStart) === formatLocalDate(targetDate)) {
+      setDraggedEvent(null);
+      return;
+    }
+
+    try {
+      await updateEvent(draggedEvent.id, {
+        start_time: newStart.toISOString(),
+        end_time: newEnd.toISOString(),
+      });
+    } catch (error) {
+      console.error('[CalendarView] Error moving event:', error);
+    }
+
+    setDraggedEvent(null);
+  }, [draggedEvent, updateEvent, formatLocalDate]);
 
   // Renderizar evento no calendário
   const renderEventDot = (event: InternalEventWithRelations) => {
@@ -405,17 +484,23 @@ export function CalendarView({
                 const isSelected =
                   date.toDateString() === currentDate.toDateString();
                 const maxVisibleEvents = 2; // Número máximo de eventos visíveis por dia
+                const dateKey = formatLocalDate(date);
+                const isDragOver = dragOverDate === dateKey;
 
                 return (
                   <div
                     key={index}
                     onClick={() => goToDate(date)}
+                    onDragOver={(e) => handleDragOver(e, dateKey)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, date)}
                     className={cn(
-                      'min-h-[80px] md:min-h-[110px] p-1 md:p-2 border-b border-r cursor-pointer transition-colors overflow-hidden',
+                      'min-h-[80px] md:min-h-[110px] p-1 md:p-2 border-b border-r cursor-pointer transition-all overflow-hidden',
                       isDark ? 'border-white/5' : 'border-gray-100',
                       !isCurrentMonth && (isDark ? 'bg-white/[0.02]' : 'bg-gray-50'),
                       isSelected && (isDark ? 'bg-blue-500/10' : 'bg-blue-50'),
-                      isToday && 'ring-1 ring-inset ring-blue-500'
+                      isToday && 'ring-1 ring-inset ring-blue-500',
+                      isDragOver && (isDark ? 'bg-blue-500/20 ring-2 ring-blue-500' : 'bg-blue-100 ring-2 ring-blue-500')
                     )}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -436,18 +521,23 @@ export function CalendarView({
                       {dayEvents.slice(0, maxVisibleEvents).map((event) => {
                         const config = EVENT_TYPE_CONFIG[event.event_type];
                         const isCancelled = event.event_status === 'cancelled';
+                        const isDraggable = !isCancelled;
                         return (
                           <div
                             key={event.id}
+                            draggable={isDraggable}
+                            onDragStart={(e) => isDraggable && handleDragStart(e, event)}
+                            onDragEnd={handleDragEnd}
                             onClick={(e) => {
                               e.stopPropagation();
                               openEditEventModal(event);
                             }}
                             className={cn(
-                              'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate cursor-pointer transition-opacity hover:opacity-80',
+                              'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate transition-all group',
                               isCancelled
-                                ? 'line-through opacity-60'
-                                : 'text-white font-medium'
+                                ? 'line-through opacity-60 cursor-pointer'
+                                : 'text-white font-medium cursor-grab active:cursor-grabbing hover:opacity-90',
+                              draggedEvent?.id === event.id && 'opacity-50 ring-2 ring-white'
                             )}
                             style={{
                               backgroundColor: isCancelled
@@ -457,7 +547,7 @@ export function CalendarView({
                                 ? (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(75, 85, 99, 1)')
                                 : 'white'
                             }}
-                            title={`${formatTime(event.start_time)} - ${event.title}${isCancelled ? ' (Cancelado)' : ''}`}
+                            title={`${formatTime(event.start_time)} - ${event.title}${isCancelled ? ' (Cancelado)' : ''}\n${isDraggable ? 'Arraste para mover' : ''}`}
                           >
                             <span className="hidden md:inline">{formatTime(event.start_time)} </span>
                             {event.title}

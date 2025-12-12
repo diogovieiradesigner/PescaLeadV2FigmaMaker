@@ -24,6 +24,7 @@ import { ExtractionProgress } from './components/ExtractionProgress';
 import { CampaignView } from './components/CampaignView';
 import { AIServiceView } from './components/AIServiceView';
 import { AgentLogsView } from './components/AgentLogsView';
+import { CalendarView } from './components/CalendarView';
 import { MoveColumnLeadsModal } from './components/MoveColumnLeadsModal';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
@@ -50,7 +51,7 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
-  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs'>('dashboard');
+  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs' | 'calendar'>('dashboard');
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
   const [isAddFunnelModalOpen, setIsAddFunnelModalOpen] = useState(false);
@@ -1045,11 +1046,18 @@ function AppContent() {
             onNavigateToLogs={() => setCurrentView('agent-logs')}
           />
         ) : currentView === 'agent-logs' ? (
-          <AgentLogsView 
-            theme={theme} 
-            onBack={() => setCurrentView('ai-service')} 
+          <AgentLogsView
+            theme={theme}
+            onBack={() => setCurrentView('ai-service')}
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
+          />
+        ) : currentView === 'calendar' ? (
+          <CalendarView
+            theme={theme}
+            onThemeToggle={toggleTheme}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
+            onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
           />
         ) : (
           <>

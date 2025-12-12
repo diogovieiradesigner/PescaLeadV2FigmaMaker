@@ -1,4 +1,4 @@
-import { Home, Target, MessageSquare, ChevronLeft, ChevronRight, Download, Megaphone, Bot } from 'lucide-react';
+import { Home, Target, MessageSquare, ChevronLeft, ChevronRight, Download, Megaphone, Bot, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Theme } from '../hooks/useTheme';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -17,6 +17,7 @@ const navItems = [
   { icon: Home, label: 'Dashboard', active: false, view: 'dashboard' },
   { icon: Target, label: 'Pipeline', active: true, view: 'pipeline' },
   { icon: MessageSquare, label: 'Chat', active: false, view: 'chat' },
+  { icon: Calendar, label: 'Calendário', active: false, view: 'calendar' },
   { icon: Download, label: 'Extração', active: false, view: 'extraction' },
   { icon: Megaphone, label: 'Campanha', active: false, view: 'campaign' },
   { icon: Bot, label: 'Atendimento de I.A', active: false, view: 'ai-service' },

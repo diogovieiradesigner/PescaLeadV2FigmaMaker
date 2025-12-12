@@ -6,7 +6,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 // VERSION 39 - FIX: Client name info moved to TOP of system prompt with explicit labels
-const FUNCTION_VERSION = "v40-transcription-wait";
+const FUNCTION_VERSION = "v41-tools-prompt";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -509,6 +509,167 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
       await supabase.from("lead_activities").insert({ lead_id: context.leadId, activity_type: "note", description: previewPrefix + `Campo personalizado "${customField.name}" atualizado para "${valor}" via IA.${observacao ? " Obs: " + observacao : ""}` });
       return { success: true, result: { updated: true, field: customField.name, field_type: "custom", custom_field_id: customField.id }, message: previewPrefix + `Campo personalizado "${customField.name}" atualizado com sucesso.` };
     }
+    // ==================== CALENDAR TOOLS ====================
+    case "agendar_reuniao": {
+      const stepStart = Date.now();
+      try {
+        // Validar parâmetros obrigatórios
+        if (!args.titulo || !args.data || !args.hora) {
+          return { success: false, result: null, message: "Parâmetros obrigatórios: titulo, data (YYYY-MM-DD), hora (HH:MM)" };
+        }
+        // Buscar workspace_id do agente
+        const { data: agentData } = await supabase.from("ai_agents").select("workspace_id").eq("id", context.agentId).single();
+        if (!agentData?.workspace_id) {
+          return { success: false, result: null, message: "Workspace não encontrado para o agente" };
+        }
+        const workspaceId = agentData.workspace_id;
+        // Buscar calendário interno do workspace
+        let { data: calendar } = await supabase.from("internal_calendars").select("id").eq("workspace_id", workspaceId).eq("is_active", true).limit(1).single();
+        if (!calendar) {
+          // Criar calendário padrão se não existir
+          const { data: newCalendar, error: createError } = await supabase.from("internal_calendars").insert({
+            workspace_id: workspaceId,
+            name: "Calendário Principal",
+            calendar_type: "default",
+            is_active: true,
+            timezone: "America/Sao_Paulo"
+          }).select("id").single();
+          if (createError) {
+            return { success: false, result: null, message: "Erro ao criar calendário: " + createError.message };
+          }
+          calendar = newCalendar;
+        }
+        // Montar data/hora do evento
+        const startDateTime = new Date(`${args.data}T${args.hora}:00`);
+        const durationMinutes = args.duracao_minutos || 60;
+        const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
+        // Verificar disponibilidade
+        const { data: conflictingEvents } = await supabase.from("internal_events")
+          .select("id, title, start_time, end_time")
+          .eq("workspace_id", workspaceId)
+          .neq("event_status", "cancelled")
+          .or(`and(start_time.lt.${endDateTime.toISOString()},end_time.gt.${startDateTime.toISOString()})`);
+        if (conflictingEvents && conflictingEvents.length > 0) {
+          const conflicts = conflictingEvents.map((e: any) => `${e.title} (${new Date(e.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`).join(", ");
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "warning", `⚠️ Conflito de horário`, { preview_mode: isPreview }, `${args.data} ${args.hora}`, args, `Conflito com: ${conflicts}`, { conflicting_events: conflictingEvents }, 0, 0, Date.now() - stepStart);
+          return { success: false, result: { conflicts: conflictingEvents }, message: `Horário indisponível. Já existe(m) evento(s) neste horário: ${conflicts}. Por favor, sugira outro horário ao cliente.` };
+        }
+        // Criar o evento
+        const eventData = {
+          workspace_id: workspaceId,
+          internal_calendar_id: calendar.id,
+          title: args.titulo,
+          description: args.observacoes || null,
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
+          event_status: "tentative",
+          event_type: "meeting",
+          lead_id: context.leadId || null,
+          conversation_id: context.conversationId || null,
+        };
+        if (isPreview) {
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "success", `✅ Evento seria criado (Preview)`, { preview_mode: true }, `${args.titulo} - ${args.data} ${args.hora}`, args, `Duração: ${durationMinutes} min`, eventData, 0, 0, Date.now() - stepStart);
+          return { success: true, result: { scheduled: true, preview: true, event_data: eventData }, message: previewPrefix + `Reunião "${args.titulo}" seria agendada para ${args.data} às ${args.hora} (${durationMinutes} min).` };
+        }
+        const { data: newEvent, error: eventError } = await supabase.from("internal_events").insert(eventData).select("id, title, start_time, end_time").single();
+        if (eventError) {
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "error", `❌ Erro ao criar evento`, { preview_mode: isPreview }, `${args.titulo} - ${args.data} ${args.hora}`, args, null, null, 0, 0, Date.now() - stepStart, eventError.message);
+          return { success: false, result: null, message: "Erro ao agendar reunião: " + eventError.message };
+        }
+        // Registrar atividade no lead se existir
+        if (context.leadId) {
+          await supabase.from("lead_activities").insert({
+            lead_id: context.leadId,
+            activity_type: "meeting",
+            description: `Reunião agendada via IA: "${args.titulo}" para ${args.data} às ${args.hora}`,
+            metadata: { event_id: newEvent.id }
+          });
+        }
+        await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "success", `✅ Evento criado: ${newEvent.title}`, { preview_mode: isPreview }, `${args.titulo} - ${args.data} ${args.hora}`, args, `ID: ${newEvent.id}`, { event_id: newEvent.id, start_time: newEvent.start_time, end_time: newEvent.end_time }, 0, 0, Date.now() - stepStart);
+        return { success: true, result: { scheduled: true, event_id: newEvent.id, start_time: newEvent.start_time, end_time: newEvent.end_time }, message: `Reunião "${args.titulo}" agendada com sucesso para ${args.data} às ${args.hora} (${durationMinutes} minutos).` };
+      } catch (error: any) {
+        await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "error", `❌ Erro inesperado`, { preview_mode: isPreview }, null, args, null, null, 0, 0, Date.now() - stepStart, error?.message || String(error));
+        return { success: false, result: null, message: "Erro ao agendar reunião: " + (error?.message || String(error)) };
+      }
+    }
+    case "consultar_disponibilidade": {
+      const stepStart = Date.now();
+      try {
+        // Validar parâmetros
+        if (!args.data) {
+          return { success: false, result: null, message: "Parâmetro obrigatório: data (YYYY-MM-DD)" };
+        }
+        // Buscar workspace_id do agente
+        const { data: agentData } = await supabase.from("ai_agents").select("workspace_id").eq("id", context.agentId).single();
+        if (!agentData?.workspace_id) {
+          return { success: false, result: null, message: "Workspace não encontrado para o agente" };
+        }
+        const workspaceId = agentData.workspace_id;
+        // Buscar configurações de disponibilidade
+        const { data: calendarSettings } = await supabase.from("calendar_settings").select("availability, buffer_between_events").eq("workspace_id", workspaceId).limit(1).single();
+        // Dia da semana (0 = domingo, 1 = segunda, etc.)
+        const requestedDate = new Date(args.data + "T12:00:00");
+        const dayOfWeek = requestedDate.getDay();
+        const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+        const dayName = dayNames[dayOfWeek];
+        // Disponibilidade padrão se não configurado
+        const defaultAvailability = { start: "09:00", end: "18:00" };
+        const dayAvailability = calendarSettings?.availability?.[dayName] || [defaultAvailability];
+        if (!dayAvailability || dayAvailability.length === 0) {
+          await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 Sem expediente configurado`, { preview_mode: isPreview }, args.data, args, "Sem horários disponíveis", { day: dayName, available: false }, 0, 0, Date.now() - stepStart);
+          return { success: true, result: { date: args.data, day_name: dayName, available_slots: [], message: "Sem expediente neste dia" }, message: `Não há horários de atendimento configurados para ${dayName === 'sunday' ? 'domingo' : dayName === 'saturday' ? 'sábado' : 'este dia'}.` };
+        }
+        // Buscar eventos existentes no dia
+        const dayStart = new Date(args.data + "T00:00:00").toISOString();
+        const dayEnd = new Date(args.data + "T23:59:59").toISOString();
+        const { data: existingEvents } = await supabase.from("internal_events")
+          .select("start_time, end_time, title")
+          .eq("workspace_id", workspaceId)
+          .neq("event_status", "cancelled")
+          .gte("start_time", dayStart)
+          .lte("start_time", dayEnd)
+          .order("start_time");
+        // Calcular slots disponíveis
+        const bufferMinutes = calendarSettings?.buffer_between_events || 15;
+        const slotDuration = 60; // 1 hora por slot
+        const availableSlots = [];
+        for (const period of dayAvailability) {
+          const periodStart = new Date(`${args.data}T${period.start}:00`);
+          const periodEnd = new Date(`${args.data}T${period.end}:00`);
+          let currentSlotStart = periodStart;
+          while (currentSlotStart.getTime() + slotDuration * 60 * 1000 <= periodEnd.getTime()) {
+            const currentSlotEnd = new Date(currentSlotStart.getTime() + slotDuration * 60 * 1000);
+            // Verificar se há conflito com eventos existentes
+            const hasConflict = existingEvents?.some((event: any) => {
+              const eventStart = new Date(event.start_time);
+              const eventEnd = new Date(event.end_time);
+              // Adicionar buffer
+              const bufferedEventStart = new Date(eventStart.getTime() - bufferMinutes * 60 * 1000);
+              const bufferedEventEnd = new Date(eventEnd.getTime() + bufferMinutes * 60 * 1000);
+              return currentSlotStart < bufferedEventEnd && currentSlotEnd > bufferedEventStart;
+            });
+            if (!hasConflict) {
+              availableSlots.push({
+                start: currentSlotStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                end: currentSlotEnd.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              });
+            }
+            currentSlotStart = new Date(currentSlotStart.getTime() + 30 * 60 * 1000); // Avançar 30 min
+          }
+        }
+        const slotsText = availableSlots.length > 0
+          ? availableSlots.map(s => s.start).join(", ")
+          : "Nenhum horário disponível";
+        await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 ${availableSlots.length} slots disponíveis`, { preview_mode: isPreview }, args.data, args, slotsText, { slots_count: availableSlots.length, slots: availableSlots }, 0, 0, Date.now() - stepStart);
+        if (availableSlots.length === 0) {
+          return { success: true, result: { date: args.data, available_slots: [], busy_events: existingEvents?.length || 0 }, message: `Não há horários disponíveis para ${args.data}. Todos os horários estão ocupados. Sugira outra data ao cliente.` };
+        }
+        return { success: true, result: { date: args.data, available_slots: availableSlots, slots_count: availableSlots.length }, message: `Horários disponíveis para ${args.data}: ${slotsText}. Pergunte ao cliente qual horário prefere.` };
+      } catch (error: any) {
+        await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "error", `❌ Erro`, { preview_mode: isPreview }, null, args, null, null, 0, 0, Date.now() - stepStart, error?.message || String(error));
+        return { success: false, result: null, message: "Erro ao consultar disponibilidade: " + (error?.message || String(error)) };
+      }
+    }
     default:
       return { success: false, result: null, message: "Tool desconhecido: " + toolName };
   }
@@ -900,7 +1061,28 @@ Deno.serve(async (req) => {
     
     // Adiciona RAG
     fullSystemPrompt += ragContext;
-    
+
+    // Adiciona seção de TOOLS disponíveis (automático e conciso)
+    console.log("[TOOLS DEBUG] tools variable:", tools ? `Array with ${tools.length} items` : "null/undefined");
+    if (tools && tools.length > 0) {
+      fullSystemPrompt += "\n\n=== FERRAMENTAS DISPONÍVEIS ===\n";
+      fullSystemPrompt += "Você tem acesso às seguintes ferramentas. Use-as quando apropriado:\n\n";
+      for (const tool of tools) {
+        const fn = tool.function;
+        fullSystemPrompt += `• ${fn.name}: ${fn.description}\n`;
+        // Adiciona parâmetros obrigatórios de forma concisa
+        if (fn.parameters?.required?.length > 0) {
+          fullSystemPrompt += `  Params: ${fn.parameters.required.join(", ")}\n`;
+        }
+      }
+      fullSystemPrompt += "\nIMPORTANTE: Chame a ferramenta apropriada quando o cliente:\n";
+      fullSystemPrompt += "- Pedir para agendar/marcar reunião → use 'agendar_reuniao'\n";
+      fullSystemPrompt += "- Perguntar horários disponíveis → use 'consultar_disponibilidade'\n";
+      fullSystemPrompt += "- Pedir para falar com humano → use 'transferir_para_humano'\n";
+      fullSystemPrompt += "- Concluir o atendimento → use 'finalizar_atendimento'\n";
+      fullSystemPrompt += "=== FIM FERRAMENTAS ===";
+    }
+
     // Adiciona resumo da sessão
     if (session?.context_summary) fullSystemPrompt += "\n\nResumo da sessao anterior:\n" + session.context_summary;
     fullSystemPrompt += "\n\nData/hora atual: " + new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });

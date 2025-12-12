@@ -69,7 +69,10 @@ interface EventModalProps {
   selectedDate: Date;
   settings: CalendarSettings | null;
   workspaceId: string;
-  onCreate: (data: Omit<InternalEventCreate, 'workspace_id' | 'internal_calendar_id'>) => Promise<void>;
+  onCreate: (
+    data: Omit<InternalEventCreate, 'workspace_id' | 'internal_calendar_id'>,
+    reminders?: { remind_before_minutes: number; inbox_id?: string; message_template?: string }[]
+  ) => Promise<void>;
   onUpdate: (eventId: string, data: InternalEventUpdate) => Promise<void>;
   onCancel: (eventId: string, reason?: string) => Promise<void>;
   onDelete: (eventId: string) => Promise<void>;
@@ -411,9 +414,16 @@ export function EventModal({
           await replaceEventReminders(event.id, workspaceId, []);
         }
       } else {
-        // Create event and get ID from callback
-        // Note: onCreate doesn't return the event ID, so we need to handle reminders differently
-        // For now, reminders will be saved on edit. A future improvement would be to modify onCreate.
+        // Prepare reminders for new event
+        const eventReminders = selectedLead && selectedInboxId && reminders.length > 0
+          ? reminders.map(r => ({
+              remind_before_minutes: r.remind_before_minutes,
+              inbox_id: selectedInboxId,
+              message_template: r.message_template,
+            }))
+          : undefined;
+
+        // Create event with reminders
         await onCreate({
           title: title.trim(),
           description: description.trim() || undefined,
@@ -423,7 +433,7 @@ export function EventModal({
           location: location.trim() || undefined,
           lead_id: selectedLead?.id,
           inbox_id: selectedLead && selectedInboxId ? selectedInboxId : undefined,
-        });
+        }, eventReminders);
       }
     } finally {
       setIsSubmitting(false);

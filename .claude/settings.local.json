@@ -23,7 +23,11 @@
       "Bash(git checkout:*)",
       "Bash(echo PUSH_TO_DEV)",
       "Bash(curl:*)",
-      "mcp__supabase__list_projects"
+      "mcp__supabase__list_projects",
+      "Bash(gh pr create:*)",
+      "Bash(find:*)",
+      "Bash(supabase functions deploy:*)",
+      "Bash(ls -la \"c:\\Users\\Asus\\Pictures\\Pesca lead - Back-end\\src\\supabase\\functions\"\" 2>/dev/null || dir \"c:UsersAsusPicturesPesca lead - Back-endsrcsupabasefunctions \" /B)"
     ]
   },
   "enableAllProjectMcpServers": true,

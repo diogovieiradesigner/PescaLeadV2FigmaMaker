@@ -379,12 +379,13 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   );
   
   // Hook do chat para a aba de Chat
-  const { 
-    conversation, 
-    sendMessage, 
-    markAsResolved, 
-    clearHistory, 
-    deleteConversation, 
+  const {
+    conversation,
+    sendMessage,
+    markAsResolved,
+    changeStatus,
+    clearHistory,
+    deleteConversation,
     deleteMessage,
     refresh,
     setConversation
@@ -799,11 +800,12 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                       isDark ? 'bg-[#000000]' : 'bg-light-bg'
                     }`}>
                        {conversation ? (
-                          <ChatArea 
+                          <ChatArea
                              conversation={conversation}
                              theme={theme}
                              onSendMessage={sendMessage}
                              onMarkAsResolved={markAsResolved}
+                             onStatusChange={(_, status) => changeStatus(status)}
                              onClearHistory={clearHistory}
                              onDeleteConversation={deleteConversation}
                              onDeleteMessage={deleteMessage}

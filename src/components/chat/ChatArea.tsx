@@ -64,13 +64,14 @@ interface ChatAreaProps {
   theme: Theme;
   onSendMessage: (message: Omit<Message, 'id' | 'timestamp' | 'type'>) => void;
   onMarkAsResolved: () => void;
+  onStatusChange?: (conversationId: string, status: string) => void;
   onClearHistory: () => void;
   onDeleteConversation: () => void;
   onNavigateToPipeline?: (leadId: string) => void;
   onDeleteMessage?: (messageId: string) => void;
 }
 
-export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved, onClearHistory, onDeleteConversation, onNavigateToPipeline, onDeleteMessage }: ChatAreaProps) {
+export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved, onStatusChange, onClearHistory, onDeleteConversation, onNavigateToPipeline, onDeleteMessage }: ChatAreaProps) {
   const [messageText, setMessageText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -439,17 +440,27 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          {/* Quick Action: Mark as Resolved */}
-          {conversation.status !== 'resolved' && (
-            <button
-              onClick={onMarkAsResolved}
-              title="Marcar como Resolvido"
-              className="flex items-center gap-2 p-2 sm:px-3 sm:py-2 rounded-lg transition-colors bg-green-600 hover:bg-green-700 text-white"
-            >
-              <CheckCircle className="w-4 h-4" />
-              <span className="text-sm hidden sm:inline">Resolvido</span>
-            </button>
-          )}
+          {/* Quick Action: Toggle Resolved Status */}
+          <button
+            onClick={() => {
+              if (conversation.status === 'resolved') {
+                onStatusChange?.(conversation.id, 'waiting');
+              } else {
+                onMarkAsResolved();
+              }
+            }}
+            title={conversation.status === 'resolved' ? 'Retomar Atendimento' : 'Marcar como Resolvido'}
+            className={`flex items-center gap-2 p-2 sm:px-3 sm:py-2 rounded-lg transition-colors text-white ${
+              conversation.status === 'resolved'
+                ? 'bg-blue-600 hover:bg-blue-700'
+                : 'bg-green-600 hover:bg-green-700'
+            }`}
+          >
+            <CheckCircle className="w-4 h-4" />
+            <span className="text-sm hidden sm:inline">
+              {conversation.status === 'resolved' ? 'Retomar' : 'Marcar Resolvido'}
+            </span>
+          </button>
 
           {/* Actions Menu (3 dots) */}
           <ChatActionsMenu

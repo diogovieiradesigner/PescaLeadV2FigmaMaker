@@ -414,6 +414,7 @@ export function ChatView({
             theme={theme}
             onSendMessage={handleSendMessage}
             onMarkAsResolved={() => selectedConversation && handleMarkAsResolved(selectedConversation.id)}
+            onStatusChange={handleStatusChange}
             onClearHistory={() => selectedConversation && handleClearHistory(selectedConversation.id)}
             onDeleteConversation={() => selectedConversation && handleDeleteConversation(selectedConversation.id)}
             onNavigateToPipeline={onNavigateToPipeline}

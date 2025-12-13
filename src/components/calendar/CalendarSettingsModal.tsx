@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Clock, Plus, Trash2, Save, Loader2, Settings, RotateCcw } from 'lucide-react';
+import { X, Clock, Plus, Trash2, Save, Loader2, Settings, RotateCcw, Link2, Copy, Check, ExternalLink, Palette, Sun, Moon, Monitor, Upload, Image, X as XIcon } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import {
   CalendarSettings,
@@ -8,6 +8,7 @@ import {
   DAYS_OF_WEEK,
   EVENT_TYPE_CONFIG,
   EventType,
+  BookingPageTheme,
 } from '../../types/calendar.types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as calendarService from '../../services/calendar-service';
@@ -37,6 +38,7 @@ interface CalendarSettingsModalProps {
   onClose: () => void;
   settings: CalendarSettings | null | undefined;
   workspaceId: string;
+  workspaceSlug?: string;
 }
 
 export function CalendarSettingsModal({
@@ -45,6 +47,7 @@ export function CalendarSettingsModal({
   onClose,
   settings,
   workspaceId,
+  workspaceSlug,
 }: CalendarSettingsModalProps) {
   const isDark = theme === 'dark';
   const queryClient = useQueryClient();
@@ -89,6 +92,31 @@ export function CalendarSettingsModal({
   const [reminderHours, setReminderHours] = useState(
     settings?.whatsapp_reminder_hours_before ?? 24
   );
+  const [bookingPageTheme, setBookingPageTheme] = useState<BookingPageTheme>(
+    settings?.booking_page_theme ?? 'auto'
+  );
+  const [bookingPageLogo, setBookingPageLogo] = useState<string | null>(
+    settings?.booking_page_logo ?? null
+  );
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Gerar URL do link público
+  const publicBookingUrl = workspaceSlug
+    ? `${window.location.origin}/#/agendar/${workspaceSlug}`
+    : null;
+
+  // Copiar link para clipboard
+  const copyBookingLink = async () => {
+    if (!publicBookingUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicBookingUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  };
 
   // Sincronizar estados quando settings mudar ou modal abrir
   useEffect(() => {
@@ -114,6 +142,8 @@ export function CalendarSettingsModal({
       setWhatsappConfirmation(settings.whatsapp_confirmation_enabled ?? false);
       setWhatsappReminder(settings.whatsapp_reminder_enabled ?? false);
       setReminderHours(settings.whatsapp_reminder_hours_before ?? 24);
+      setBookingPageTheme(settings.booking_page_theme ?? 'auto');
+      setBookingPageLogo(settings.booking_page_logo ?? null);
     } else if (isOpen && !settings) {
       console.log('[CalendarSettingsModal] No settings, using defaults');
       // Reset para valores padrão se não há settings
@@ -125,6 +155,8 @@ export function CalendarSettingsModal({
       setWhatsappConfirmation(false);
       setWhatsappReminder(false);
       setReminderHours(24);
+      setBookingPageTheme('auto');
+      setBookingPageLogo(null);
     }
   }, [isOpen, settings]);
 
@@ -141,6 +173,8 @@ export function CalendarSettingsModal({
         whatsapp_confirmation_enabled: whatsappConfirmation,
         whatsapp_reminder_enabled: whatsappReminder,
         whatsapp_reminder_hours_before: reminderHours,
+        booking_page_theme: bookingPageTheme,
+        booking_page_logo: bookingPageLogo,
       };
       console.log('[CalendarSettingsModal] Saving data:', dataToSave);
       return calendarService.upsertCalendarSettings(dataToSave);
@@ -206,6 +240,53 @@ export function CalendarSettingsModal({
     setWhatsappConfirmation(false);
     setWhatsappReminder(false);
     setReminderHours(24);
+    setBookingPageTheme('auto');
+    setBookingPageLogo(null);
+  };
+
+  // Upload de logo
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo de arquivo
+    if (!file.type.startsWith('image/')) {
+      toast.error('Por favor, selecione uma imagem válida');
+      return;
+    }
+
+    // Validar tamanho (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 2MB');
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    try {
+      // Converter para base64 data URL
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setBookingPageLogo(dataUrl);
+        setIsUploadingLogo(false);
+        toast.success('Logo carregada! Clique em Salvar para aplicar.');
+      };
+      reader.onerror = () => {
+        toast.error('Erro ao carregar imagem');
+        setIsUploadingLogo(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      toast.error('Erro ao carregar logo');
+      setIsUploadingLogo(false);
+    }
+  };
+
+  // Remover logo
+  const handleRemoveLogo = () => {
+    setBookingPageLogo(null);
+    toast.success('Logo removida! Clique em Salvar para aplicar.');
   };
 
   if (!isOpen) return null;
@@ -258,6 +339,189 @@ export function CalendarSettingsModal({
         {/* Body */}
         <div className={`flex-1 overflow-y-auto ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
           <div className="p-6 space-y-6">
+
+            {/* Public Booking Link Section */}
+            {publicBookingUrl && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <Link2 className={`w-4 h-4 ${isDark ? 'text-[#0169D9]' : 'text-[#0169D9]'}`} />
+                  <h3 className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                    Link de Agendamento Público
+                  </h3>
+                </div>
+
+                <div
+                  className={`p-4 rounded-xl border ${
+                    isDark ? 'bg-true-black border-white/[0.08]' : 'bg-light-bg border-border-light'
+                  }`}
+                >
+                  <p className={`text-xs mb-3 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                    Compartilhe este link para que clientes possam agendar reuniões com você
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`flex-1 px-3 py-2.5 rounded-lg text-sm truncate ${
+                        isDark
+                          ? 'bg-elevated border border-white/[0.08] text-white/70'
+                          : 'bg-white border border-border-light text-text-secondary-light'
+                      }`}
+                    >
+                      {publicBookingUrl}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={copyBookingLink}
+                      className={`p-2.5 rounded-lg transition-colors ${
+                        linkCopied
+                          ? 'bg-green-500/20 text-green-500'
+                          : isDark
+                            ? 'bg-[#0169D9]/10 text-[#0169D9] hover:bg-[#0169D9]/20'
+                            : 'bg-[#0169D9]/10 text-[#0169D9] hover:bg-[#0169D9]/20'
+                      }`}
+                      title={linkCopied ? 'Copiado!' : 'Copiar link'}
+                    >
+                      {linkCopied ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <a
+                      href={publicBookingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`p-2.5 rounded-lg transition-colors ${
+                        isDark
+                          ? 'bg-white/[0.05] text-white/70 hover:bg-white/[0.08]'
+                          : 'bg-gray-100 text-text-secondary-light hover:bg-gray-200'
+                      }`}
+                      title="Abrir em nova aba"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                  {/* Seletor de Tema */}
+                  <div className="mt-4 pt-4 border-t border-white/[0.08]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Palette className={`w-3.5 h-3.5 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`} />
+                      <span className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                        Tema da página
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'light' as const, label: 'Claro', Icon: Sun },
+                        { value: 'dark' as const, label: 'Escuro', Icon: Moon },
+                        { value: 'auto' as const, label: 'Auto', Icon: Monitor },
+                      ].map(({ value, label, Icon }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setBookingPageTheme(value)}
+                          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                            bookingPageTheme === value
+                              ? 'bg-[#0169D9] text-white'
+                              : isDark
+                                ? 'bg-white/[0.05] text-white/70 hover:bg-white/[0.08]'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Upload de Logo */}
+                  <div className="mt-4 pt-4 border-t border-white/[0.08]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Image className={`w-3.5 h-3.5 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`} />
+                      <span className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                        Logo da página
+                      </span>
+                    </div>
+
+                    {bookingPageLogo ? (
+                      <div className="flex items-center gap-3">
+                        <div className={`relative w-16 h-16 rounded-lg overflow-hidden border ${
+                          isDark ? 'border-white/[0.08]' : 'border-gray-200'
+                        }`}>
+                          <img
+                            src={bookingPageLogo}
+                            alt="Logo"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                            isDark
+                              ? 'bg-white/[0.05] text-white/70 hover:bg-white/[0.08]'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}>
+                            <Upload className="w-3.5 h-3.5" />
+                            Alterar
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              className="hidden"
+                              disabled={isUploadingLogo}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleRemoveLogo}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                              isDark
+                                ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                                : 'bg-red-50 text-red-500 hover:bg-red-100'
+                            }`}
+                          >
+                            <XIcon className="w-3.5 h-3.5" />
+                            Remover
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className={`flex flex-col items-center justify-center w-full h-24 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
+                        isUploadingLogo
+                          ? isDark
+                            ? 'border-white/[0.15] bg-white/[0.02]'
+                            : 'border-gray-300 bg-gray-50'
+                          : isDark
+                            ? 'border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.02]'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}>
+                        {isUploadingLogo ? (
+                          <Loader2 className={`w-6 h-6 animate-spin ${isDark ? 'text-white/50' : 'text-gray-400'}`} />
+                        ) : (
+                          <>
+                            <Upload className={`w-6 h-6 mb-1 ${isDark ? 'text-white/30' : 'text-gray-400'}`} />
+                            <span className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                              Clique para enviar
+                            </span>
+                            <span className={`text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                              PNG, JPG até 2MB
+                            </span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          className="hidden"
+                          disabled={isUploadingLogo}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
 
             {/* Availability Section */}
             <section>

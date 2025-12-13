@@ -22,15 +22,17 @@ interface UseCalendarOptions {
   workspaceId: string;
   calendarId?: string;
   initialDate?: Date;
+  initialAssigneeFilter?: string;
 }
 
-export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalendarOptions) {
+export function useCalendar({ workspaceId, calendarId, initialDate, initialAssigneeFilter }: UseCalendarOptions) {
   const queryClient = useQueryClient();
 
   // Estado local
   const [currentDate, setCurrentDate] = useState(initialDate || new Date());
   const [selectedEvent, setSelectedEvent] = useState<InternalEventWithRelations | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [assigneeFilter, setAssigneeFilter] = useState<string | null>(initialAssigneeFilter || null);
 
   // Calcular range do mês atual
   const dateRange = useMemo(() => {
@@ -70,6 +72,16 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
   const activeCalendarId = calendarId || calendars[0]?.id;
   const activeCalendar = calendars.find(c => c.id === activeCalendarId);
 
+  // Buscar membros do workspace para filtro
+  const {
+    data: workspaceMembers = [],
+    isLoading: isLoadingMembers,
+  } = useQuery({
+    queryKey: ['workspace-members', workspaceId],
+    queryFn: () => calendarService.fetchWorkspaceMembers(workspaceId),
+    enabled: !!workspaceId,
+  });
+
   // Buscar eventos do mês
   const {
     data: events = [],
@@ -77,12 +89,15 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
     error: eventsError,
     refetch: refetchEvents,
   } = useQuery({
-    queryKey: ['calendar-events', workspaceId, dateRange.start.toISOString(), dateRange.end.toISOString()],
+    queryKey: ['calendar-events', workspaceId, dateRange.start.toISOString(), dateRange.end.toISOString(), assigneeFilter],
     queryFn: () => calendarService.fetchEventsByWorkspace(
       workspaceId,
       dateRange.start,
       dateRange.end,
-      { includeRelations: true }
+      {
+        includeRelations: true,
+        assignedTo: assigneeFilter || undefined,
+      }
     ),
     enabled: !!workspaceId,
   });
@@ -393,7 +408,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
   // ============================================
   // LOADING STATE
   // ============================================
-  const isLoading = isLoadingCalendars || isLoadingEvents || isLoadingSettings;
+  const isLoading = isLoadingCalendars || isLoadingEvents || isLoadingSettings || isLoadingMembers;
   const isMutating = createEventMutation.isPending ||
                      updateEventMutation.isPending ||
                      cancelEventMutation.isPending ||
@@ -404,6 +419,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
     currentDate,
     selectedEvent,
     isEventModalOpen,
+    assigneeFilter,
 
     // Data
     calendars,
@@ -413,6 +429,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
     eventsForSelectedDate,
     upcomingEvents,
     settings,
+    workspaceMembers,
 
     // Loading
     isLoading,
@@ -420,6 +437,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
     isLoadingCalendars,
     isLoadingEvents,
     isLoadingSettings,
+    isLoadingMembers,
 
     // Errors
     calendarsError,
@@ -435,6 +453,9 @@ export function useCalendar({ workspaceId, calendarId, initialDate }: UseCalenda
     openCreateEventModal,
     openEditEventModal,
     closeEventModal,
+
+    // Filter
+    setAssigneeFilter,
 
     // Actions
     createEvent,

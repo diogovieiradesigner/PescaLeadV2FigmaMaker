@@ -9,6 +9,7 @@ import {
   Bell,
   MapPin,
   User,
+  UserCheck,
   FileText,
   Trash2,
   XCircle,
@@ -40,6 +41,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import {
   fetchEventReminders,
   fetchWorkspaceInboxes,
+  fetchWorkspaceMembers,
   replaceEventReminders,
 } from '../../services/calendar-service';
 
@@ -52,6 +54,12 @@ interface LeadOption {
 interface InboxOption {
   id: string;
   name: string;
+}
+
+interface MemberOption {
+  id: string;
+  name: string;
+  avatar_url: string | null;
 }
 
 interface ReminderItem {
@@ -133,6 +141,11 @@ export function EventModal({
   const [showRemindersSection, setShowRemindersSection] = useState(false);
   const [customMessageIndex, setCustomMessageIndex] = useState<number | null>(null);
 
+  // Assignee state
+  const [selectedAssignee, setSelectedAssignee] = useState<MemberOption | null>(null);
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+
   // Search leads
   const searchLeads = useCallback(async (query: string) => {
     if (!query.trim() || !workspaceId) {
@@ -205,12 +218,33 @@ export function EventModal({
     }
   }, []);
 
+  // Load workspace members for assignee selection
+  const loadMembers = useCallback(async () => {
+    if (!workspaceId) return;
+    setIsLoadingMembers(true);
+    try {
+      const data = await fetchWorkspaceMembers(workspaceId);
+      setMembers(data);
+    } catch (err) {
+      console.error('[EventModal] Error loading members:', err);
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  }, [workspaceId]);
+
   // Load inboxes when modal opens with a lead selected
   useEffect(() => {
     if (isOpen && selectedLead) {
       loadInboxes();
     }
   }, [isOpen, selectedLead, loadInboxes]);
+
+  // Load members when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      loadMembers();
+    }
+  }, [isOpen, loadMembers]);
 
   // Initialize form
   useEffect(() => {
@@ -241,6 +275,16 @@ export function EventModal({
       } else {
         setSelectedLead(null);
       }
+      // Set assignee if exists
+      if (event.assignee) {
+        setSelectedAssignee({
+          id: event.assignee.id,
+          name: event.assignee.name,
+          avatar_url: event.assignee.avatar_url,
+        });
+      } else {
+        setSelectedAssignee(null);
+      }
       // Load reminders for existing event
       loadReminders(event.id);
     } else {
@@ -252,6 +296,7 @@ export function EventModal({
       setDuration(settings?.default_durations?.meeting || 60);
       setLocation('');
       setSelectedLead(null);
+      setSelectedAssignee(null);
       // Reset reminders state
       setReminders([]);
       setShowRemindersSection(false);
@@ -396,6 +441,7 @@ export function EventModal({
           location: location.trim() || undefined,
           lead_id: selectedLead?.id || undefined,
           inbox_id: selectedLead && selectedInboxId ? selectedInboxId : undefined,
+          assigned_to: selectedAssignee?.id || undefined,
         });
 
         // Save reminders if lead is selected
@@ -433,6 +479,7 @@ export function EventModal({
           location: location.trim() || undefined,
           lead_id: selectedLead?.id,
           inbox_id: selectedLead && selectedInboxId ? selectedInboxId : undefined,
+          assigned_to: selectedAssignee?.id,
         }, eventReminders);
       }
     } finally {
@@ -807,6 +854,87 @@ export function EventModal({
                   </div>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* Assignee Selection */}
+          <div>
+            <label className={cn(
+              'block text-sm font-medium mb-2',
+              isDark ? 'text-white/70' : 'text-gray-700'
+            )}>
+              <UserCheck className="w-4 h-4 inline mr-1" />
+              Responsável (opcional)
+            </label>
+
+            {isLoadingMembers ? (
+              <div className={cn(
+                'flex items-center gap-2 p-3 rounded-lg',
+                isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'
+              )}>
+                <Loader2 className={cn('w-4 h-4 animate-spin', isDark ? 'text-white/50' : 'text-gray-400')} />
+                <span className={cn('text-sm', isDark ? 'text-white/50' : 'text-gray-500')}>
+                  Carregando membros...
+                </span>
+              </div>
+            ) : selectedAssignee ? (
+              <div className={cn(
+                'flex items-center justify-between p-3 rounded-lg',
+                isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'
+              )}>
+                <div className="flex items-center gap-2">
+                  {selectedAssignee.avatar_url ? (
+                    <img
+                      src={selectedAssignee.avatar_url}
+                      alt={selectedAssignee.name}
+                      className="w-6 h-6 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className={cn(
+                      'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
+                      isDark ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'
+                    )}>
+                      {selectedAssignee.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className={cn('text-sm font-medium', isDark ? 'text-white' : 'text-gray-900')}>
+                    {selectedAssignee.name}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAssignee(null)}
+                  className={cn(
+                    'p-1 rounded transition-colors',
+                    isDark ? 'hover:bg-white/10 text-white/50' : 'hover:bg-gray-200 text-gray-400'
+                  )}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <select
+                value=""
+                onChange={(e) => {
+                  const member = members.find(m => m.id === e.target.value);
+                  if (member) {
+                    setSelectedAssignee(member);
+                  }
+                }}
+                className={cn(
+                  'w-full px-3 py-2 rounded-lg border transition-colors',
+                  isDark
+                    ? 'bg-white/5 border-white/10 text-white focus:border-blue-500'
+                    : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
+                )}
+              >
+                <option value="">Selecionar responsável...</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 

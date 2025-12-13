@@ -13,10 +13,14 @@ import {
   Clock,
   MapPin,
   User,
+  UserCheck,
   Menu,
   Settings,
   GripVertical,
   Trash2,
+  Filter,
+  X,
+  ChevronDown,
 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { ProfileMenu } from './ProfileMenu';
@@ -48,6 +52,31 @@ const EVENT_ICONS: Record<EventType, React.ElementType> = {
   reminder: Bell,
 };
 
+// Cores predefinidas para responsáveis
+const ASSIGNEE_COLORS = [
+  '#3B82F6', // blue-500
+  '#10B981', // emerald-500
+  '#F59E0B', // amber-500
+  '#EF4444', // red-500
+  '#8B5CF6', // violet-500
+  '#EC4899', // pink-500
+  '#06B6D4', // cyan-500
+  '#F97316', // orange-500
+  '#84CC16', // lime-500
+  '#6366F1', // indigo-500
+  '#14B8A6', // teal-500
+  '#A855F7', // purple-500
+];
+
+// Função para obter cor consistente por assignee
+function getAssigneeColor(assigneeId: string, colorMap: Map<string, string>): string {
+  if (!colorMap.has(assigneeId)) {
+    const colorIndex = colorMap.size % ASSIGNEE_COLORS.length;
+    colorMap.set(assigneeId, ASSIGNEE_COLORS[colorIndex]);
+  }
+  return colorMap.get(assigneeId)!;
+}
+
 export function CalendarView({
   theme,
   onThemeToggle,
@@ -59,6 +88,7 @@ export function CalendarView({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [draggedEvent, setDraggedEvent] = useState<InternalEventWithRelations | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; event: InternalEventWithRelations | null; isLoading: boolean }>({
     isOpen: false,
     event: null,
@@ -73,6 +103,9 @@ export function CalendarView({
     upcomingEvents,
     settings,
     isLoading,
+    workspaceMembers,
+    assigneeFilter,
+    setAssigneeFilter,
     goToPreviousMonth,
     goToNextMonth,
     goToToday,
@@ -90,6 +123,23 @@ export function CalendarView({
   } = useCalendar({
     workspaceId: currentWorkspace?.id || '',
   });
+
+  // Mapa de cores por responsável (memoizado)
+  const assigneeColorMap = useMemo(() => {
+    const colorMap = new Map<string, string>();
+    // Pré-popular com membros do workspace para manter cores consistentes
+    workspaceMembers.forEach((member) => {
+      getAssigneeColor(member.id, colorMap);
+    });
+    return colorMap;
+  }, [workspaceMembers]);
+
+  // Nome do responsável filtrado
+  const filteredAssigneeName = useMemo(() => {
+    if (!assigneeFilter) return null;
+    const member = workspaceMembers.find(m => m.id === assigneeFilter);
+    return member?.name || 'Desconhecido';
+  }, [assigneeFilter, workspaceMembers]);
 
   // Dias do mês atual
   const calendarDays = useMemo(() => {
@@ -237,11 +287,15 @@ export function CalendarView({
   // Renderizar evento no calendário
   const renderEventDot = (event: InternalEventWithRelations) => {
     const config = EVENT_TYPE_CONFIG[event.event_type];
+    // Usar cor do responsável se tiver, senão usar cor do tipo
+    const eventColor = event.assigned_to
+      ? getAssigneeColor(event.assigned_to, assigneeColorMap)
+      : config.color;
     return (
       <div
         key={event.id}
         className="w-2 h-2 rounded-full"
-        style={{ backgroundColor: config.color }}
+        style={{ backgroundColor: eventColor }}
         title={event.title}
       />
     );
@@ -253,6 +307,10 @@ export function CalendarView({
     const statusConfig = EVENT_STATUS_CONFIG[event.event_status];
     const Icon = EVENT_ICONS[event.event_type];
     const isCancelled = event.event_status === 'cancelled';
+    // Usar cor do responsável se tiver, senão usar cor do tipo
+    const eventColor = event.assigned_to
+      ? getAssigneeColor(event.assigned_to, assigneeColorMap)
+      : config.color;
 
     const handleDeleteClick = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -291,9 +349,9 @@ export function CalendarView({
           <div className="flex items-start gap-3">
             <div
               className="p-2 rounded-lg"
-              style={{ backgroundColor: isCancelled ? (isDark ? 'rgba(107,114,128,0.2)' : 'rgba(156,163,175,0.2)') : `${config.color}20` }}
+              style={{ backgroundColor: isCancelled ? (isDark ? 'rgba(107,114,128,0.2)' : 'rgba(156,163,175,0.2)') : `${eventColor}20` }}
             >
-              <Icon className="w-4 h-4" style={{ color: isCancelled ? '#9ca3af' : config.color }} />
+              <Icon className="w-4 h-4" style={{ color: isCancelled ? '#9ca3af' : eventColor }} />
             </div>
             <div className="flex-1 min-w-0 pr-6">
               <div className="flex items-center justify-between gap-2">
@@ -329,6 +387,15 @@ export function CalendarView({
                   <User className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
                   <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
                     {event.lead.client_name}
+                  </span>
+                </div>
+              )}
+
+              {event.assignee && (
+                <div className="flex items-center gap-2 mt-1">
+                  <UserCheck className={cn('w-3 h-3', isDark ? 'text-blue-400' : 'text-blue-500')} />
+                  <span className={cn('text-xs truncate', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                    {event.assignee.name}
                   </span>
                 </div>
               )}
@@ -488,6 +555,140 @@ export function CalendarView({
               >
                 Hoje
               </button>
+
+              {/* Filtro por responsável */}
+              <div className="relative ml-2">
+                <button
+                  onClick={() => setIsFilterOpen(!isFilterOpen)}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors',
+                    assigneeFilter
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : isDark
+                        ? 'bg-white/5 hover:bg-white/10 text-white'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  )}
+                >
+                  <Filter className="w-4 h-4" />
+                  <span className="hidden sm:inline">
+                    {assigneeFilter ? filteredAssigneeName : 'Responsável'}
+                  </span>
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', isFilterOpen && 'rotate-180')} />
+                </button>
+
+                {/* Dropdown de membros */}
+                {isFilterOpen && (
+                  <>
+                    {/* Backdrop para fechar o dropdown */}
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setIsFilterOpen(false)}
+                    />
+                    <div className={cn(
+                      'absolute top-full left-0 mt-1 w-56 rounded-lg border shadow-lg z-20 max-h-64 overflow-y-auto',
+                      isDark
+                        ? 'bg-zinc-900 border-white/10'
+                        : 'bg-white border-gray-200'
+                    )}>
+                      {/* Opção para limpar filtro */}
+                      <button
+                        onClick={() => {
+                          setAssigneeFilter(null);
+                          setIsFilterOpen(false);
+                        }}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors',
+                          isDark
+                            ? 'hover:bg-white/5 text-white/70'
+                            : 'hover:bg-gray-50 text-gray-600',
+                          !assigneeFilter && (isDark ? 'bg-white/5' : 'bg-gray-50')
+                        )}
+                      >
+                        <div className="w-6 h-6 rounded-full bg-gray-400/20 flex items-center justify-center">
+                          <Users className="w-3 h-3" />
+                        </div>
+                        <span>Todos os responsáveis</span>
+                        {!assigneeFilter && <span className="ml-auto text-blue-500">✓</span>}
+                      </button>
+
+                      <div className={cn('h-px my-1', isDark ? 'bg-white/10' : 'bg-gray-200')} />
+
+                      {/* Lista de membros */}
+                      {workspaceMembers.map((member) => {
+                        const memberColor = getAssigneeColor(member.id, assigneeColorMap);
+                        const isSelected = assigneeFilter === member.id;
+                        return (
+                          <button
+                            key={member.id}
+                            onClick={() => {
+                              setAssigneeFilter(member.id);
+                              setIsFilterOpen(false);
+                            }}
+                            className={cn(
+                              'w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors',
+                              isDark
+                                ? 'hover:bg-white/5'
+                                : 'hover:bg-gray-50',
+                              isSelected && (isDark ? 'bg-white/5' : 'bg-gray-50')
+                            )}
+                          >
+                            {member.avatar_url ? (
+                              <img
+                                src={member.avatar_url}
+                                alt={member.name}
+                                className="w-6 h-6 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium"
+                                style={{ backgroundColor: memberColor }}
+                              >
+                                {member.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <span className={cn(
+                              'truncate',
+                              isDark ? 'text-white' : 'text-gray-900'
+                            )}>
+                              {member.name}
+                            </span>
+                            <div
+                              className="w-2 h-2 rounded-full ml-auto"
+                              style={{ backgroundColor: memberColor }}
+                            />
+                            {isSelected && <span className="text-blue-500">✓</span>}
+                          </button>
+                        );
+                      })}
+
+                      {workspaceMembers.length === 0 && (
+                        <div className={cn(
+                          'px-3 py-4 text-sm text-center',
+                          isDark ? 'text-white/50' : 'text-gray-500'
+                        )}>
+                          Nenhum membro encontrado
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Badge de filtro ativo */}
+              {assigneeFilter && (
+                <button
+                  onClick={() => setAssigneeFilter(null)}
+                  className={cn(
+                    'flex items-center gap-1 px-2 py-1 text-xs rounded-full transition-colors',
+                    isDark
+                      ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  )}
+                >
+                  <X className="w-3 h-3" />
+                  Limpar
+                </button>
+              )}
             </div>
 
             <button
@@ -567,6 +768,10 @@ export function CalendarView({
                         const config = EVENT_TYPE_CONFIG[event.event_type];
                         const isCancelled = event.event_status === 'cancelled';
                         const isDraggable = !isCancelled;
+                        // Usar cor do responsável se tiver, senão usar cor do tipo
+                        const eventColor = event.assigned_to
+                          ? getAssigneeColor(event.assigned_to, assigneeColorMap)
+                          : config.color;
                         return (
                           <div
                             key={event.id}
@@ -587,12 +792,12 @@ export function CalendarView({
                             style={{
                               backgroundColor: isCancelled
                                 ? (isDark ? 'rgba(107, 114, 128, 0.5)' : 'rgba(156, 163, 175, 0.5)')
-                                : config.color,
+                                : eventColor,
                               color: isCancelled
                                 ? (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(75, 85, 99, 1)')
                                 : 'white'
                             }}
-                            title={`${formatTime(event.start_time)} - ${event.title}${isCancelled ? ' (Cancelado)' : ''}\n${isDraggable ? 'Arraste para mover' : ''}`}
+                            title={`${formatTime(event.start_time)} - ${event.title}${event.assignee ? ` (${event.assignee.name})` : ''}${isCancelled ? ' (Cancelado)' : ''}\n${isDraggable ? 'Arraste para mover' : ''}`}
                           >
                             <span className="hidden md:inline">{formatTime(event.start_time)} </span>
                             {event.title}
@@ -687,6 +892,10 @@ export function CalendarView({
               <div className="space-y-2">
                 {upcomingEvents.slice(0, 3).map((event) => {
                   const config = EVENT_TYPE_CONFIG[event.event_type];
+                  // Usar cor do responsável se tiver, senão usar cor do tipo
+                  const eventColor = event.assigned_to
+                    ? getAssigneeColor(event.assigned_to, assigneeColorMap)
+                    : config.color;
                   return (
                     <div
                       key={event.id}
@@ -698,7 +907,7 @@ export function CalendarView({
                     >
                       <div
                         className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: config.color }}
+                        style={{ backgroundColor: eventColor }}
                       />
                       <div className="flex-1 min-w-0">
                         <p className={cn(
@@ -752,6 +961,7 @@ export function CalendarView({
           onClose={() => setIsSettingsOpen(false)}
           settings={settings}
           workspaceId={currentWorkspace?.id || ''}
+          workspaceSlug={currentWorkspace?.slug}
         />
       )}
 

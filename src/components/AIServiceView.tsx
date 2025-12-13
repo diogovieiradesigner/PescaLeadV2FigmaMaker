@@ -12,7 +12,11 @@ import {
   Search,
   UserCheck,
   PhoneOff,
-  Wrench
+  Wrench,
+  MessageSquare,
+  ChevronDown,
+  Plus,
+  X
 } from 'lucide-react';
 import { useAIBuilderChat } from '../hooks/useAIBuilderChat';
 import { AgentConfigForm } from './AgentConfigForm';
@@ -25,6 +29,7 @@ import { DatabaseSetupNotice } from './DatabaseSetupNotice';
 import { AgentSystemToolsManager } from './AgentSystemToolsManager';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 interface AIServiceViewProps {
   theme: 'dark' | 'light';
@@ -389,10 +394,33 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
 // ============================================
 
 function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; theme: 'dark' | 'light'; agentId: string | null }) {
-  const { conversation, isLoading, error, queueSize, handleSendMessage, handleDeleteMessage, handleResetChat, handleResetAndStartTemplate } = useAIBuilderChat(agentId);
+  const {
+    conversation,
+    isLoading,
+    error,
+    queueSize,
+    handleSendMessage,
+    handleDeleteMessage,
+    handleResetChat,
+    handleResetAndStartTemplate,
+    // Multiple conversations
+    previewConversations,
+    selectedConversationId,
+    selectConversation,
+    createNewConversation,
+    deleteConversation
+  } = useAIBuilderChat(agentId);
   const [showResetMenu, setShowResetMenu] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateMessage, setTemplateMessage] = useState('');
+  const [showConversationDropdown, setShowConversationDropdown] = useState(false);
+  const [showNewConversationModal, setShowNewConversationModal] = useState(false);
+  const [newConversationTemplate, setNewConversationTemplate] = useState('');
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{ isOpen: boolean; conversationId: string | null }>({
+    isOpen: false,
+    conversationId: null
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Ref para o container de mensagens (scrollable)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -452,12 +480,105 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
       <div className={`h-20 px-6 border-b flex items-center justify-between shrink-0 ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
         <div className="flex items-center gap-3">
            <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>Pré-visualizar</span>
-           <div className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-white/10 text-white/60' : 'bg-gray-200 text-gray-600'}`}>
-             {agentId ? 'Test Chat' : 'Selecione um agente'}
-           </div>
+
+           {/* Conversation Selector Dropdown */}
+           {agentId && (
+             <div className="relative">
+               <button
+                 onClick={() => setShowConversationDropdown(!showConversationDropdown)}
+                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                   isDark
+                     ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white/70'
+                     : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                 }`}
+               >
+                 <MessageSquare className="w-3.5 h-3.5" />
+                 <span className="max-w-[120px] truncate">
+                   {previewConversations.find(c => c.id === selectedConversationId)?.name || 'Nova conversa'}
+                 </span>
+                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showConversationDropdown ? 'rotate-180' : ''}`} />
+               </button>
+
+               {/* Dropdown Menu */}
+               {showConversationDropdown && (
+                 <>
+                   <div className="fixed inset-0 z-40" onClick={() => setShowConversationDropdown(false)} />
+                   <div className={`absolute left-0 top-full mt-1 w-64 rounded-lg shadow-xl border z-50 overflow-hidden ${
+                     isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-gray-200'
+                   }`}>
+                     {/* New Conversation Button */}
+                     <button
+                       onClick={() => {
+                         setShowConversationDropdown(false);
+                         setShowNewConversationModal(true);
+                       }}
+                       className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 border-b transition-colors ${
+                         isDark
+                           ? 'hover:bg-white/[0.05] text-[#0169D9] border-white/[0.08]'
+                           : 'hover:bg-gray-50 text-blue-600 border-gray-100'
+                       }`}
+                     >
+                       <Plus className="w-4 h-4" />
+                       <span className="font-medium">Nova Conversa</span>
+                     </button>
+
+                     {/* Conversations List */}
+                     <div className="max-h-[300px] overflow-y-auto">
+                       {previewConversations.length === 0 ? (
+                         <div className={`px-4 py-6 text-center text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                           Nenhuma conversa ainda
+                         </div>
+                       ) : (
+                         previewConversations.map((conv) => (
+                           <div
+                             key={conv.id}
+                             className={`group flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
+                               selectedConversationId === conv.id
+                                 ? isDark ? 'bg-white/[0.08]' : 'bg-blue-50'
+                                 : isDark ? 'hover:bg-white/[0.03]' : 'hover:bg-gray-50'
+                             }`}
+                             onClick={() => {
+                               selectConversation(conv.id);
+                               setShowConversationDropdown(false);
+                             }}
+                           >
+                             <div className="flex-1 min-w-0">
+                               <div className={`text-sm font-medium truncate ${
+                                 isDark ? 'text-white/90' : 'text-gray-900'
+                               }`}>
+                                 {conv.name}
+                               </div>
+                               <div className={`text-xs truncate mt-0.5 ${
+                                 isDark ? 'text-white/40' : 'text-gray-400'
+                               }`}>
+                                 {conv.lastMessage || `${conv.messageCount} mensagens`}
+                               </div>
+                             </div>
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 setDeleteConfirmModal({ isOpen: true, conversationId: conv.id });
+                               }}
+                               className={`opacity-0 group-hover:opacity-100 p-1.5 rounded transition-all ${
+                                 isDark
+                                   ? 'hover:bg-red-500/20 text-white/40 hover:text-red-400'
+                                   : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
+                               }`}
+                             >
+                               <Trash2 className="w-3.5 h-3.5" />
+                             </button>
+                           </div>
+                         ))
+                       )}
+                     </div>
+                   </div>
+                 </>
+               )}
+             </div>
+           )}
         </div>
         <div className="relative">
-          <button 
+          <button
             onClick={() => setShowResetMenu(!showResetMenu)}
             className={`p-2 rounded-lg transition-colors ${
               isDark ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
@@ -807,6 +928,115 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
           </div>
         </div>
       )}
+
+      {/* Modal Nova Conversa */}
+      {showNewConversationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowNewConversationModal(false)}>
+          <div
+            className={`w-full max-w-md mx-4 rounded-xl shadow-2xl ${
+              isDark ? 'bg-[#1C1C1E] border border-white/[0.08]' : 'bg-white border border-gray-200'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <h3 className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Nova Conversa de Teste
+              </h3>
+              <button
+                onClick={() => setShowNewConversationModal(false)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  isDark ? 'hover:bg-white/10 text-white/50' : 'hover:bg-gray-100 text-gray-400'
+                }`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className={`text-sm ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                Escolha como iniciar a nova conversa:
+              </p>
+
+              {/* Conversa Vazia */}
+              <button
+                onClick={() => {
+                  createNewConversation();
+                  setShowNewConversationModal(false);
+                }}
+                className={`w-full p-4 rounded-lg border text-left transition-colors ${
+                  isDark
+                    ? 'border-white/[0.08] hover:bg-white/[0.03] hover:border-white/[0.12]'
+                    : 'border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                }`}
+              >
+                <div className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Conversa Vazia
+                </div>
+                <div className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                  Começar do zero, você envia a primeira mensagem
+                </div>
+              </button>
+
+              {/* Com Template */}
+              <div className={`p-4 rounded-lg border ${
+                isDark ? 'border-white/[0.08]' : 'border-gray-200'
+              }`}>
+                <div className={`font-medium mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Com Mensagem Inicial (Template)
+                </div>
+                <textarea
+                  value={newConversationTemplate}
+                  onChange={(e) => setNewConversationTemplate(e.target.value)}
+                  placeholder="Ex: Olá! Meu nome é Maria da XYZ Company..."
+                  rows={4}
+                  className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors resize-none text-sm ${
+                    isDark
+                      ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
+                  }`}
+                />
+                <button
+                  onClick={() => {
+                    if (newConversationTemplate.trim()) {
+                      createNewConversation(newConversationTemplate.trim());
+                      setShowNewConversationModal(false);
+                      setNewConversationTemplate('');
+                    }
+                  }}
+                  disabled={!newConversationTemplate.trim()}
+                  className="mt-3 w-full px-4 py-2 bg-[#0169D9] text-white text-sm rounded-lg hover:bg-[#0159C1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Criar com Template
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmação para deletar conversa */}
+      <ConfirmDialog
+        isOpen={deleteConfirmModal.isOpen}
+        onClose={() => setDeleteConfirmModal({ isOpen: false, conversationId: null })}
+        onConfirm={async () => {
+          if (deleteConfirmModal.conversationId) {
+            setIsDeleting(true);
+            try {
+              await deleteConversation(deleteConfirmModal.conversationId);
+              setDeleteConfirmModal({ isOpen: false, conversationId: null });
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }}
+        title="Deletar conversa"
+        description="Tem certeza que deseja deletar esta conversa? Esta ação não pode ser desfeita."
+        confirmText="Deletar"
+        cancelText="Cancelar"
+        variant="danger"
+        isDark={isDark}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

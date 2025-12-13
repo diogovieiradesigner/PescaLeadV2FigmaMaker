@@ -29,9 +29,9 @@ Deno.serve(async (req) => {
     });
 
     const payload = await req.json();
-    const { agentId, message, resetConversation = false } = payload;
+    const { agentId, message, conversationId: inputConversationId, resetConversation = false } = payload;
 
-    console.log(`[ai-preview-chat] v9 - Agent: ${agentId}`);
+    console.log(`[ai-preview-chat] v10 - Agent: ${agentId}, ConversationId: ${inputConversationId || 'auto'}`);
     console.log(`[ai-preview-chat] Message: ${message?.substring(0, 50)}...`);
 
     // Validações
@@ -72,13 +72,37 @@ Deno.serve(async (req) => {
     }
 
     // 2. BUSCAR OU CRIAR CONVERSA DE PREVIEW
-    let { data: conversation, error: convError } = await supabase
-      .from("conversations")
-      .select("id, workspace_id")
-      .eq("workspace_id", agent.workspace_id)
-      .eq("channel", "preview")
-      .eq("contact_phone", agentId)
-      .single();
+    let conversation: { id: string; workspace_id: string } | null = null;
+    let convError: any = null;
+
+    // Se um conversationId foi fornecido, usar diretamente
+    if (inputConversationId) {
+      const { data, error } = await supabase
+        .from("conversations")
+        .select("id, workspace_id")
+        .eq("id", inputConversationId)
+        .eq("channel", "preview")
+        .single();
+
+      conversation = data;
+      convError = error;
+      console.log(`[ai-preview-chat] Using provided conversationId: ${inputConversationId}, found: ${!!conversation}`);
+    } else {
+      // Busca por contact_phone = agentId (padrão)
+      const { data, error } = await supabase
+        .from("conversations")
+        .select("id, workspace_id")
+        .eq("workspace_id", agent.workspace_id)
+        .eq("channel", "preview")
+        .eq("contact_phone", agentId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      conversation = data;
+      convError = error;
+      console.log(`[ai-preview-chat] Search by agentId: conversation=${conversation?.id}, error=${convError?.message}`);
+    }
 
     // Se reset solicitado, limpar mensagens antigas
     if (resetConversation && conversation) {

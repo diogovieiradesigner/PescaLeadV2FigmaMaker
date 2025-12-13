@@ -158,6 +158,7 @@ export async function fetchEventsByWorkspace(
   options?: {
     eventType?: EventType;
     leadId?: string;
+    assignedTo?: string;
     includeRelations?: boolean;
   }
 ): Promise<InternalEvent[] | InternalEventWithRelations[]> {
@@ -168,7 +169,8 @@ export async function fetchEventsByWorkspace(
       calendar:internal_calendar_id (id, name, color),
       lead:lead_id (id, client_name, company),
       conversation:conversation_id (id, contact_name, contact_phone),
-      creator:created_by (id, name, avatar_url)
+      creator:created_by (id, name, avatar_url),
+      assignee:assigned_to (id, name, avatar_url)
     ` : '*')
     .eq('workspace_id', workspaceId)
     .gte('start_time', startDate.toISOString())
@@ -181,6 +183,10 @@ export async function fetchEventsByWorkspace(
 
   if (options?.leadId) {
     query = query.eq('lead_id', options.leadId);
+  }
+
+  if (options?.assignedTo) {
+    query = query.eq('assigned_to', options.assignedTo);
   }
 
   const { data, error } = await query;
@@ -207,7 +213,8 @@ export async function fetchEventById(
       calendar:internal_calendar_id (id, name, color),
       lead:lead_id (id, client_name, company),
       conversation:conversation_id (id, contact_name, contact_phone),
-      creator:created_by (id, name, avatar_url)
+      creator:created_by (id, name, avatar_url),
+      assignee:assigned_to (id, name, avatar_url)
     ` : '*')
     .eq('id', eventId)
     .single();
@@ -384,6 +391,7 @@ export async function upsertCalendarSettings(
   console.log('[calendar-service] upsertCalendarSettings called with:', data);
 
   // Primeiro, tentar buscar configuração existente
+  // Usar a mesma lógica do fetchCalendarSettings para consistência
   let query = supabase
     .from('calendar_settings')
     .select('*')
@@ -829,4 +837,29 @@ export async function fetchWorkspaceInboxes(workspaceId: string): Promise<{ id: 
   }
 
   return data || [];
+}
+
+/**
+ * Busca membros do workspace para seleção de responsável
+ */
+export async function fetchWorkspaceMembers(workspaceId: string): Promise<{ id: string; name: string; avatar_url: string | null }[]> {
+  const { data, error } = await supabase
+    .from('workspace_members')
+    .select(`
+      user_id,
+      users:user_id (id, name, avatar_url)
+    `)
+    .eq('workspace_id', workspaceId);
+
+  if (error) {
+    console.error('[calendar-service] Error fetching workspace members:', error);
+    throw error;
+  }
+
+  // Transform the data to flatten the nested user object
+  return (data || []).map((member: any) => ({
+    id: member.users.id,
+    name: member.users.name || 'Usuário sem nome',
+    avatar_url: member.users.avatar_url,
+  }));
 }

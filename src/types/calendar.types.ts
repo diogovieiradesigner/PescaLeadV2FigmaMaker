@@ -14,6 +14,8 @@ export type ShowAs = 'busy' | 'free';
 
 export type ConfirmationMethod = 'manual' | 'whatsapp' | 'email' | 'ai';
 
+export type BookingPageTheme = 'light' | 'dark' | 'auto';
+
 // ============================================
 // INTERNAL CALENDAR
 // ============================================
@@ -72,6 +74,7 @@ export interface InternalEvent {
   lead_id: string | null;
   conversation_id: string | null;
   inbox_id: string | null; // Caixa de entrada para lembretes WhatsApp
+  assigned_to: string | null; // Responsável pelo evento (user_id)
   created_by: string | null;
   confirmed_at: string | null;
   confirmed_via: ConfirmationMethod | null;
@@ -106,6 +109,7 @@ export interface InternalEventCreate {
   lead_id?: string;
   conversation_id?: string;
   inbox_id?: string;
+  assigned_to?: string;
   created_by?: string;
 }
 
@@ -124,6 +128,7 @@ export interface InternalEventUpdate {
   lead_id?: string;
   conversation_id?: string;
   inbox_id?: string;
+  assigned_to?: string;
   confirmed_at?: string;
   confirmed_via?: ConfirmationMethod;
   cancelled_at?: string;
@@ -147,6 +152,11 @@ export interface InternalEventWithRelations extends InternalEvent {
     contact_phone: string;
   };
   creator?: {
+    id: string;
+    name: string;
+    avatar_url: string | null;
+  };
+  assignee?: {
     id: string;
     name: string;
     avatar_url: string | null;
@@ -192,6 +202,8 @@ export interface CalendarSettings {
   whatsapp_confirmation_enabled: boolean;
   whatsapp_reminder_enabled: boolean;
   whatsapp_reminder_hours_before: number;
+  booking_page_theme: BookingPageTheme;
+  booking_page_logo: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -210,6 +222,8 @@ export interface CalendarSettingsCreate {
   whatsapp_confirmation_enabled?: boolean;
   whatsapp_reminder_enabled?: boolean;
   whatsapp_reminder_hours_before?: number;
+  booking_page_theme?: BookingPageTheme;
+  booking_page_logo?: string | null;
 }
 
 export interface CalendarSettingsUpdate {
@@ -223,6 +237,8 @@ export interface CalendarSettingsUpdate {
   whatsapp_confirmation_enabled?: boolean;
   whatsapp_reminder_enabled?: boolean;
   whatsapp_reminder_hours_before?: number;
+  booking_page_theme?: BookingPageTheme;
+  booking_page_logo?: string | null;
   is_active?: boolean;
 }
 

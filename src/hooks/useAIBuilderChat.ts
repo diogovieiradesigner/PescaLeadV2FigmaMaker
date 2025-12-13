@@ -645,9 +645,43 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
 
       console.log('[useAIBuilderChat] 📋 Loaded', items.length, 'preview conversations:', items);
 
-      // Se não tem conversas e já temos uma selecionada, não limpar (evita race condition)
-      if (items.length === 0 && selectedConversationId) {
-        console.log('[useAIBuilderChat] ⚠️ No conversations returned but we have a selected one, keeping current state');
+      // Se não tem conversas, criar uma automaticamente
+      if (items.length === 0) {
+        console.log('[useAIBuilderChat] ⚠️ No conversations found, creating one automatically');
+
+        // Criar conversa via RPC
+        const { data: createData, error: createError } = await supabase
+          .rpc('create_preview_conversation', {
+            p_agent_id: agentId,
+            p_template_message: null
+          });
+
+        if (createError) {
+          console.error('[useAIBuilderChat] Error creating initial conversation:', createError);
+          return;
+        }
+
+        if (createData?.success && createData?.conversation_id) {
+          console.log('[useAIBuilderChat] ✅ Created initial conversation:', createData.conversation_id);
+
+          // Recarregar a lista (sem recursão infinita pois agora terá 1 conversa)
+          const { data: newRpcData } = await supabase
+            .rpc('list_preview_conversations', { p_agent_id: agentId });
+
+          if (Array.isArray(newRpcData) && newRpcData.length > 0) {
+            const newItems: PreviewConversationItem[] = newRpcData.map((conv: any) => ({
+              id: conv.id,
+              name: conv.contact_name || formatConversationName(new Date(conv.created_at)),
+              createdAt: new Date(conv.created_at),
+              lastMessage: conv.last_message || undefined,
+              messageCount: conv.total_messages || 0
+            }));
+
+            setPreviewConversations(newItems);
+            setSelectedConversationId(newItems[0].id);
+            setConversation({ id: newItems[0].id, messages: [] });
+          }
+        }
         return;
       }
 
@@ -780,11 +814,17 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
   }, [agentId]);
 
   // ==================== DELETAR CONVERSA ====================
-  const deleteConversation = useCallback(async (conversationId: string) => {
-    if (!agentId) return;
+  const deleteConversation = useCallback(async (conversationId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!agentId) return { success: false, error: 'Agent ID não encontrado' };
 
     try {
       console.log('[useAIBuilderChat] 🗑️ Deleting conversation:', conversationId);
+
+      // Verificar se é a última conversa - não permitir deletar
+      if (previewConversations.length <= 1) {
+        console.log('[useAIBuilderChat] ⚠️ Cannot delete last conversation');
+        return { success: false, error: 'Não é possível deletar a última conversa. Deve haver pelo menos uma conversa ativa.' };
+      }
 
       // Usar RPC para deletar conversa (bypass RLS)
       const { data: rpcData, error: rpcError } = await supabase
@@ -793,21 +833,30 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
       if (rpcError) throw new Error(rpcError.message);
       if (!rpcData?.success) throw new Error(rpcData?.error || 'Erro ao deletar conversa');
 
-      // Se era a conversa selecionada, limpar
+      // Se era a conversa selecionada, selecionar outra
       if (selectedConversationId === conversationId) {
-        setSelectedConversationId(null);
-        setConversation({ id: '', messages: [] });
+        // Encontrar outra conversa para selecionar
+        const otherConversation = previewConversations.find(c => c.id !== conversationId);
+        if (otherConversation) {
+          setSelectedConversationId(otherConversation.id);
+          await loadConversation(otherConversation.id);
+        } else {
+          setSelectedConversationId(null);
+          setConversation({ id: '', messages: [] });
+        }
       }
 
       // Recarregar lista
       await loadPreviewConversations();
 
       console.log('[useAIBuilderChat] ✅ Deleted conversation');
+      return { success: true };
     } catch (err: any) {
       console.error('[useAIBuilderChat] Error deleting conversation:', err);
       setError(err.message || 'Erro ao deletar conversa');
+      return { success: false, error: err.message || 'Erro ao deletar conversa' };
     }
-  }, [agentId, selectedConversationId, loadPreviewConversations]);
+  }, [agentId, selectedConversationId, previewConversations, loadPreviewConversations, loadConversation]);
 
   // Carregar lista de conversas quando agentId mudar
   useEffect(() => {

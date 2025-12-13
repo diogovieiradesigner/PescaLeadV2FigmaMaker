@@ -554,19 +554,22 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                                  {conv.lastMessage || `${conv.messageCount} mensagens`}
                                </div>
                              </div>
-                             <button
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 setDeleteConfirmModal({ isOpen: true, conversationId: conv.id });
-                               }}
-                               className={`opacity-0 group-hover:opacity-100 p-1.5 rounded transition-all ${
-                                 isDark
-                                   ? 'hover:bg-red-500/20 text-white/40 hover:text-red-400'
-                                   : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
-                               }`}
-                             >
-                               <Trash2 className="w-3.5 h-3.5" />
-                             </button>
+                             {/* Só mostrar botão de delete se houver mais de 1 conversa */}
+                             {previewConversations.length > 1 && (
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setDeleteConfirmModal({ isOpen: true, conversationId: conv.id });
+                                 }}
+                                 className={`opacity-0 group-hover:opacity-100 p-1.5 rounded transition-all ${
+                                   isDark
+                                     ? 'hover:bg-red-500/20 text-white/40 hover:text-red-400'
+                                     : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
+                                 }`}
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </button>
+                             )}
                            </div>
                          ))
                        )}
@@ -1022,15 +1025,25 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
           if (deleteConfirmModal.conversationId) {
             setIsDeleting(true);
             try {
-              await deleteConversation(deleteConfirmModal.conversationId);
-              setDeleteConfirmModal({ isOpen: false, conversationId: null });
+              const result = await deleteConversation(deleteConfirmModal.conversationId);
+              if (result.success) {
+                setDeleteConfirmModal({ isOpen: false, conversationId: null });
+              } else {
+                // Mostrar erro - fechar modal e exibir toast/alerta
+                setDeleteConfirmModal({ isOpen: false, conversationId: null });
+                alert(result.error || 'Erro ao deletar conversa');
+              }
             } finally {
               setIsDeleting(false);
             }
           }
         }}
         title="Deletar conversa"
-        description="Tem certeza que deseja deletar esta conversa? Esta ação não pode ser desfeita."
+        description={
+          previewConversations.length <= 1
+            ? "Esta é a única conversa. Não é possível deletá-la."
+            : "Tem certeza que deseja deletar esta conversa? Esta ação não pode ser desfeita."
+        }
         confirmText="Deletar"
         cancelText="Cancelar"
         variant="danger"

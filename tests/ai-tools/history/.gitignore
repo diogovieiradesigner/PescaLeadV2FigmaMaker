@@ -1,0 +1,3 @@
+# Ignorar arquivos de histórico (são gerados localmente)
+*.json
+!.gitignore

@@ -4,7 +4,17 @@ Sistema de testes automatizados para validar as ferramentas do agente de IA do P
 
 ## Como Executar
 
-### Usando Deno (Recomendado)
+### Usando Node.js com tsx (Recomendado)
+
+```bash
+# Executar testes (tsx é instalado junto com o projeto)
+npx tsx tests/ai-tools/run-tests-node.ts
+
+# Executar com debug para ver detalhes das chamadas
+npx tsx tests/ai-tools/run-tests-node.ts --debug
+```
+
+### Usando Deno (Alternativa)
 
 ```bash
 # Instalar Deno se não tiver
@@ -15,21 +25,12 @@ irm https://deno.land/install.ps1 | iex
 deno run --allow-net tests/ai-tools/run-tests.ts
 ```
 
-### Usando Node.js com tsx
-
-```bash
-# Instalar tsx globalmente
-npm install -g tsx
-
-# Executar
-tsx tests/ai-tools/run-tests.ts
-```
-
 ## Estrutura dos Testes
 
 ```
 tests/ai-tools/
-├── run-tests.ts          # Script principal (simplificado)
+├── run-tests-node.ts     # Script principal (Node.js) ← USE ESTE
+├── run-tests.ts          # Script para Deno
 ├── test-config.ts        # Configurações
 ├── test-helpers.ts       # Funções auxiliares
 ├── test-runner.ts        # Runner completo (Deno)

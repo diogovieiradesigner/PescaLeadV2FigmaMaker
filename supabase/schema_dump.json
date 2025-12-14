@@ -1,0 +1,1202 @@
+{
+  "tables": {
+    "workspaces": {
+      "columns": [
+        "id",
+        "name",
+        "slug",
+        "owner_id",
+        "settings",
+        "created_at",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "c3eaf017-451c-4f9d-bad2-f0802af8ae8a",
+        "name": "Pesca lead",
+        "slug": "pesca-lead",
+        "owner_id": "88456a60-5994-4e57-a416-d24d99d37391",
+        "settings": {},
+        "created_at": "2025-11-20T01:14:53.615895+00:00",
+        "updated_at": "2025-11-20T01:14:53.615895+00:00"
+      }
+    },
+    "workspace_members": {
+      "columns": [
+        "workspace_id",
+        "user_id",
+        "role",
+        "permissions",
+        "invited_by",
+        "joined_at"
+      ],
+      "sample": {
+        "workspace_id": "c3eaf017-451c-4f9d-bad2-f0802af8ae8a",
+        "user_id": "88456a60-5994-4e57-a416-d24d99d37391",
+        "role": "owner",
+        "permissions": [],
+        "invited_by": null,
+        "joined_at": "2025-11-20T01:14:53.773891+00:00"
+      }
+    },
+    "users": {
+      "columns": [
+        "id",
+        "name",
+        "email",
+        "avatar_url",
+        "last_workspace_id",
+        "created_at",
+        "updated_at",
+        "phone",
+        "phone_verified"
+      ],
+      "sample": {
+        "id": "923e1035-83a1-4748-a13a-a98896c5bdef",
+        "name": "Cleide A",
+        "email": "jaci457@gmail.com",
+        "avatar_url": null,
+        "last_workspace_id": null,
+        "created_at": "2025-11-20T13:32:37.148574+00:00",
+        "updated_at": "2025-12-05T14:27:23.172846+00:00",
+        "phone": "83921420047",
+        "phone_verified": true
+      }
+    },
+    "ai_agents": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "provider_id",
+        "model",
+        "api_key_encrypted",
+        "is_active",
+        "behavior_config",
+        "system_prompt",
+        "daily_message_limit",
+        "monthly_token_limit",
+        "total_conversations",
+        "total_messages",
+        "total_tokens_used",
+        "total_cost_usd",
+        "avg_response_time_ms",
+        "satisfaction_score",
+        "created_at",
+        "updated_at",
+        "transcription_provider_id",
+        "transcription_model",
+        "specialist_agents",
+        "crm_auto_update",
+        "crm_update_prompt",
+        "rag_enabled",
+        "orchestrator_enabled",
+        "default_attendant_type",
+        "crm_auto_config",
+        "follow_up_mode"
+      ],
+      "sample": {
+        "id": "3267daee-b438-486f-a7b8-d52b84a46cf7",
+        "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+        "name": "Assistente Pesca Lead",
+        "provider_id": null,
+        "model": "openai/gpt-4.1-mini",
+        "api_key_encrypted": null,
+        "is_active": true,
+        "behavior_config": {
+          "memory": {
+            "context_window": 20,
+            "summarize_after": 50
+          },
+          "timing": {
+            "debounce_seconds": 5,
+            "typing_indicator": true
+          },
+          "response": {
+            "max_tokens": 500,
+            "temperature": 0.7,
+            "split_long_messages": true,
+            "max_chars_per_message": 1000
+          },
+          "transcription": {
+            "audio_model": "whisper-1",
+            "image_model": "gpt-4o",
+            "audio_enabled": true,
+            "image_enabled": true
+          },
+          "working_hours": {
+            "mode": "24h",
+            "schedule": null
+          }
+        },
+        "system_prompt": "Faça qualquer coisa que o lead pedir",
+        "daily_message_limit": 999999,
+        "monthly_token_limit": 999999999,
+        "total_conversations": 152,
+        "total_messages": 239,
+        "total_tokens_used": 505460,
+        "total_cost_usd": 0,
+        "avg_response_time_ms": 0,
+        "satisfaction_score": 0,
+        "created_at": "2025-11-27T13:19:40.970103+00:00",
+        "updated_at": "2025-12-12T17:21:50.081443+00:00",
+        "transcription_provider_id": null,
+        "transcription_model": null,
+        "specialist_agents": [
+          {
+            "id": "06849388-e479-48cf-bf37-30cdb45bb54a",
+            "name": "Outbound",
+            "type": "outbound",
+            "priority": 0,
+            "is_active": true,
+            "description": "",
+            "extra_prompt": "A primeira pergunta para se fazer antes de qualquer coisa é:\n\"Qual a sua cor favorita?\"\n\nSó continue se ele responder. ",
+            "function_key": "b"
+          },
+          {
+            "id": "c59b7353-7301-4380-8dba-23adcd0bef77",
+            "name": "Inbound",
+            "type": "inbound",
+            "priority": 1,
+            "is_active": true,
+            "description": "",
+            "extra_prompt": "A primeira pergunta para se fazer antes de qualquer coisa é:\n\"Qual a sua comida favorita?\"\n\nSó continue se ele responder. ",
+            "function_key": "o"
+          }
+        ],
+        "crm_auto_update": true,
+        "crm_update_prompt": "Analise as últimas mensagens da conversa e identifique informações relevantes para atualizar no CRM.",
+        "rag_enabled": true,
+        "orchestrator_enabled": false,
+        "default_attendant_type": "ai",
+        "crm_auto_config": {
+          "enabled": true,
+          "column_id": "285746d9-6757-4ddc-855c-1db6b37fd2a4",
+          "funnel_id": "9668ec50-6ac4-4f3f-b514-d82c9a879aaa"
+        },
+        "follow_up_mode": "disabled"
+      }
+    },
+    "ai_system_tools": {
+      "columns": [
+        "id",
+        "name",
+        "display_name",
+        "description",
+        "category",
+        "parameters_schema",
+        "execution_type",
+        "execution_config",
+        "is_active",
+        "requires_confirmation",
+        "created_at",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "e9005e6c-92aa-494e-bd62-ad4882930b86",
+        "name": "transferir_para_humano",
+        "display_name": "Transferir para Atendente Humano",
+        "description": "Use esta ferramenta quando o cliente solicitar falar com um humano, quando você não conseguir resolver o problema, ou quando detectar frustração/insatisfação do cliente.",
+        "category": "handoff",
+        "parameters_schema": {
+          "type": "object",
+          "required": [
+            "motivo",
+            "resumo_conversa"
+          ],
+          "properties": {
+            "motivo": {
+              "type": "string",
+              "description": "Motivo da transferência (ex: solicitação do cliente, problema complexo, cliente insatisfeito)"
+            },
+            "prioridade": {
+              "enum": [
+                "baixa",
+                "normal",
+                "alta",
+                "urgente"
+              ],
+              "type": "string",
+              "description": "Prioridade do atendimento"
+            },
+            "resumo_conversa": {
+              "type": "string",
+              "description": "Breve resumo do que foi conversado até agora para o atendente humano"
+            }
+          }
+        },
+        "execution_type": "internal",
+        "execution_config": {
+          "action": "transfer_to_human",
+          "update_conversation": true
+        },
+        "is_active": true,
+        "requires_confirmation": false,
+        "created_at": "2025-11-26T20:11:07.602173+00:00",
+        "updated_at": "2025-11-26T20:11:07.602173+00:00"
+      }
+    },
+    "ai_agent_system_tools": {
+      "columns": [
+        "id",
+        "agent_id",
+        "system_tool_id",
+        "is_enabled",
+        "custom_config",
+        "created_at"
+      ],
+      "sample": {
+        "id": "a0726706-7337-4ccf-8082-163ee51cbcf4",
+        "agent_id": "3267daee-b438-486f-a7b8-d52b84a46cf7",
+        "system_tool_id": "e9005e6c-92aa-494e-bd62-ad4882930b86",
+        "is_enabled": true,
+        "custom_config": {},
+        "created_at": "2025-11-27T13:20:36.379626+00:00"
+      }
+    },
+    "ai_agent_inboxes": {
+      "columns": [
+        "id",
+        "agent_id",
+        "inbox_id",
+        "is_active",
+        "priority",
+        "working_hours",
+        "created_at"
+      ],
+      "sample": {
+        "id": "d4539fe3-4829-4820-bba5-66e7b595c5c1",
+        "agent_id": "9fd7ea61-a928-4362-90de-c391f5691f83",
+        "inbox_id": "278e8608-ab6a-4ed7-bed2-9761444b8105",
+        "is_active": true,
+        "priority": 0,
+        "working_hours": null,
+        "created_at": "2025-12-11T17:07:25.481393+00:00"
+      }
+    },
+    "ai_agent_attendants": {
+      "columns": [
+        "id",
+        "agent_id",
+        "user_id",
+        "is_active",
+        "trigger_conditions",
+        "message_to_attendant",
+        "message_to_customer",
+        "created_at",
+        "updated_at",
+        "priority"
+      ],
+      "sample": {
+        "id": "45c1d423-aad5-4255-876d-1988c1863c95",
+        "agent_id": "1d5f041b-55a7-4c13-8370-59a1ea08c01d",
+        "user_id": "50b20d13-e657-47ef-8214-d1ef7b49d10d",
+        "is_active": true,
+        "trigger_conditions": "Quando houver interesse me contratar o serviço \nlead passou pela qualificação ",
+        "message_to_attendant": "Você foi solicitado para atender um novo lead.",
+        "message_to_customer": "Um momento, vou transferir você para um de nossos especialistas.",
+        "created_at": "2025-12-07T14:29:39.140203+00:00",
+        "updated_at": "2025-12-07T14:29:39.140203+00:00",
+        "priority": 0
+      }
+    },
+    "conversations": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "lead_id",
+        "inbox_id",
+        "assigned_to",
+        "contact_name",
+        "contact_phone",
+        "avatar_url",
+        "status",
+        "channel",
+        "last_message",
+        "unread_count",
+        "total_messages",
+        "tags",
+        "created_at",
+        "updated_at",
+        "last_message_at",
+        "attendant_type",
+        "assigned_at",
+        "assigned_by",
+        "campaign_run_id"
+      ],
+      "sample": {
+        "id": "7de9c792-206e-493f-8c81-97472b13d21c",
+        "workspace_id": "5adbffd6-830e-4737-b415-39b291f3c940",
+        "lead_id": "7b843592-19d7-4e36-a556-dab6075206a3",
+        "inbox_id": "e150a60a-f946-4357-9911-88342b255428",
+        "assigned_to": null,
+        "contact_name": "Decor Colors",
+        "contact_phone": "5521969586236",
+        "avatar_url": "https://pps.whatsapp.net/v/t61.24694-24/358500900_602336168676166_8773391261308178230_n.jpg?ccb=11-4&oh=01_Q5Aa3AE-QF-v2FZ3lwOrWRRnYC8ISK2JFTxN7Ax-h_ZHKlZ1-A&oe=6941B98A&_nc_sid=5e03e0&_nc_cat=111",
+        "status": "waiting",
+        "channel": "whatsapp",
+        "last_message": "Olá. Espero que você esteja bem! Meu nome é Ana, sou da Pontual Tecnologia.  \nEstou entrando em cont",
+        "unread_count": 0,
+        "total_messages": 0,
+        "tags": [],
+        "created_at": "2025-12-06T16:18:03.7314+00:00",
+        "updated_at": "2025-12-11T19:21:08.109947+00:00",
+        "last_message_at": "2025-12-11T19:21:08.038+00:00",
+        "attendant_type": "ai",
+        "assigned_at": null,
+        "assigned_by": null,
+        "campaign_run_id": "cfad0ed6-19b0-4cfa-b90c-afe6661162d6"
+      }
+    },
+    "messages": {
+      "columns": [
+        "id",
+        "conversation_id",
+        "content_type",
+        "message_type",
+        "text_content",
+        "media_url",
+        "audio_duration",
+        "file_name",
+        "file_size",
+        "is_read",
+        "sent_by",
+        "created_at",
+        "deleted_at",
+        "provider_message_id",
+        "transcription",
+        "transcription_status",
+        "transcription_provider",
+        "transcribed_at",
+        "pipeline_id"
+      ],
+      "sample": {
+        "id": "af50746f-dfe8-482b-b13b-a7407401b0a5",
+        "conversation_id": "0c04ff5c-f75d-4ca8-8d2d-76f7073f5434",
+        "content_type": "text",
+        "message_type": "sent",
+        "text_content": ".",
+        "media_url": null,
+        "audio_duration": null,
+        "file_name": null,
+        "file_size": null,
+        "is_read": true,
+        "sent_by": "923e1035-83a1-4748-a13a-a98896c5bdef",
+        "created_at": "2025-12-03T04:55:38.291+00:00",
+        "deleted_at": null,
+        "provider_message_id": null,
+        "transcription": null,
+        "transcription_status": "none",
+        "transcription_provider": null,
+        "transcribed_at": null,
+        "pipeline_id": null
+      }
+    },
+    "leads": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "funnel_id",
+        "column_id",
+        "client_name",
+        "company",
+        "avatar_url",
+        "deal_value",
+        "priority",
+        "status",
+        "contact_date",
+        "expected_close_date",
+        "due_date",
+        "tags",
+        "notes",
+        "position",
+        "is_important",
+        "assignee_name",
+        "assignee_avatar",
+        "comments_count",
+        "attachments_count",
+        "calls_count",
+        "emails_count",
+        "assigned_to",
+        "created_by",
+        "updated_by",
+        "created_at",
+        "updated_at",
+        "last_activity_at",
+        "lead_extraction_id",
+        "lead_extraction_run_id",
+        "whatsapp_valid",
+        "whatsapp_jid",
+        "whatsapp_name"
+      ],
+      "sample": {
+        "id": "58645a96-6fd4-428f-81fb-1e5c54d623c5",
+        "workspace_id": "34abaf53-3b14-4c59-a64f-acc760f1c08b",
+        "funnel_id": "6745f930-c24b-4af3-847a-6b78da24d67a",
+        "column_id": "62df02c0-4833-4fd2-bdd4-7845f70def26",
+        "client_name": "ENS Marketing Digital e E-commerce | Birigui",
+        "company": "ENS Marketing Digital e E-commerce | Birigui",
+        "avatar_url": null,
+        "deal_value": 0,
+        "priority": null,
+        "status": "active",
+        "contact_date": null,
+        "expected_close_date": null,
+        "due_date": null,
+        "tags": [],
+        "notes": null,
+        "position": 0,
+        "is_important": false,
+        "assignee_name": null,
+        "assignee_avatar": null,
+        "comments_count": 0,
+        "attachments_count": 0,
+        "calls_count": 0,
+        "emails_count": 0,
+        "assigned_to": null,
+        "created_by": null,
+        "updated_by": null,
+        "created_at": "2025-12-06T15:21:37.258574+00:00",
+        "updated_at": "2025-12-06T18:23:00.156742+00:00",
+        "last_activity_at": "2025-12-06T18:22:00.154645+00:00",
+        "lead_extraction_id": "a1e09bc3-c170-42e6-ad18-557188e81abd",
+        "lead_extraction_run_id": "36bd68cf-24a4-4076-97e0-4b34fcf51c17",
+        "whatsapp_valid": true,
+        "whatsapp_jid": "5518996736250@s.whatsapp.net",
+        "whatsapp_name": "ens.marketingdigital"
+      }
+    },
+    "funnels": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "description",
+        "is_active",
+        "position",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "16712ae6-78b5-47d4-9504-b66e84315341",
+        "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+        "name": "teste 2",
+        "description": null,
+        "is_active": true,
+        "position": 0,
+        "created_by": "88456a60-5994-4e57-a416-d24d99d37391",
+        "created_at": "2025-12-10T10:03:14.703611+00:00",
+        "updated_at": "2025-12-10T10:03:14.703611+00:00"
+      }
+    },
+    "funnel_columns": {
+      "columns": [
+        "id",
+        "funnel_id",
+        "title",
+        "position",
+        "color",
+        "created_at",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "62df02c0-4833-4fd2-bdd4-7845f70def26",
+        "funnel_id": "6745f930-c24b-4af3-847a-6b78da24d67a",
+        "title": "Novo",
+        "position": 0,
+        "color": "#10B981",
+        "created_at": "2025-12-06T15:14:27.970168+00:00",
+        "updated_at": "2025-12-06T15:14:27.970168+00:00"
+      }
+    },
+    "inboxes": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "description",
+        "auto_assignment",
+        "assigned_agents",
+        "settings",
+        "created_at",
+        "updated_at",
+        "working_hours"
+      ],
+      "sample": {
+        "id": "8e394041-5035-4b1f-8560-ea8ae9d29db4",
+        "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+        "name": "Diogo Vieira Oficial",
+        "description": null,
+        "auto_assignment": false,
+        "assigned_agents": [
+          "923e1035-83a1-4748-a13a-a98896c5bdef"
+        ],
+        "settings": {},
+        "created_at": "2025-11-20T19:30:32.070747+00:00",
+        "updated_at": "2025-11-23T02:05:57.750247+00:00",
+        "working_hours": {
+          "end": "18:00",
+          "start": "08:00"
+        }
+      }
+    },
+    "instances": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "provider",
+        "phone_number",
+        "status",
+        "qr_code",
+        "api_key",
+        "webhook_url",
+        "settings",
+        "last_connected_at",
+        "created_at",
+        "updated_at",
+        "provider_type",
+        "provider_config",
+        "instance_token",
+        "instance_id",
+        "fallback_provider",
+        "fallback_config"
+      ],
+      "sample": {
+        "id": "5f169179-35f7-4350-a256-a779f4702b7d",
+        "workspace_id": "5adbffd6-830e-4737-b415-39b291f3c940",
+        "name": "21964594565",
+        "provider": "whatsapp",
+        "phone_number": "+5521964594565",
+        "status": "disconnected",
+        "qr_code": null,
+        "api_key": "c4d1dccc-4836-4c53-b352-b9643852f79b",
+        "webhook_url": "https://nlbcwaxkeaddfocigwuk.supabase.co/functions/v1/make-server-e4f9d774/webhook/uazapi",
+        "settings": {},
+        "last_connected_at": null,
+        "created_at": "2025-12-05T16:53:49.955252+00:00",
+        "updated_at": "2025-12-12T19:33:40.044073+00:00",
+        "provider_type": "uazapi",
+        "provider_config": {
+          "baseUrl": "https://pescalead.uazapi.com",
+          "adminToken": "2CtkUvYgbqta9SHcOyhPLYYgZ3EVrfOZRPnnhNeOufEf5bU3Sm",
+          "instanceName": "21964594565"
+        },
+        "instance_token": "c4d1dccc-4836-4c53-b352-b9643852f79b",
+        "instance_id": "21964594565",
+        "fallback_provider": null,
+        "fallback_config": {}
+      }
+    },
+    "inbox_instances": {
+      "columns": [
+        "inbox_id",
+        "instance_id",
+        "created_at"
+      ],
+      "sample": {
+        "inbox_id": "8e394041-5035-4b1f-8560-ea8ae9d29db4",
+        "instance_id": "db7454f7-b67f-4979-9727-630ab73b309e",
+        "created_at": "2025-11-23T02:05:57.959521+00:00"
+      }
+    },
+    "calendar_settings": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "internal_calendar_id",
+        "availability",
+        "default_durations",
+        "buffer_between_events",
+        "min_booking_notice_hours",
+        "max_booking_days_ahead",
+        "timezone",
+        "allow_overlapping",
+        "whatsapp_confirmation_enabled",
+        "whatsapp_reminder_enabled",
+        "whatsapp_reminder_hours_before",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "3c8a5afe-c624-4bc9-b9e7-d4ff0213d043",
+        "workspace_id": "5adbffd6-830e-4737-b415-39b291f3c940",
+        "internal_calendar_id": null,
+        "availability": {
+          "friday": [
+            {
+              "end": "10:00",
+              "start": "08:00"
+            }
+          ],
+          "monday": [
+            {
+              "end": "10:00",
+              "start": "08:00"
+            }
+          ],
+          "sunday": [],
+          "tuesday": [
+            {
+              "end": "10:00",
+              "start": "08:00"
+            }
+          ],
+          "saturday": [],
+          "thursday": [
+            {
+              "end": "10:00",
+              "start": "08:00"
+            }
+          ],
+          "wednesday": [
+            {
+              "end": "10:00",
+              "start": "08:00"
+            }
+          ]
+        },
+        "default_durations": {
+          "call": 15,
+          "demo": 15,
+          "meeting": 15,
+          "reminder": 15
+        },
+        "buffer_between_events": 0,
+        "min_booking_notice_hours": 0,
+        "max_booking_days_ahead": 0,
+        "timezone": "America/Sao_Paulo",
+        "allow_overlapping": false,
+        "whatsapp_confirmation_enabled": false,
+        "whatsapp_reminder_enabled": false,
+        "whatsapp_reminder_hours_before": 24,
+        "is_active": true,
+        "created_at": "2025-12-12T01:15:50.533647+00:00",
+        "updated_at": "2025-12-12T04:29:50.012291+00:00"
+      }
+    },
+    "internal_events": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "internal_calendar_id",
+        "title",
+        "description",
+        "start_time",
+        "end_time",
+        "organizer_email",
+        "attendees",
+        "location",
+        "event_status",
+        "show_as",
+        "recurrence_rule",
+        "is_meeting",
+        "lead_id",
+        "conversation_id",
+        "created_at",
+        "updated_at",
+        "event_type",
+        "created_by",
+        "confirmed_at",
+        "confirmed_via",
+        "cancelled_at",
+        "cancelled_reason",
+        "reminder_sent_at",
+        "inbox_id"
+      ],
+      "sample": {
+        "id": "43ca9c08-e65a-4846-b58e-86cc0d9b4565",
+        "workspace_id": "5adbffd6-830e-4737-b415-39b291f3c940",
+        "internal_calendar_id": "96d95f3a-9b48-4641-b130-29bba4abaae3",
+        "title": "teste",
+        "description": "teste",
+        "start_time": "2025-12-12T12:00:00+00:00",
+        "end_time": "2025-12-12T12:15:00+00:00",
+        "organizer_email": null,
+        "attendees": [],
+        "location": "teste",
+        "event_status": "confirmed",
+        "show_as": "busy",
+        "recurrence_rule": null,
+        "is_meeting": false,
+        "lead_id": "82afebef-617b-415b-8ca9-e73f75c4bf87",
+        "conversation_id": null,
+        "created_at": "2025-12-12T11:41:09.663042+00:00",
+        "updated_at": "2025-12-12T14:44:43.657592+00:00",
+        "event_type": "meeting",
+        "created_by": null,
+        "confirmed_at": null,
+        "confirmed_via": null,
+        "cancelled_at": null,
+        "cancelled_reason": null,
+        "reminder_sent_at": null,
+        "inbox_id": "e150a60a-f946-4357-9911-88342b255428"
+      }
+    },
+    "internal_calendars": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "owner_id",
+        "name",
+        "description",
+        "calendar_type",
+        "color",
+        "timezone",
+        "is_active",
+        "ai_metadata",
+        "created_at",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "96d95f3a-9b48-4641-b130-29bba4abaae3",
+        "workspace_id": "5adbffd6-830e-4737-b415-39b291f3c940",
+        "owner_id": null,
+        "name": "Calendário Principal",
+        "description": "Calendário padrão do workspace",
+        "calendar_type": "appointments",
+        "color": "#1976d2",
+        "timezone": "America/Sao_Paulo",
+        "is_active": true,
+        "ai_metadata": {},
+        "created_at": "2025-12-11T23:21:19.599394+00:00",
+        "updated_at": "2025-12-11T23:21:19.599394+00:00"
+      }
+    },
+    "ai_pipeline_logs": {
+      "columns": [
+        "id",
+        "conversation_id",
+        "message_id",
+        "debouncer_id",
+        "session_id",
+        "agent_id",
+        "workspace_id",
+        "contact_name",
+        "contact_phone",
+        "agent_name",
+        "status",
+        "status_message",
+        "started_at",
+        "completed_at",
+        "total_duration_ms",
+        "total_tokens_used",
+        "total_cost_estimate",
+        "steps_completed",
+        "response_text",
+        "response_sent",
+        "provider_message_id",
+        "error_message",
+        "error_step",
+        "created_at",
+        "response_message_ids"
+      ],
+      "sample": {
+        "id": "aef35b8e-03da-4788-9365-dca3e83da5d8",
+        "conversation_id": "649f58bb-b695-4528-ace2-52ba70bf18ea",
+        "message_id": "5baf324b-4d4c-478c-8e9e-d00bd38afda4",
+        "debouncer_id": null,
+        "session_id": null,
+        "agent_id": null,
+        "workspace_id": null,
+        "contact_name": null,
+        "contact_phone": null,
+        "agent_name": null,
+        "status": "transcription_only",
+        "status_message": "Transcrição de mídia",
+        "started_at": "2025-12-08T14:46:49.866109+00:00",
+        "completed_at": null,
+        "total_duration_ms": null,
+        "total_tokens_used": 0,
+        "total_cost_estimate": 0,
+        "steps_completed": 0,
+        "response_text": null,
+        "response_sent": false,
+        "provider_message_id": null,
+        "error_message": null,
+        "error_step": null,
+        "created_at": "2025-12-08T11:46:49.866109+00:00",
+        "response_message_ids": []
+      }
+    },
+    "ai_pipeline_steps": {
+      "columns": [
+        "id",
+        "pipeline_log_id",
+        "step_number",
+        "step_key",
+        "step_name",
+        "step_icon",
+        "status",
+        "status_message",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "config",
+        "input_summary",
+        "input_data",
+        "output_summary",
+        "output_data",
+        "tokens_input",
+        "tokens_output",
+        "tokens_total",
+        "cost_estimate",
+        "error_message",
+        "error_details",
+        "created_at"
+      ],
+      "sample": {
+        "id": "73f6c0e0-76b8-49b2-b10a-f1464b06056f",
+        "pipeline_log_id": "38a5c68d-c79b-42cc-9826-6d89c06008cd",
+        "step_number": 0,
+        "step_key": "transcription",
+        "step_name": "Análise de Imagem",
+        "step_icon": "🖼️",
+        "status": "success",
+        "status_message": "🖼️ Imagem analisada",
+        "started_at": "2025-12-07T19:29:36.279746+00:00",
+        "completed_at": "2025-12-07T19:29:40.163746+00:00",
+        "duration_ms": 3884,
+        "config": {
+          "model": "openai/gpt-4o-mini",
+          "provider": "openrouter",
+          "content_type": "image"
+        },
+        "input_summary": "Mídia: image",
+        "input_data": {
+          "message_id": "83cd8a2a-a873-48bb-8100-0bbdc8772d54",
+          "content_type": "image"
+        },
+        "output_summary": "Transcrição: **TIPO:** screenshot  \n**QUALIDADE:** boa  \n\n**TEXTO VISÍVEL:**  \nChecking for updates...\n\n**DESCRIÇ",
+        "output_data": {
+          "transcription_length": 360,
+          "transcription_preview": "**TIPO:** screenshot  \n**QUALIDADE:** boa  \n\n**TEXTO VISÍVEL:**  \nChecking for updates...\n\n**DESCRIÇÃO:**  \nA imagem mostra uma tela de um aplicativo, provavelmente o Discord, indicando que está verif"
+        },
+        "tokens_input": null,
+        "tokens_output": null,
+        "tokens_total": null,
+        "cost_estimate": null,
+        "error_message": null,
+        "error_details": null,
+        "created_at": "2025-12-07T16:29:40.163746+00:00"
+      }
+    },
+    "ai_conversation_sessions": {
+      "columns": [
+        "id",
+        "conversation_id",
+        "agent_id",
+        "status",
+        "end_reason",
+        "transferred_to",
+        "context_summary",
+        "messages_processed",
+        "tokens_used",
+        "cost_usd",
+        "sentiment_score",
+        "sentiment_trend",
+        "started_at",
+        "last_activity_at",
+        "ended_at"
+      ],
+      "sample": {
+        "id": "fb125acd-e3f4-43b3-ba4e-dbe5b4e89b24",
+        "conversation_id": "f4be6227-639e-4d68-b636-8ef0fb793673",
+        "agent_id": "b676b541-00ee-48fb-96f1-d23154394161",
+        "status": "active",
+        "end_reason": null,
+        "transferred_to": null,
+        "context_summary": null,
+        "messages_processed": 1,
+        "tokens_used": 5249,
+        "cost_usd": 0,
+        "sentiment_score": null,
+        "sentiment_trend": null,
+        "started_at": "2025-12-08T14:27:37.238+00:00",
+        "last_activity_at": "2025-12-08T14:28:02.049+00:00",
+        "ended_at": null
+      }
+    },
+    "follow_up_jobs": {
+      "columns": [
+        "id",
+        "conversation_id",
+        "workspace_id",
+        "status",
+        "category_id",
+        "current_model_index",
+        "trigger_message_id",
+        "last_checked_message_id",
+        "next_execution_at",
+        "ai_decision_log",
+        "cancel_reason",
+        "created_at",
+        "updated_at",
+        "completed_at"
+      ],
+      "sample": {
+        "id": "9c2fa977-a603-45eb-b32f-270ddc066623",
+        "conversation_id": "09d4a6fb-c500-41ef-8e7f-1a58d89f27cc",
+        "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+        "status": "completed",
+        "category_id": "dc97f25c-3b3b-4304-b5cb-c9c5f8636a38",
+        "current_model_index": 3,
+        "trigger_message_id": "2e8f0657-06e0-4b99-ade4-4fdf43b23800",
+        "last_checked_message_id": "caf597af-b3b1-4b07-a84c-1d2e5c3dea8f",
+        "next_execution_at": "2025-12-04T12:10:26.049808+00:00",
+        "ai_decision_log": {
+          "reason": "single_category",
+          "skipped": true,
+          "selected_at": "2025-12-04T12:03:52.561Z",
+          "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+          "category_name": "teste"
+        },
+        "cancel_reason": null,
+        "created_at": "2025-12-04T09:02:14.265342+00:00",
+        "updated_at": "2025-12-04T12:10:56.41283+00:00",
+        "completed_at": "2025-12-04T12:10:56.41283+00:00"
+      }
+    },
+    "follow_up_categories": {
+      "columns": [
+        "id",
+        "name",
+        "ai_instructions",
+        "availability",
+        "is_published",
+        "created_at",
+        "workspace_id",
+        "priority",
+        "updated_at"
+      ],
+      "sample": {
+        "id": "eade4dc7-1fab-4797-9565-2641707071d4",
+        "name": "Prod. MATCOM ",
+        "ai_instructions": "Quando usar a prospecção do produto matcom ",
+        "availability": "business_hours",
+        "is_published": true,
+        "created_at": "2025-12-03T22:08:42.002457+00:00",
+        "workspace_id": "5adbffd6-830e-4737-b415-39b291f3c940",
+        "priority": 0,
+        "updated_at": "2025-12-03T22:08:42.002457+00:00"
+      }
+    },
+    "ai_follow_up_config": {
+      "columns": [
+        "id",
+        "name",
+        "description",
+        "model",
+        "temperature",
+        "max_tokens",
+        "system_prompt",
+        "prompt_template",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "created_by"
+      ],
+      "sample": {
+        "id": "f67866fd-0b1b-49e1-9682-2971e7c94fc6",
+        "name": "default",
+        "description": "Configuração padrão para seleção de categorias de follow-up",
+        "model": "x-ai/grok-4-fast",
+        "temperature": 0.3,
+        "max_tokens": 50,
+        "system_prompt": "Você é um assistente especializado em análise de conversas de atendimento. Sua tarefa é identificar o contexto da conversa e selecionar a categoria de follow-up mais adequada para dar continuidade ao atendimento.",
+        "prompt_template": "Analise a conversa abaixo e escolha a categoria de follow-up mais apropriada baseado no contexto e necessidade do cliente.\n\nCONVERSA:\n{{conversation}}\n\nCATEGORIAS DISPONÍVEIS:\n{{categories}}\n\nINSTRUÇÕES:\n- Analise o tom e o estágio da conversa\n- Considere a última interação e o que faz sentido como próximo passo\n- Escolha a categoria que melhor se adequa ao momento do cliente\n\nResponda APENAS com o nome exato da categoria escolhida, sem explicações adicionais.",
+        "is_active": true,
+        "created_at": "2025-12-01T14:57:22.124543+00:00",
+        "updated_at": "2025-12-01T15:27:22.840363+00:00",
+        "created_by": null
+      }
+    },
+    "notifications": {
+      "columns": [
+        "id",
+        "user_id",
+        "workspace_id",
+        "type",
+        "title",
+        "body",
+        "reference_type",
+        "reference_id",
+        "metadata",
+        "channels_requested",
+        "channels_sent",
+        "channels_failed",
+        "status",
+        "read_at",
+        "created_at",
+        "sent_at"
+      ],
+      "sample": {
+        "id": "3685c681-4b40-4dfa-b59c-f5c043f76073",
+        "user_id": "923e1035-83a1-4748-a13a-a98896c5bdef",
+        "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+        "type": "transfer_request",
+        "title": "Nova transferência de atendimento",
+        "body": "LEAD NOVO NA ÁREA PAI",
+        "reference_type": "conversation",
+        "reference_id": "afff1541-6a1a-45ec-b106-4bb1b6f2d65a",
+        "metadata": {
+          "reason": "Cliente solicitou atendimento específico com Cleide",
+          "contact_name": "Cleide",
+          "contact_phone": "5583921420047@s.whatsapp.net",
+          "context_summary": "Cliente pediu para falar com Cleide diretamente, mencionando que ela pediu para ser chamada neste contato."
+        },
+        "channels_requested": {
+          "push": true,
+          "email": true,
+          "whatsapp": true
+        },
+        "channels_sent": {
+          "email": true,
+          "whatsapp": true
+        },
+        "channels_failed": {
+          "push": "VAPID keys not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY env vars"
+        },
+        "status": "partial",
+        "read_at": null,
+        "created_at": "2025-12-04T23:23:18.976425+00:00",
+        "sent_at": "2025-12-05T02:24:03.292+00:00"
+      }
+    },
+    "campaign_configs": {
+      "columns": [
+        "id",
+        "workspace_id",
+        "is_active",
+        "frequency",
+        "start_time",
+        "end_time",
+        "timezone",
+        "daily_limit",
+        "min_interval_seconds",
+        "inbox_id",
+        "source_funnel_id",
+        "source_column_id",
+        "target_column_id",
+        "ai_instructions",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "split_messages",
+        "max_split_parts"
+      ],
+      "sample": {
+        "id": "c02cf802-1602-44fa-80fb-0f5e87a39a24",
+        "workspace_id": "47e86ae3-4d5c-4e03-a881-293fa802424d",
+        "is_active": false,
+        "frequency": "daily",
+        "start_time": "09:00:00",
+        "end_time": "10:00:00",
+        "timezone": "America/Sao_Paulo",
+        "daily_limit": 15,
+        "min_interval_seconds": 240,
+        "inbox_id": "8e394041-5035-4b1f-8560-ea8ae9d29db4",
+        "source_funnel_id": "9668ec50-6ac4-4f3f-b514-d82c9a879aaa",
+        "source_column_id": "285746d9-6757-4ddc-855c-1db6b37fd2a4",
+        "target_column_id": "a2787f8f-36b5-4bc5-9fa3-49259a8287bc",
+        "ai_instructions": "Você é um assistente de vendas. Gere uma grande mensagem para esse lead considerando os nome dele para personalizar a mensagem!",
+        "created_at": "2025-12-03T05:58:47.499268+00:00",
+        "updated_at": "2025-12-12T19:16:18.524257+00:00",
+        "created_by": null,
+        "split_messages": true,
+        "max_split_parts": 2
+      }
+    },
+    "campaign_runs": {
+      "columns": [
+        "id",
+        "config_id",
+        "status",
+        "leads_total",
+        "leads_processed",
+        "leads_success",
+        "leads_failed",
+        "leads_skipped",
+        "started_at",
+        "completed_at",
+        "error_message",
+        "run_date",
+        "name"
+      ],
+      "sample": {
+        "id": "cfad0ed6-19b0-4cfa-b90c-afe6661162d6",
+        "config_id": "297ab0f0-adfe-4a7a-b11e-9c2f84969b63",
+        "status": "paused",
+        "leads_total": 48,
+        "leads_processed": 48,
+        "leads_success": 48,
+        "leads_failed": 0,
+        "leads_skipped": 0,
+        "started_at": "2025-12-11T15:50:31.51+00:00",
+        "completed_at": null,
+        "error_message": "Instância desconectada: 21964594565",
+        "run_date": "2025-12-11",
+        "name": "Primeiros contatos/ Dezembro  - 11/12/2025"
+      }
+    },
+    "campaign_messages": {
+      "columns": [
+        "id",
+        "run_id",
+        "lead_id",
+        "conversation_id",
+        "status",
+        "phone_number",
+        "phone_normalized",
+        "lead_context",
+        "generated_message",
+        "ai_model",
+        "ai_tokens_used",
+        "provider_message_id",
+        "provider_response",
+        "replied_at",
+        "retry_count",
+        "last_error",
+        "scheduled_at",
+        "queued_at",
+        "sent_at",
+        "created_at",
+        "ai_generation_time_ms",
+        "error_message",
+        "phone_source",
+        "phone_field_name"
+      ],
+      "sample": {
+        "id": "d430b010-1e7a-4335-9a62-c4bbc9e76ad8",
+        "run_id": "cfad0ed6-19b0-4cfa-b90c-afe6661162d6",
+        "lead_id": "6c7887c9-d69a-4460-8ffd-4ce90178ac7f",
+        "conversation_id": null,
+        "status": "sent",
+        "phone_number": "67998003882",
+        "phone_normalized": "5567998003882",
+        "lead_context": null,
+        "generated_message": "Olá. Espero que você esteja bem! Meu nome é Ana, sou da Pontual Tecnologia. \nEstou entrando em contato para apresentar uma solução que pode transformar a gestão da sua empresa. Tem 1 minuto?",
+        "ai_model": null,
+        "ai_tokens_used": 788,
+        "provider_message_id": null,
+        "provider_response": null,
+        "replied_at": null,
+        "retry_count": 0,
+        "last_error": null,
+        "scheduled_at": "2025-12-11T18:18:06.772+00:00",
+        "queued_at": null,
+        "sent_at": "2025-12-11T18:19:07.662017+00:00",
+        "created_at": "2025-12-11T15:50:31.909246+00:00",
+        "ai_generation_time_ms": 1240,
+        "error_message": null,
+        "phone_source": null,
+        "phone_field_name": null
+      }
+    }
+  },
+  "functions": [],
+  "triggers": [],
+  "policies": [],
+  "indexes": []
+}

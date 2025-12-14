@@ -5,8 +5,8 @@
 // ============================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-// VERSION 39 - FIX: Client name info moved to TOP of system prompt with explicit labels
-const FUNCTION_VERSION = "v40-transcription-wait";
+// VERSION 43 - FIX: Tool call loop - generate response after tool execution
+const FUNCTION_VERSION = "v43-tool-call-loop";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -90,6 +90,165 @@ class PipelineLogger {
     return this.pipelineId;
   }
 }
+
+// ==================== GET AGENT TOOLS DIRECTLY ====================
+// Busca tools diretamente das tabelas ai_system_tools e ai_agent_system_tools
+// Substitui a RPC get_agent_tools que usava tabela errada
+async function getAgentToolsDirect(supabase: any, agentId: string) {
+  // Buscar tools habilitadas para este agente
+  const { data: agentTools, error } = await supabase
+    .from('ai_agent_system_tools')
+    .select(`
+      system_tool_id,
+      is_enabled,
+      ai_system_tools (
+        id,
+        name,
+        description,
+        category,
+        is_active
+      )
+    `)
+    .eq('agent_id', agentId)
+    .eq('is_enabled', true);
+
+  if (error) {
+    console.error('[Tools] Error fetching agent tools:', error);
+    return [];
+  }
+
+  if (!agentTools || agentTools.length === 0) {
+    console.log('[Tools] No tools enabled for this agent');
+    return [];
+  }
+
+  // Construir tools no formato OpenAI/OpenRouter
+  const tools: any[] = [];
+
+  for (const at of agentTools) {
+    const st = at.ai_system_tools;
+    if (!st || !st.is_active) continue;
+
+    switch (st.name) {
+      case 'transferir_para_humano':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'transferir_para_humano',
+            description: 'Transfere a conversa para um atendente humano quando o cliente solicita ou em situações que exigem atenção humana. Use quando: cliente pede explicitamente, reclamação grave, situação complexa, cliente muito insatisfeito.',
+            parameters: {
+              type: 'object',
+              properties: {
+                motivo: { type: 'string', description: 'Motivo claro da transferência' },
+                resumo_conversa: { type: 'string', description: 'Resumo breve do que foi conversado' },
+                prioridade: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'], description: 'Urgência da transferência' }
+              },
+              required: ['motivo', 'resumo_conversa']
+            }
+          }
+        });
+        break;
+
+      case 'finalizar_atendimento':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'finalizar_atendimento',
+            description: 'Marca o atendimento como concluído quando a demanda do cliente foi totalmente resolvida.',
+            parameters: {
+              type: 'object',
+              properties: {
+                resumo: { type: 'string', description: 'Resumo do que foi resolvido no atendimento' }
+              },
+              required: ['resumo']
+            }
+          }
+        });
+        break;
+
+      case 'atualizar_crm':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'atualizar_crm',
+            description: 'Atualiza informações do lead no CRM quando o cliente fornece dados importantes.',
+            parameters: {
+              type: 'object',
+              properties: {
+                campo: { type: 'string', description: 'Campo a atualizar (empresa, cargo, email, telefone)' },
+                valor: { type: 'string', description: 'Novo valor para o campo' },
+                observacao: { type: 'string', description: 'Observação adicional (opcional)' }
+              },
+              required: ['campo', 'valor']
+            }
+          }
+        });
+        break;
+
+      case 'agendar_reuniao':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'agendar_reuniao',
+            description: 'Agenda uma reunião ou compromisso no calendário. Use quando o cliente quiser marcar reunião, visita ou demonstração.',
+            parameters: {
+              type: 'object',
+              properties: {
+                titulo: { type: 'string', description: 'Título do evento' },
+                data: { type: 'string', description: 'Data no formato YYYY-MM-DD (ex: 2025-12-15)' },
+                hora: { type: 'string', description: 'Hora de início no formato HH:MM (ex: 14:00)' },
+                duracao_minutos: { type: 'number', description: 'Duração em minutos (padrão: 60)' },
+                observacoes: { type: 'string', description: 'Observações ou notas (opcional)' }
+              },
+              required: ['titulo', 'data', 'hora']
+            }
+          }
+        });
+        break;
+
+      case 'consultar_disponibilidade':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'consultar_disponibilidade',
+            description: 'Consulta horários disponíveis no calendário para agendamento. Retorna os 3 horários mais próximos do horário preferido do cliente.',
+            parameters: {
+              type: 'object',
+              properties: {
+                data: { type: 'string', description: 'Data (YYYY-MM-DD)' },
+                horario_preferido: { type: 'string', description: 'Horário que o cliente prefere (HH:MM). Se informado, retorna os 3 slots mais próximos deste horário.' }
+              },
+              required: ['data']
+            }
+          }
+        });
+        break;
+
+      case 'enviar_documento':
+        tools.push({
+          type: 'function',
+          function: {
+            name: 'enviar_documento',
+            description: 'Envia um documento ou arquivo para o cliente.',
+            parameters: {
+              type: 'object',
+              properties: {
+                tipo_documento: { type: 'string', enum: ['catalogo', 'proposta', 'contrato', 'apresentacao', 'outro'], description: 'Tipo de documento' },
+                nome_documento: { type: 'string', description: 'Nome específico (opcional)' },
+                mensagem: { type: 'string', description: 'Mensagem para acompanhar (opcional)' }
+              },
+              required: ['tipo_documento']
+            }
+          }
+        });
+        break;
+    }
+  }
+
+  console.log(`[Tools] Loaded ${tools.length} tools for agent ${agentId}`);
+  return tools;
+}
+
 // ==================== AUTO CRM LEAD CREATION ====================
 async function createLeadIfNeeded(supabase, conversationId, agentId, crmAutoConfig, logger) {
   const stepStart = Date.now();
@@ -509,6 +668,314 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
       await supabase.from("lead_activities").insert({ lead_id: context.leadId, activity_type: "note", description: previewPrefix + `Campo personalizado "${customField.name}" atualizado para "${valor}" via IA.${observacao ? " Obs: " + observacao : ""}` });
       return { success: true, result: { updated: true, field: customField.name, field_type: "custom", custom_field_id: customField.id }, message: previewPrefix + `Campo personalizado "${customField.name}" atualizado com sucesso.` };
     }
+    // ==================== CALENDAR TOOLS ====================
+    case "agendar_reuniao": {
+      const stepStart = Date.now();
+      try {
+        console.log("[agendar_reuniao] Args recebidos:", JSON.stringify(args));
+        console.log("[agendar_reuniao] Context:", JSON.stringify({ agentId: context.agentId, leadId: context.leadId, conversationId: context.conversationId }));
+
+        // Validar parâmetros obrigatórios
+        if (!args.titulo || !args.data || !args.hora) {
+          console.log("[agendar_reuniao] Parâmetros faltando:", { titulo: args.titulo, data: args.data, hora: args.hora });
+          return { success: false, result: null, message: "Parâmetros obrigatórios: titulo, data (YYYY-MM-DD), hora (HH:MM)" };
+        }
+
+        // Buscar workspace_id da conversa (para preview e produção funcionar no mesmo workspace)
+        const { data: conversationData, error: convError } = await supabase.from("conversations").select("workspace_id").eq("id", context.conversationId).single();
+        console.log("[agendar_reuniao] Conversation data:", JSON.stringify(conversationData), "Error:", convError?.message);
+        if (!conversationData?.workspace_id) {
+          // Fallback para workspace do agente se conversa não tiver workspace
+          const { data: agentData, error: agentError } = await supabase.from("ai_agents").select("workspace_id").eq("id", context.agentId).single();
+          console.log("[agendar_reuniao] Agent fallback data:", JSON.stringify(agentData), "Error:", agentError?.message);
+          if (!agentData?.workspace_id) {
+            return { success: false, result: null, message: "Workspace não encontrado para o agente ou conversa" };
+          }
+          var workspaceId = agentData.workspace_id;
+        } else {
+          var workspaceId = conversationData.workspace_id;
+        }
+        console.log("[agendar_reuniao] WorkspaceId (da conversa):", workspaceId);
+
+        // Buscar calendário interno do workspace
+        let { data: calendar, error: calendarError } = await supabase.from("internal_calendars").select("id").eq("workspace_id", workspaceId).eq("is_active", true).limit(1).single();
+        console.log("[agendar_reuniao] Calendar encontrado:", JSON.stringify(calendar), "Error:", calendarError?.message);
+
+        if (!calendar) {
+          console.log("[agendar_reuniao] Criando calendário padrão para workspace:", workspaceId);
+          // Criar calendário padrão se não existir
+          const { data: newCalendar, error: createError } = await supabase.from("internal_calendars").insert({
+            workspace_id: workspaceId,
+            name: "Calendário Principal",
+            calendar_type: "default",
+            is_active: true,
+            timezone: "America/Sao_Paulo"
+          }).select("id").single();
+          console.log("[agendar_reuniao] Novo calendário criado:", JSON.stringify(newCalendar), "Error:", createError?.message);
+          if (createError) {
+            return { success: false, result: null, message: "Erro ao criar calendário: " + createError.message };
+          }
+          calendar = newCalendar;
+        }
+        // Montar data/hora do evento
+        const startDateTime = new Date(`${args.data}T${args.hora}:00`);
+        const durationMinutes = args.duracao_minutos || 60;
+        const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
+        console.log("[agendar_reuniao] DateTime:", { start: startDateTime.toISOString(), end: endDateTime.toISOString(), duration: durationMinutes });
+
+        // Verificar disponibilidade
+        const { data: conflictingEvents } = await supabase.from("internal_events")
+          .select("id, title, start_time, end_time")
+          .eq("workspace_id", workspaceId)
+          .neq("event_status", "cancelled")
+          .or(`and(start_time.lt.${endDateTime.toISOString()},end_time.gt.${startDateTime.toISOString()})`);
+        console.log("[agendar_reuniao] Conflitos:", conflictingEvents?.length || 0);
+
+        if (conflictingEvents && conflictingEvents.length > 0) {
+          const conflicts = conflictingEvents.map((e: any) => `${e.title} (${new Date(e.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`).join(", ");
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "warning", `⚠️ Conflito de horário`, { preview_mode: isPreview }, `${args.data} ${args.hora}`, args, `Conflito com: ${conflicts}`, { conflicting_events: conflictingEvents }, 0, 0, Date.now() - stepStart);
+          return { success: false, result: { conflicts: conflictingEvents }, message: `Horário indisponível. Já existe(m) evento(s) neste horário: ${conflicts}. Por favor, sugira outro horário ao cliente.` };
+        }
+        // Criar o evento
+        const eventData = {
+          workspace_id: workspaceId,
+          internal_calendar_id: calendar.id,
+          title: args.titulo,
+          description: args.observacoes || null,
+          start_time: startDateTime.toISOString(),
+          end_time: endDateTime.toISOString(),
+          event_status: "tentative",
+          event_type: "meeting",
+          lead_id: context.leadId || null,
+          conversation_id: context.conversationId || null,
+        };
+        console.log("[agendar_reuniao] EventData a inserir:", JSON.stringify(eventData));
+
+        // Preview executa igual produção - cria evento real no calendário
+        const { data: newEvent, error: eventError } = await supabase.from("internal_events").insert(eventData).select("id, title, start_time, end_time").single();
+        console.log("[agendar_reuniao] Resultado insert:", JSON.stringify(newEvent), "Error:", eventError?.message);
+
+        if (eventError) {
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "error", `❌ Erro ao criar evento`, { preview_mode: isPreview }, `${args.titulo} - ${args.data} ${args.hora}`, args, null, null, 0, 0, Date.now() - stepStart, eventError.message);
+          return { success: false, result: null, message: "Erro ao agendar reunião: " + eventError.message };
+        }
+        // Registrar atividade no lead se existir
+        if (context.leadId) {
+          await supabase.from("lead_activities").insert({
+            lead_id: context.leadId,
+            activity_type: "meeting",
+            description: `Reunião agendada via IA: "${args.titulo}" para ${args.data} às ${args.hora}`,
+            metadata: { event_id: newEvent.id }
+          });
+        }
+        await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "success", `✅ Evento criado: ${newEvent.title}`, { preview_mode: isPreview }, `${args.titulo} - ${args.data} ${args.hora}`, args, `ID: ${newEvent.id}`, { event_id: newEvent.id, start_time: newEvent.start_time, end_time: newEvent.end_time }, 0, 0, Date.now() - stepStart);
+        return { success: true, result: { scheduled: true, event_id: newEvent.id, start_time: newEvent.start_time, end_time: newEvent.end_time }, message: `AGENDAMENTO CONFIRMADO COM SUCESSO! Reunião "${args.titulo}" marcada para ${args.data} às ${args.hora} (${durationMinutes} minutos). Confirme ao cliente que está tudo certo e pergunte se precisa de mais alguma coisa.` };
+      } catch (error: any) {
+        await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "error", `❌ Erro inesperado`, { preview_mode: isPreview }, null, args, null, null, 0, 0, Date.now() - stepStart, error?.message || String(error));
+        return { success: false, result: null, message: "Erro ao agendar reunião: " + (error?.message || String(error)) };
+      }
+    }
+    case "consultar_disponibilidade": {
+      const stepStart = Date.now();
+      try {
+        // Validar parâmetros
+        if (!args.data) {
+          return { success: false, result: null, message: "Parâmetro obrigatório: data (YYYY-MM-DD)" };
+        }
+        // Buscar workspace_id da conversa (para preview e produção funcionar no mesmo workspace)
+        const { data: conversationData } = await supabase.from("conversations").select("workspace_id").eq("id", context.conversationId).single();
+        let workspaceId = conversationData?.workspace_id;
+        if (!workspaceId) {
+          // Fallback para workspace do agente
+          const { data: agentData } = await supabase.from("ai_agents").select("workspace_id").eq("id", context.agentId).single();
+          workspaceId = agentData?.workspace_id;
+        }
+        if (!workspaceId) {
+          return { success: false, result: null, message: "Workspace não encontrado" };
+        }
+        // Buscar configurações de disponibilidade
+        const { data: calendarSettings } = await supabase.from("calendar_settings").select("availability, buffer_between_events").eq("workspace_id", workspaceId).limit(1).single();
+        // Dia da semana (0 = domingo, 1 = segunda, etc.)
+        const requestedDate = new Date(args.data + "T12:00:00");
+        const dayOfWeek = requestedDate.getDay();
+        const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+        const dayName = dayNames[dayOfWeek];
+        // Disponibilidade padrão se não configurado
+        const defaultAvailability = { start: "09:00", end: "18:00" };
+        const dayAvailability = calendarSettings?.availability?.[dayName] || [defaultAvailability];
+        if (!dayAvailability || dayAvailability.length === 0) {
+          await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 Sem expediente configurado`, { preview_mode: isPreview }, args.data, args, "Sem horários disponíveis", { day: dayName, available: false }, 0, 0, Date.now() - stepStart);
+          return { success: true, result: { date: args.data, day_name: dayName, available_slots: [], message: "Sem expediente neste dia" }, message: `Não há horários de atendimento configurados para ${dayName === 'sunday' ? 'domingo' : dayName === 'saturday' ? 'sábado' : 'este dia'}.` };
+        }
+        // Buscar eventos existentes no dia
+        const dayStart = new Date(args.data + "T00:00:00").toISOString();
+        const dayEnd = new Date(args.data + "T23:59:59").toISOString();
+        const { data: existingEvents } = await supabase.from("internal_events")
+          .select("start_time, end_time, title")
+          .eq("workspace_id", workspaceId)
+          .neq("event_status", "cancelled")
+          .gte("start_time", dayStart)
+          .lte("start_time", dayEnd)
+          .order("start_time");
+        // Calcular slots disponíveis
+        const bufferMinutes = calendarSettings?.buffer_between_events || 15;
+        const slotDuration = 60; // 1 hora por slot
+        const availableSlots: Array<{start: string, end: string, startMinutes: number}> = [];
+        for (const period of dayAvailability) {
+          const periodStart = new Date(`${args.data}T${period.start}:00`);
+          const periodEnd = new Date(`${args.data}T${period.end}:00`);
+          let currentSlotStart = periodStart;
+          while (currentSlotStart.getTime() + slotDuration * 60 * 1000 <= periodEnd.getTime()) {
+            const currentSlotEnd = new Date(currentSlotStart.getTime() + slotDuration * 60 * 1000);
+            // Verificar se há conflito com eventos existentes
+            const hasConflict = existingEvents?.some((event: any) => {
+              const eventStart = new Date(event.start_time);
+              const eventEnd = new Date(event.end_time);
+              // Adicionar buffer
+              const bufferedEventStart = new Date(eventStart.getTime() - bufferMinutes * 60 * 1000);
+              const bufferedEventEnd = new Date(eventEnd.getTime() + bufferMinutes * 60 * 1000);
+              return currentSlotStart < bufferedEventEnd && currentSlotEnd > bufferedEventStart;
+            });
+            if (!hasConflict) {
+              // Guardar minutos desde meia-noite para ordenação
+              const startMinutes = currentSlotStart.getHours() * 60 + currentSlotStart.getMinutes();
+              availableSlots.push({
+                start: currentSlotStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                end: currentSlotEnd.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                startMinutes
+              });
+            }
+            currentSlotStart = new Date(currentSlotStart.getTime() + 30 * 60 * 1000); // Avançar 30 min
+          }
+        }
+
+        if (availableSlots.length === 0) {
+          await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 Sem horários disponíveis`, { preview_mode: isPreview }, args.data, args, "Agenda cheia", { slots_count: 0 }, 0, 0, Date.now() - stepStart);
+          return { success: true, result: { date: args.data, available_slots: [], busy_events: existingEvents?.length || 0 }, message: `Não há horários disponíveis para ${args.data}. Todos os horários estão ocupados. Sugira outra data ao cliente.` };
+        }
+
+        // ESTRATÉGIA: Retornar apenas 3 horários próximos ao preferido
+        let selectedSlots: Array<{start: string, end: string}> = [];
+        let preferredTimeInfo = "";
+        let isPreferredAvailable = false;
+
+        if (args.horario_preferido) {
+          // Converter horário preferido para minutos
+          const [prefHour, prefMin] = args.horario_preferido.split(':').map(Number);
+          const preferredMinutes = prefHour * 60 + (prefMin || 0);
+
+          // Verificar se o horário preferido está disponível
+          const exactMatch = availableSlots.find(s => s.startMinutes === preferredMinutes);
+          if (exactMatch) {
+            isPreferredAvailable = true;
+          }
+
+          // Ordenar slots pela proximidade ao horário preferido
+          const sortedByProximity = [...availableSlots].sort((a, b) => {
+            const diffA = Math.abs(a.startMinutes - preferredMinutes);
+            const diffB = Math.abs(b.startMinutes - preferredMinutes);
+            return diffA - diffB;
+          });
+
+          // Pegar os 3 mais próximos
+          selectedSlots = sortedByProximity.slice(0, 3).map(s => ({ start: s.start, end: s.end }));
+
+          // Ordenar os 3 selecionados em ordem cronológica
+          selectedSlots.sort((a, b) => {
+            const aMin = parseInt(a.start.split(':')[0]) * 60 + parseInt(a.start.split(':')[1]);
+            const bMin = parseInt(b.start.split(':')[0]) * 60 + parseInt(b.start.split(':')[1]);
+            return aMin - bMin;
+          });
+
+          preferredTimeInfo = isPreferredAvailable
+            ? `O horário das ${args.horario_preferido} está disponível!`
+            : `O horário das ${args.horario_preferido} não está disponível.`;
+        } else {
+          // Sem horário preferido: retorna 3 horários distribuídos (manhã, meio-dia, tarde)
+          const totalSlots = availableSlots.length;
+          if (totalSlots <= 3) {
+            selectedSlots = availableSlots.map(s => ({ start: s.start, end: s.end }));
+          } else {
+            // Pegar início, meio e fim da disponibilidade
+            const indices = [0, Math.floor(totalSlots / 2), totalSlots - 1];
+            selectedSlots = indices.map(i => ({ start: availableSlots[i].start, end: availableSlots[i].end }));
+          }
+        }
+
+        const slotsText = selectedSlots.map(s => s.start).join(", ");
+        const fullMessage = args.horario_preferido
+          ? `${preferredTimeInfo} Horários disponíveis próximos: ${slotsText}.`
+          : `Horários disponíveis: ${slotsText}. Pergunte ao cliente qual horário prefere.`;
+
+        await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 ${selectedSlots.length} slots sugeridos (de ${availableSlots.length} disponíveis)`, { preview_mode: isPreview, horario_preferido: args.horario_preferido || null }, args.data, args, slotsText, { slots_count: selectedSlots.length, total_available: availableSlots.length, slots: selectedSlots, preferred_available: isPreferredAvailable }, 0, 0, Date.now() - stepStart);
+
+        return {
+          success: true,
+          result: {
+            date: args.data,
+            available_slots: selectedSlots,
+            slots_count: selectedSlots.length,
+            total_available: availableSlots.length,
+            preferred_time: args.horario_preferido || null,
+            preferred_available: isPreferredAvailable
+          },
+          message: fullMessage
+        };
+      } catch (error: any) {
+        await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "error", `❌ Erro`, { preview_mode: isPreview }, null, args, null, null, 0, 0, Date.now() - stepStart, error?.message || String(error));
+        return { success: false, result: null, message: "Erro ao consultar disponibilidade: " + (error?.message || String(error)) };
+      }
+    }
+    case "enviar_documento": {
+      const stepStart = Date.now();
+      try {
+        // Validar parâmetros
+        if (!args.tipo_documento) {
+          return { success: false, result: null, message: "Parâmetro obrigatório: tipo_documento" };
+        }
+        // Buscar workspace_id do agente
+        const { data: agentData } = await supabase.from("ai_agents").select("workspace_id").eq("id", context.agentId).single();
+        if (!agentData?.workspace_id) {
+          return { success: false, result: null, message: "Workspace não encontrado para o agente" };
+        }
+        // TODO: Quando houver tabela de documentos do agente, buscar o documento real aqui
+        // Por agora, registra a solicitação para ser tratada manualmente ou por integração futura
+        const documentRequest = {
+          tipo: args.tipo_documento,
+          nome: args.nome_documento || null,
+          mensagem: args.mensagem || null,
+          conversation_id: context.conversationId,
+          lead_id: context.leadId,
+          requested_at: new Date().toISOString()
+        };
+        // Registrar atividade no lead se existir
+        if (context.leadId) {
+          await supabase.from("lead_activities").insert({
+            lead_id: context.leadId,
+            activity_type: "document_request",
+            description: `Documento solicitado via IA: ${args.tipo_documento}${args.nome_documento ? ` (${args.nome_documento})` : ''}`,
+            metadata: documentRequest
+          });
+        }
+        await logger.step("tool_enviar_documento", "Enviar Documento", "📄", "success", `✅ Solicitação de documento registrada: ${args.tipo_documento}`, { preview_mode: isPreview }, args.tipo_documento, args, args.nome_documento || "Documento genérico", documentRequest, 0, 0, Date.now() - stepStart);
+        // Mensagem informativa - sistema de documentos precisa ser configurado
+        const responseMessage = args.mensagem
+          ? `${args.mensagem}\n\n[Documento ${args.tipo_documento}${args.nome_documento ? `: ${args.nome_documento}` : ''} será enviado em breve]`
+          : `O documento ${args.tipo_documento}${args.nome_documento ? ` (${args.nome_documento})` : ''} será enviado para você em breve.`;
+        return {
+          success: true,
+          result: {
+            document_requested: true,
+            tipo: args.tipo_documento,
+            nome: args.nome_documento || null
+          },
+          message: responseMessage
+        };
+      } catch (error: any) {
+        await logger.step("tool_enviar_documento", "Enviar Documento", "📄", "error", `❌ Erro`, { preview_mode: isPreview }, null, args, null, null, 0, 0, Date.now() - stepStart, error?.message || String(error));
+        return { success: false, result: null, message: "Erro ao processar solicitação de documento: " + (error?.message || String(error)) };
+      }
+    }
     default:
       return { success: false, result: null, message: "Tool desconhecido: " + toolName };
   }
@@ -830,8 +1297,8 @@ Deno.serve(async (req) => {
     } else {
       await logger.step("orchestrator", "Orquestrador", "🧠", "skipped", "ℹ️ Orquestrador desabilitado", { orchestrator_enabled: false }, null, null, "Feature desabilitada", null, 0, 0, 1);
     }
-    // TOOLS
-    const { data: tools } = await supabase.rpc("get_agent_tools", { p_agent_id: payload.agent_id });
+    // TOOLS - Busca direta das tabelas (substituindo RPC que usava tabela errada)
+    const tools = await getAgentToolsDirect(supabase, payload.agent_id);
     const conversationHistory = (messages || []).map((msg) => { let content = msg.text_content || ""; if (msg.transcription && ["audio", "image", "video"].includes(msg.content_type)) content = "[" + msg.content_type.toUpperCase() + "] " + msg.transcription; return { role: msg.message_type === "received" ? "user" : "assistant", content }; }).filter((msg) => msg.content.trim() !== "");
     // RAG
     let ragContext = "";
@@ -900,7 +1367,28 @@ Deno.serve(async (req) => {
     
     // Adiciona RAG
     fullSystemPrompt += ragContext;
-    
+
+    // Adiciona seção de TOOLS disponíveis (automático e conciso)
+    console.log("[TOOLS DEBUG] tools variable:", tools ? `Array with ${tools.length} items` : "null/undefined");
+    if (tools && tools.length > 0) {
+      fullSystemPrompt += "\n\n=== FERRAMENTAS DISPONÍVEIS ===\n";
+      fullSystemPrompt += "Você tem acesso às seguintes ferramentas. Use-as quando apropriado:\n\n";
+      for (const tool of tools) {
+        const fn = tool.function;
+        fullSystemPrompt += `• ${fn.name}: ${fn.description}\n`;
+        // Adiciona parâmetros obrigatórios de forma concisa
+        if (fn.parameters?.required?.length > 0) {
+          fullSystemPrompt += `  Params: ${fn.parameters.required.join(", ")}\n`;
+        }
+      }
+      fullSystemPrompt += "\nIMPORTANTE: Chame a ferramenta apropriada quando o cliente:\n";
+      fullSystemPrompt += "- Pedir para agendar/marcar reunião → use 'agendar_reuniao'\n";
+      fullSystemPrompt += "- Perguntar horários disponíveis → use 'consultar_disponibilidade'\n";
+      fullSystemPrompt += "- Pedir para falar com humano → use 'transferir_para_humano'\n";
+      fullSystemPrompt += "- Concluir o atendimento → use 'finalizar_atendimento'\n";
+      fullSystemPrompt += "=== FIM FERRAMENTAS ===";
+    }
+
     // Adiciona resumo da sessão
     if (session?.context_summary) fullSystemPrompt += "\n\nResumo da sessao anterior:\n" + session.context_summary;
     fullSystemPrompt += "\n\nData/hora atual: " + new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -933,16 +1421,88 @@ Deno.serve(async (req) => {
     }
     let finalResponse = assistantMessage.content || "";
     let transferMessageToCustomer = null;
-    // TOOL CALLS
+    let additionalLlmTokensIn = 0;
+    let additionalLlmTokensOut = 0;
+    // TOOL CALLS - v43: Loop completo com resposta final
     if (assistantMessage.tool_calls?.length > 0) {
+      // Array para acumular resultados das tools
+      const toolResults: any[] = [];
+
       for (const toolCall of assistantMessage.tool_calls) {
         const args = JSON.parse(toolCall.function.arguments);
         const result = await executeSystemTool(supabase, openrouterApiKey, toolCall.function.name, args, { conversationId: payload.conversation_id, agentId: payload.agent_id, leadId: conversation?.lead_id, sessionId: session?.id }, isPreviewMode, logger);
         if (result.tokensUsed) attendantSelectionTokensUsed += result.tokensUsed;
+
+        // Guardar resultado da tool para o loop
+        toolResults.push({
+          tool_call_id: toolCall.id,
+          role: "tool",
+          content: result.message || JSON.stringify(result.result) || "Executado com sucesso"
+        });
+
         if (toolCall.function.name === "transferir_para_humano" && result.success) {
           transferMessageToCustomer = result.messageToCustomer || result.message || "Transferindo para um atendente humano...";
           finalResponse = transferMessageToCustomer;
-          break;
+          break; // Não precisa de segunda chamada para transferência
+        }
+      }
+
+      // Se não foi transferência e a resposta está vazia, fazer segunda chamada ao LLM
+      // para gerar resposta final com base nos resultados das tools
+      if (!transferMessageToCustomer && (!finalResponse || finalResponse.trim() === "")) {
+        console.log(`[ai-process-conversation] Tool call loop: ${toolResults.length} tool results, generating final response...`);
+
+        // Montar mensagens para segunda chamada: conversa + resposta do assistente com tool_calls + resultados
+        const loopMessages = [
+          { role: "system", content: fullSystemPrompt },
+          ...conversationHistory,
+          assistantMessage, // Inclui a resposta original com tool_calls
+          ...toolResults    // Inclui os resultados das tools
+        ];
+
+        const loopPayload = {
+          model,
+          messages: loopMessages,
+          max_tokens: maxTokens,
+          temperature
+          // Não passa tools na segunda chamada para forçar resposta texto
+        };
+
+        const loopResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + openrouterApiKey, "HTTP-Referer": supabaseUrl, "X-Title": isPreviewMode ? "Pesca Lead AI Preview" : "Pesca Lead AI" },
+          body: JSON.stringify(loopPayload)
+        });
+
+        if (loopResponse.ok) {
+          const loopResult = await loopResponse.json();
+          const loopAssistantMessage = loopResult.choices[0]?.message;
+          additionalLlmTokensIn = loopResult.usage?.prompt_tokens || 0;
+          additionalLlmTokensOut = loopResult.usage?.completion_tokens || 0;
+
+          if (loopAssistantMessage?.content) {
+            finalResponse = loopAssistantMessage.content;
+            console.log(`[ai-process-conversation] Tool call loop: Final response generated (${finalResponse.length} chars, ${additionalLlmTokensIn + additionalLlmTokensOut} tokens)`);
+
+            // Logar step do tool loop
+            await logger.step("tool_loop", "Resposta pós-Tool", "🔄", "success",
+              `✅ Resposta final gerada após tool(s)`,
+              { tool_count: toolResults.length, model },
+              `${toolResults.length} resultado(s) de tool`,
+              { tools_executed: assistantMessage.tool_calls.map((tc: any) => tc.function.name) },
+              `Resposta com ${finalResponse.length} caracteres`,
+              { response_preview: finalResponse.substring(0, 200) },
+              additionalLlmTokensIn, additionalLlmTokensOut, Date.now() - llmStepStart
+            );
+          } else {
+            console.error(`[ai-process-conversation] Tool call loop: No content in loop response`);
+            // Fallback: usar a mensagem da tool diretamente
+            finalResponse = toolResults.map(tr => tr.content).join("\n");
+          }
+        } else {
+          console.error(`[ai-process-conversation] Tool call loop: Error in loop call`, await loopResponse.text());
+          // Fallback: usar a mensagem da tool diretamente
+          finalResponse = toolResults.map(tr => tr.content).join("\n");
         }
       }
     }
@@ -976,23 +1536,23 @@ Deno.serve(async (req) => {
       }
       allMessageIds = sendResult.messageId ? [sendResult.messageId] : [];
     }
-    // AUTO CRM LEAD CREATION
+    // AUTO CRM LEAD CREATION - Funciona igual em Preview e Produção
     let crmAutoResult = { created: false, leadId: null, reason: "not_attempted" };
-    if (sendResult.success && !isPreviewMode && !conversation?.lead_id) {
+    if (sendResult.success && !conversation?.lead_id) {
       crmAutoResult = await createLeadIfNeeded(supabase, payload.conversation_id, payload.agent_id, agent.crm_auto_config, logger);
     }
     // FINALIZE
     if (payload.debouncer_id) {
       await supabase.from("ai_debouncer_queue").update({ status: "completed", processed_at: new Date().toISOString() }).eq("id", payload.debouncer_id);
     }
-    const totalTokens = guardrailTokensUsed + orchestratorTokensUsed + ragTokensUsed + tokensIn + tokensOut + splitTokensUsed + attendantSelectionTokensUsed;
+    const totalTokens = guardrailTokensUsed + orchestratorTokensUsed + ragTokensUsed + tokensIn + tokensOut + additionalLlmTokensIn + additionalLlmTokensOut + splitTokensUsed + attendantSelectionTokensUsed;
     await supabase.from("ai_conversation_sessions").update({ messages_processed: messages?.length || 0, tokens_used: totalTokens, last_activity_at: new Date().toISOString() }).eq("id", session?.id);
     await supabase.rpc("increment_agent_metrics", { p_agent_id: payload.agent_id, p_messages: messagesToSend.length, p_tokens: totalTokens });
     const finalStatus = sendResult.success ? "success" : "partial";
     const finalStatusMessage = isPreviewMode ? sendResult.success ? `✅ Preview concluído - ${messagesToSend.length} mensagem(ns) salva(s)` : "⚠️ Preview com erro ao salvar" : sendResult.success ? `✅ Atendimento concluído - ${messagesToSend.length} mensagem(ns) enviada(s)${crmAutoResult.created ? " | Lead criado" : ""}${transferMessageToCustomer ? " | Transferido para humano" : ""}` : "⚠️ Resposta gerada mas houve erro no envio";
     await logger.complete(finalStatus, finalStatusMessage, finalResponse, !isPreviewMode && sendResult.success, sendResult.providerMessageId, sendResult.success ? null : isPreviewMode ? "Erro ao salvar" : "Erro no envio WhatsApp");
     console.log(`[ai-process-conversation] ${FUNCTION_VERSION} ${modeLabel} Completed in ${Date.now() - startTime}ms | Tokens: ${totalTokens} | Messages: ${messagesToSend.length} | CRM Auto: ${crmAutoResult.created ? "created" : crmAutoResult.reason} | Transfer: ${transferMessageToCustomer ? "yes" : "no"} | Pipeline: ${pipelineId}`);
-    return new Response(JSON.stringify({ status: "success", preview_mode: isPreviewMode, pipeline_id: pipelineId, function_version: FUNCTION_VERSION, specialists_used: selectedSpecialists.map((s) => ({ name: s.name, type: s.type })), response_text: finalResponse, response_length: finalResponse?.length || 0, messages_sent: messagesToSend.length, message_ids: allMessageIds, tokens_used: totalTokens, tokens_breakdown: { guardrail: guardrailTokensUsed, orchestrator: orchestratorTokensUsed, rag: ragTokensUsed, llm: tokensIn + tokensOut, split: splitTokensUsed, attendant_selection: attendantSelectionTokensUsed }, duration_ms: Date.now() - startTime, rag_used: !!ragContext, guardrail_passed: true, split_enabled: splitMessagesEnabled, message_id: sendResult.messageId, crm_auto: crmAutoResult, transfer: transferMessageToCustomer ? { transferred: true, message_to_customer: transferMessageToCustomer } : null }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ status: "success", preview_mode: isPreviewMode, pipeline_id: pipelineId, function_version: FUNCTION_VERSION, specialists_used: selectedSpecialists.map((s) => ({ name: s.name, type: s.type })), response_text: finalResponse, response_length: finalResponse?.length || 0, messages_sent: messagesToSend.length, message_ids: allMessageIds, tokens_used: totalTokens, tokens_breakdown: { guardrail: guardrailTokensUsed, orchestrator: orchestratorTokensUsed, rag: ragTokensUsed, llm: tokensIn + tokensOut, tool_loop: additionalLlmTokensIn + additionalLlmTokensOut, split: splitTokensUsed, attendant_selection: attendantSelectionTokensUsed }, duration_ms: Date.now() - startTime, rag_used: !!ragContext, guardrail_passed: true, split_enabled: splitMessagesEnabled, message_id: sendResult.messageId, crm_auto: crmAutoResult, transfer: transferMessageToCustomer ? { transferred: true, message_to_customer: transferMessageToCustomer } : null }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     console.error("[ai-process-conversation] Error:", error);
     if (logger) await logger.complete("error", "❌ Erro no processamento", null, false, null, error.message);

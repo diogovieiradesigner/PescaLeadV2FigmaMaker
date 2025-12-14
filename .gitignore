@@ -31,3 +31,10 @@ build/
 .env
 .env.local
 .env.*.local
+
+# MCP configs (contain secrets)
+.mcp.json
+.claude/
+
+# Windows special files
+nul

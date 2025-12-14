@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, MessageSquare, FileText, Activity, Save, User, Building2, Calendar, Tag, DollarSign, Phone, Mail, MoreVertical, CheckCircle, XCircle, Globe, Send, Settings } from 'lucide-react';
+import { X, MessageSquare, FileText, Activity, Save, User, Building2, Calendar, Tag, DollarSign, Phone, Mail, MoreVertical, CheckCircle, XCircle, Globe, Send, Settings, FolderOpen, Upload, Download, Trash2, File, FileImage, FileSpreadsheet, FileType, Plus } from 'lucide-react';
 import { CRMLead, CustomField } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
 import { Avatar } from './Avatar';
@@ -8,6 +8,7 @@ import { useSingleConversation } from '../hooks/useSingleConversation';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeadCustomFields } from '../hooks/useLeadCustomFields'; // ✅ Novo hook de lazy loading
 import { getLeadActivities, updateLead } from '../services/leads-service';
+import { deleteCustomFieldValue } from '../services/custom-fields-service';
 import { toast } from 'sonner';
 import { createConversation } from '../services/chat-service';
 import { supabase } from '../utils/supabase/client';
@@ -62,7 +63,22 @@ interface LeadFullViewModalProps {
   };
 }
 
-type ActiveTab = 'chat' | 'data' | 'activities';
+type ActiveTab = 'chat' | 'data' | 'activities' | 'files';
+
+// ✅ Interface para arquivos do lead
+interface LeadFile {
+  id: string;
+  lead_id: string;
+  workspace_id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  file_type: string;
+  description: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 function formatActivityTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -367,6 +383,28 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   const [loadingInboxes, setLoadingInboxes] = useState(false);
   const [selectedPhone, setSelectedPhone] = useState<string>(''); // ✅ Telefone selecionado
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null); // ✅ Controle de qual campo está em edição
+
+  // ✅ Estados para adicionar novo campo personalizado
+  const [showAddFieldForm, setShowAddFieldForm] = useState(false);
+  const [newFieldName, setNewFieldName] = useState('');
+  const [newFieldType, setNewFieldType] = useState<'text' | 'number' | 'date' | 'email' | 'phone' | 'url' | 'textarea'>('text');
+  const [newFieldValue, setNewFieldValue] = useState('');
+  const [isAddingField, setIsAddingField] = useState(false);
+
+  // ✅ Estados para modal de confirmação de exclusão de campo
+  const [deleteFieldModal, setDeleteFieldModal] = useState<{ show: boolean; fieldId: string; fieldName: string }>({
+    show: false,
+    fieldId: '',
+    fieldName: ''
+  });
+  const [isDeletingField, setIsDeletingField] = useState(false);
+
+  // ✅ Estados para aba de Arquivos
+  const [leadFiles, setLeadFiles] = useState<LeadFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   
   // ✅ LAZY LOADING: Custom fields carregam sob demanda (sem cache - sempre recarrega no kanban)
   const { 
@@ -459,29 +497,54 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   const availablePhones = getAllPhones();
   const hasPhone = availablePhones.length > 0;
 
+  // ✅ Carregar arquivos do lead (definido antes do useEffect que o usa)
+  const fetchLeadFiles = useCallback(async () => {
+    if (!lead?.id || !currentWorkspace?.id) return;
+
+    setLoadingFiles(true);
+    try {
+      const { data, error } = await supabase
+        .from('lead_files')
+        .select('*')
+        .eq('lead_id', lead.id)
+        .eq('workspace_id', currentWorkspace.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setLeadFiles(data || []);
+    } catch (error) {
+      console.error('[LeadFullViewModal] Erro ao carregar arquivos:', error);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }, [lead?.id, currentWorkspace?.id]);
+
   // Inicializar dados quando abrir
   useEffect(() => {
     if (isOpen && lead) {
       // ✅ CORREÇÃO: Inicializar formData com customFields do hook quando disponíveis
       const initialData: CRMLead = {
         ...lead,
-        customFields: lead.customFields && lead.customFields.length > 0 
-          ? lead.customFields 
-          : customFields.length > 0 
-            ? customFields 
+        customFields: lead.customFields && lead.customFields.length > 0
+          ? lead.customFields
+          : customFields.length > 0
+            ? customFields
             : undefined
       };
       setFormData(initialData);
-      
+
       // Carregar atividades
       fetchActivities();
-      
+
       // ✅ Carregar inboxes disponíveis
       if (currentWorkspace?.id) {
         loadAvailableInboxes();
       }
+
+      // ✅ Carregar arquivos do lead
+      fetchLeadFiles();
     }
-  }, [isOpen, lead, currentWorkspace?.id, customFields]); // ✅ Incluir customFields nas dependências
+  }, [isOpen, lead, currentWorkspace?.id, customFields, fetchLeadFiles]); // ✅ Incluir customFields e fetchLeadFiles nas dependências
 
   // ✅ Gerenciar seleção de telefone
   useEffect(() => {
@@ -496,6 +559,126 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
       setSelectedPhone('');
     }
   }, [formData, customFields]);
+
+  // ✅ Handler para adicionar novo campo personalizado
+  const handleAddCustomField = async () => {
+    if (!newFieldName.trim()) {
+      toast.error('Nome do campo é obrigatório');
+      return;
+    }
+
+    // Verificar se já existe um campo com esse nome
+    const existingField = customFields.find(
+      f => f.fieldName.toLowerCase() === newFieldName.trim().toLowerCase()
+    );
+    if (existingField) {
+      toast.error('Já existe um campo com esse nome');
+      return;
+    }
+
+    setIsAddingField(true);
+
+    try {
+      // Criar novo campo com ID temporário (UUID)
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      const newField: CustomField = {
+        id: tempId,
+        fieldName: newFieldName.trim(),
+        fieldType: newFieldType,
+        fieldValue: newFieldValue,
+      };
+
+      // Atualizar formData com o novo campo
+      const currentFields = formData?.customFields && formData.customFields.length > 0
+        ? formData.customFields
+        : customFields;
+
+      const updatedFields = [...currentFields, newField];
+
+      setFormData(prev => prev ? ({ ...prev, customFields: updatedFields }) : null);
+
+      // Limpar formulário
+      setNewFieldName('');
+      setNewFieldType('text');
+      setNewFieldValue('');
+      setShowAddFieldForm(false);
+
+      toast.success('Campo adicionado! Clique em "Salvar Alterações" para confirmar.');
+
+      console.log('[LeadFullViewModal] Novo campo adicionado:', newField);
+    } catch (error) {
+      console.error('[LeadFullViewModal] Erro ao adicionar campo:', error);
+      toast.error('Erro ao adicionar campo. Tente novamente.');
+    } finally {
+      setIsAddingField(false);
+    }
+  };
+
+  // ✅ Handler para cancelar adição de campo
+  const handleCancelAddField = () => {
+    setNewFieldName('');
+    setNewFieldType('text');
+    setNewFieldValue('');
+    setShowAddFieldForm(false);
+  };
+
+  // ✅ Handler para abrir modal de confirmação de exclusão de campo
+  const handleDeleteCustomField = (fieldId: string, fieldName: string) => {
+    setDeleteFieldModal({ show: true, fieldId, fieldName });
+  };
+
+  // ✅ Handler para confirmar exclusão de campo personalizado (salva imediatamente no banco)
+  const confirmDeleteCustomField = async () => {
+    const { fieldId, fieldName } = deleteFieldModal;
+
+    if (!lead?.id) {
+      toast.error('Erro: Lead não encontrado');
+      return;
+    }
+
+    setIsDeletingField(true);
+
+    try {
+      // Excluir do banco de dados imediatamente
+      const { error } = await deleteCustomFieldValue(lead.id, fieldId);
+
+      if (error) {
+        console.error('[LeadFullViewModal] Erro ao excluir campo:', error);
+        toast.error('Erro ao excluir campo. Tente novamente.');
+        return;
+      }
+
+      // Atualizar estado local removendo o campo
+      const currentFields = formData?.customFields && formData.customFields.length > 0
+        ? formData.customFields
+        : customFields;
+
+      const updatedFields = currentFields.filter(f => f.id !== fieldId);
+
+      setFormData(prev => prev ? ({ ...prev, customFields: updatedFields }) : null);
+
+      // Recarregar campos personalizados do banco
+      refreshCustomFields();
+
+      toast.success(`Campo "${fieldName}" excluído com sucesso!`);
+
+      console.log('[LeadFullViewModal] Campo excluído do banco:', fieldId);
+
+    } catch (error) {
+      console.error('[LeadFullViewModal] Erro inesperado ao excluir campo:', error);
+      toast.error('Erro ao excluir campo. Tente novamente.');
+    } finally {
+      setIsDeletingField(false);
+      // Fechar modal
+      setDeleteFieldModal({ show: false, fieldId: '', fieldName: '' });
+    }
+  };
+
+  // ✅ Handler para cancelar exclusão de campo
+  const cancelDeleteCustomField = () => {
+    setDeleteFieldModal({ show: false, fieldId: '', fieldName: '' });
+  };
 
   // ✅ Handler para alteração de campos personalizados
   const handleCustomFieldChange = (fieldId: string, value: string) => {
@@ -563,6 +746,224 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     getLeadActivities(lead.id).then(({ activities }) => {
       setActivities(activities);
     }).finally(() => setLoadingActivities(false));
+  };
+
+  // ✅ Upload de arquivo
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !lead?.id || !currentWorkspace?.id) return;
+
+    // Validar tamanho (50MB max)
+    if (file.size > 52428800) {
+      toast.error('Arquivo muito grande. Máximo permitido: 50MB');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      // Gerar nome único para o arquivo
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${lead.id}/${Date.now()}_${file.name}`;
+
+      // Upload para o storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('lead-files')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Registrar na tabela
+      const { error: dbError } = await supabase
+        .from('lead_files')
+        .insert({
+          lead_id: lead.id,
+          workspace_id: currentWorkspace.id,
+          file_name: file.name,
+          file_path: uploadData.path,
+          file_size: file.size,
+          file_type: file.type || 'application/octet-stream',
+          uploaded_by: (await supabase.auth.getUser()).data.user?.id
+        });
+
+      if (dbError) throw dbError;
+
+      toast.success('Arquivo enviado com sucesso!');
+      fetchLeadFiles();
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro no upload:', error);
+      toast.error(`Erro ao enviar arquivo: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setUploadingFile(false);
+      // Limpar o input
+      event.target.value = '';
+    }
+  };
+
+  // ✅ Upload de arquivo via File (para drag and drop)
+  const uploadFile = async (file: File) => {
+    if (!lead?.id || !currentWorkspace?.id) return;
+
+    // Validar tamanho (50MB max)
+    if (file.size > 52428800) {
+      toast.error('Arquivo muito grande. Máximo permitido: 50MB');
+      return;
+    }
+
+    // Validar tipo de arquivo
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain', 'text/csv',
+      'application/zip', 'application/x-rar-compressed', 'application/vnd.rar'
+    ];
+
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.zip', '.rar'];
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+      toast.error('Tipo de arquivo não permitido');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const fileName = `${lead.id}/${Date.now()}_${file.name}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('lead-files')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabase
+        .from('lead_files')
+        .insert({
+          lead_id: lead.id,
+          workspace_id: currentWorkspace.id,
+          file_name: file.name,
+          file_path: uploadData.path,
+          file_size: file.size,
+          file_type: file.type || 'application/octet-stream',
+          uploaded_by: (await supabase.auth.getUser()).data.user?.id
+        });
+
+      if (dbError) throw dbError;
+
+      toast.success('Arquivo enviado com sucesso!');
+      fetchLeadFiles();
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro no upload:', error);
+      toast.error(`Erro ao enviar arquivo: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  // ✅ Handlers para Drag and Drop
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      // Upload do primeiro arquivo (ou múltiplos se quiser)
+      uploadFile(files[0]);
+    }
+  };
+
+  // ✅ Download de arquivo
+  const handleFileDownload = async (file: LeadFile) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('lead-files')
+        .download(file.file_path);
+
+      if (error) throw error;
+
+      // Criar link de download
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.file_name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro no download:', error);
+      toast.error(`Erro ao baixar arquivo: ${error.message || 'Tente novamente'}`);
+    }
+  };
+
+  // ✅ Deletar arquivo
+  const handleFileDelete = async (file: LeadFile) => {
+    if (!confirm(`Deseja realmente excluir "${file.file_name}"?`)) return;
+
+    setDeletingFileId(file.id);
+    try {
+      // Deletar do storage
+      const { error: storageError } = await supabase.storage
+        .from('lead-files')
+        .remove([file.file_path]);
+
+      if (storageError) {
+        console.warn('[LeadFullViewModal] Arquivo não encontrado no storage:', storageError);
+      }
+
+      // Deletar do banco
+      const { error: dbError } = await supabase
+        .from('lead_files')
+        .delete()
+        .eq('id', file.id);
+
+      if (dbError) throw dbError;
+
+      toast.success('Arquivo excluído com sucesso!');
+      setLeadFiles(prev => prev.filter(f => f.id !== file.id));
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro ao deletar arquivo:', error);
+      toast.error(`Erro ao excluir arquivo: ${error.message || 'Tente novamente'}`);
+    } finally {
+      setDeletingFileId(null);
+    }
+  };
+
+  // ✅ Helper para formatar tamanho do arquivo
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // ✅ Helper para ícone por tipo de arquivo
+  const getFileIcon = (fileType: string) => {
+    if (fileType.startsWith('image/')) return <FileImage className="w-5 h-5" />;
+    if (fileType.includes('spreadsheet') || fileType.includes('excel') || fileType === 'text/csv') return <FileSpreadsheet className="w-5 h-5" />;
+    if (fileType.includes('pdf')) return <FileType className="w-5 h-5" />;
+    return <File className="w-5 h-5" />;
   };
 
   // Salvar alterações na Sidebar Direita
@@ -779,6 +1180,24 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                     Campos Personalizados
                  </button>
                  <button
+                    onClick={() => setActiveTab('files')}
+                    className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                       activeTab === 'files'
+                          ? 'border-[#0169D9] text-[#0169D9]'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                 >
+                    <FolderOpen className="w-4 h-4" />
+                    Arquivos
+                    {leadFiles.length > 0 && (
+                      <span className={`ml-1 px-1.5 py-0.5 text-xs rounded-full ${
+                        isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'
+                      }`}>
+                        {leadFiles.length}
+                      </span>
+                    )}
+                 </button>
+                 <button
                     onClick={() => setActiveTab('activities')}
                     className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
                        activeTab === 'activities'
@@ -923,9 +1342,131 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                        isDark ? 'bg-[#000000]' : 'bg-gray-50'
                     }`}>
                        <div className="max-w-3xl mx-auto">
-                          <h3 className={`text-lg font-medium mb-6 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                             Campos Personalizados
-                          </h3>
+                          {/* Header com título e botão de adicionar */}
+                          <div className="flex items-center justify-between mb-6">
+                             <h3 className={`text-lg font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                Campos Personalizados
+                             </h3>
+                             <button
+                                onClick={() => setShowAddFieldForm(true)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                   isDark
+                                      ? 'bg-white/10 hover:bg-white/20 text-white'
+                                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                                }`}
+                             >
+                                <Plus className="w-4 h-4" />
+                                Adicionar Campo
+                             </button>
+                          </div>
+
+                          {/* Formulário para adicionar novo campo */}
+                          {showAddFieldForm && (
+                             <div className={`mb-6 p-4 rounded-lg border ${
+                                isDark ? 'bg-white/[0.03] border-white/[0.12]' : 'bg-white border-gray-200 shadow-sm'
+                             }`}>
+                                <h4 className={`text-sm font-medium mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                   Novo Campo Personalizado
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                   {/* Nome do Campo */}
+                                   <div>
+                                      <label className={`block text-xs font-medium mb-1.5 ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                                         Nome do Campo *
+                                      </label>
+                                      <input
+                                         type="text"
+                                         value={newFieldName}
+                                         onChange={(e) => setNewFieldName(e.target.value)}
+                                         placeholder="Ex: CNPJ, Website, etc."
+                                         className={`w-full px-3 py-2 rounded-lg border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-[#0169D9] ${
+                                            isDark
+                                               ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/30'
+                                               : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+                                         }`}
+                                      />
+                                   </div>
+
+                                   {/* Tipo do Campo */}
+                                   <div>
+                                      <label className={`block text-xs font-medium mb-1.5 ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                                         Tipo do Campo
+                                      </label>
+                                      <select
+                                         value={newFieldType}
+                                         onChange={(e) => setNewFieldType(e.target.value as any)}
+                                         className={`w-full px-3 py-2 rounded-lg border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-[#0169D9] ${
+                                            isDark
+                                               ? 'bg-white/[0.05] border-white/[0.1] text-white'
+                                               : 'bg-gray-50 border-gray-200 text-gray-900'
+                                         }`}
+                                      >
+                                         <option value="text">Texto</option>
+                                         <option value="number">Número</option>
+                                         <option value="date">Data</option>
+                                         <option value="email">E-mail</option>
+                                         <option value="phone">Telefone</option>
+                                         <option value="url">URL</option>
+                                         <option value="textarea">Texto Longo</option>
+                                      </select>
+                                   </div>
+
+                                   {/* Valor Inicial */}
+                                   <div>
+                                      <label className={`block text-xs font-medium mb-1.5 ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                                         Valor Inicial (opcional)
+                                      </label>
+                                      <input
+                                         type={newFieldType === 'number' ? 'number' : newFieldType === 'date' ? 'date' : 'text'}
+                                         value={newFieldValue}
+                                         onChange={(e) => setNewFieldValue(e.target.value)}
+                                         placeholder="Valor inicial..."
+                                         className={`w-full px-3 py-2 rounded-lg border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-[#0169D9] ${
+                                            isDark
+                                               ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/30'
+                                               : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+                                         }`}
+                                      />
+                                   </div>
+                                </div>
+
+                                {/* Botões de Ação */}
+                                <div className="flex items-center justify-end gap-3 mt-4">
+                                   <button
+                                      onClick={handleCancelAddField}
+                                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                         isDark
+                                            ? 'text-white/60 hover:text-white hover:bg-white/10'
+                                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                   >
+                                      Cancelar
+                                   </button>
+                                   <button
+                                      onClick={handleAddCustomField}
+                                      disabled={isAddingField || !newFieldName.trim()}
+                                      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                         isAddingField || !newFieldName.trim()
+                                            ? 'bg-gray-400 cursor-not-allowed opacity-60'
+                                            : 'bg-[#0169D9] hover:bg-[#0169D9]/90'
+                                      } text-white`}
+                                   >
+                                      {isAddingField ? (
+                                         <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Adicionando...
+                                         </>
+                                      ) : (
+                                         <>
+                                            <Plus className="w-4 h-4" />
+                                            Adicionar
+                                         </>
+                                      )}
+                                   </button>
+                                </div>
+                             </div>
+                          )}
+
                           {(() => {
                              // ✅ CORREÇÃO: Usar customFields do formData se disponível (valores editados), senão usar do hook
                              const fieldsToRender = formData?.customFields && formData.customFields.length > 0 
@@ -937,10 +1478,25 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                    {fieldsToRender.map(field => {
                                    const isJsonField = field.fieldName.toLowerCase().includes('json');
                                    return (
-                                      <div key={field.id} className={`p-4 rounded-lg border ${
-                                         isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-white border-gray-200'
+                                      <div key={field.id} className={`group relative p-4 rounded-lg border transition-all ${
+                                         isDark ? 'bg-white/[0.02] border-white/[0.08] hover:border-white/[0.15]' : 'bg-white border-gray-200 hover:border-gray-300'
                                       } ${isJsonField ? 'md:col-span-2' : ''}`}>
-                                         <label className={`block text-xs font-medium mb-1.5 ${
+                                         {/* Botão de excluir - aparece ao passar o mouse */}
+                                         <button
+                                            onClick={(e) => {
+                                               e.stopPropagation();
+                                               handleDeleteCustomField(field.id, field.fieldName);
+                                            }}
+                                            className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                                               isDark
+                                                  ? 'hover:bg-red-500/20 text-red-400 hover:text-red-300'
+                                                  : 'hover:bg-red-100 text-red-400 hover:text-red-500'
+                                            }`}
+                                            title="Excluir campo"
+                                         >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                         </button>
+                                         <label className={`block text-xs font-medium mb-1.5 pr-8 ${
                                             isDark ? 'text-white/60' : 'text-gray-500'
                                          }`}>
                                             {field.fieldName}
@@ -1318,9 +1874,26 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                 </div>
                              ) : (
                                 <div className={`text-center py-12 rounded-lg border border-dashed ${
-                                   isDark ? 'border-white/[0.08] text-white/40' : 'border-gray-300 text-gray-500'
+                                   isDark ? 'border-white/[0.08]' : 'border-gray-300'
                                 }`}>
-                                   Nenhum campo personalizado configurado.
+                                   <FileText className={`w-12 h-12 mx-auto mb-4 ${isDark ? 'text-white/20' : 'text-gray-300'}`} />
+                                   <p className={`text-sm font-medium mb-2 ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                                      Nenhum campo personalizado configurado
+                                   </p>
+                                   <p className={`text-xs mb-4 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                      Adicione campos personalizados para armazenar informações extras do lead
+                                   </p>
+                                   <button
+                                      onClick={() => setShowAddFieldForm(true)}
+                                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                         isDark
+                                            ? 'bg-white/10 hover:bg-white/20 text-white'
+                                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                                      }`}
+                                   >
+                                      <Plus className="w-4 h-4" />
+                                      Adicionar Campo
+                                   </button>
                                 </div>
                              );
                           })()}
@@ -1371,6 +1944,193 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                 </div>
                              )}
                           </div>
+                       </div>
+                    </div>
+                 )}
+
+                 {activeTab === 'files' && (
+                    <div className={`p-6 overflow-y-auto h-full ${
+                       isDark ? 'bg-[#000000]' : 'bg-gray-50'
+                    }`}>
+                       <div className="max-w-3xl mx-auto">
+                          {/* Header com título e botão de upload */}
+                          <div className="flex items-center justify-between mb-6">
+                             <h3 className={`text-lg font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                Arquivos do Lead
+                             </h3>
+                             <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition-colors ${
+                                uploadingFile
+                                   ? 'bg-gray-400 cursor-not-allowed'
+                                   : 'bg-[#0169D9] hover:bg-[#0169D9]/90'
+                             } text-white text-sm font-medium`}>
+                                {uploadingFile ? (
+                                   <>
+                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      Enviando...
+                                   </>
+                                ) : (
+                                   <>
+                                      <Upload className="w-4 h-4" />
+                                      Enviar Arquivo
+                                   </>
+                                )}
+                                <input
+                                   type="file"
+                                   className="hidden"
+                                   onChange={handleFileUpload}
+                                   disabled={uploadingFile}
+                                   accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip,.rar"
+                                />
+                             </label>
+                          </div>
+
+                          {/* Zona de Drag and Drop - sempre visível */}
+                          <div
+                             className={`mb-6 p-8 rounded-xl border-2 border-dashed text-center cursor-pointer transition-all ${
+                                isDraggingFile
+                                   ? 'border-[#0169D9] bg-[#0169D9]/20 scale-[1.02]'
+                                   : isDark
+                                      ? 'border-white/20 hover:border-[#0169D9]/50 hover:bg-white/[0.03]'
+                                      : 'border-gray-300 hover:border-[#0169D9]/50 hover:bg-blue-50/50'
+                             }`}
+                             onClick={() => {
+                                if (uploadingFile) return;
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = '.pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip,.rar';
+                                input.onchange = (e) => {
+                                   const file = (e.target as HTMLInputElement).files?.[0];
+                                   if (file) uploadFile(file);
+                                };
+                                input.click();
+                             }}
+                             onDragOver={handleDragOver}
+                             onDragLeave={handleDragLeave}
+                             onDrop={handleDrop}
+                          >
+                             {uploadingFile ? (
+                                <>
+                                   <div className="w-10 h-10 border-3 border-[#0169D9] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                                   <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-700'}`}>
+                                      Enviando arquivo...
+                                   </p>
+                                </>
+                             ) : isDraggingFile ? (
+                                <>
+                                   <Upload className="w-12 h-12 mx-auto mb-3 text-[#0169D9] animate-bounce" />
+                                   <p className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                      Solte o arquivo aqui!
+                                   </p>
+                                </>
+                             ) : (
+                                <>
+                                   <div className={`w-14 h-14 mx-auto mb-3 rounded-full flex items-center justify-center ${
+                                      isDark ? 'bg-white/10' : 'bg-gray-100'
+                                   }`}>
+                                      <Upload className={`w-7 h-7 ${isDark ? 'text-white/60' : 'text-gray-400'}`} />
+                                   </div>
+                                   <p className={`text-sm font-medium mb-1 ${isDark ? 'text-white/80' : 'text-gray-600'}`}>
+                                      Arraste e solte arquivos aqui
+                                   </p>
+                                   <p className={`text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                      ou clique para selecionar
+                                   </p>
+                                   <p className={`text-xs mt-3 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                                      PDF, imagens, documentos, planilhas • Máximo 50MB
+                                   </p>
+                                </>
+                             )}
+                          </div>
+
+                          {/* Lista de arquivos */}
+                          {loadingFiles ? (
+                             <div className="flex items-center justify-center py-12">
+                                <div className="w-8 h-8 border-2 border-[#0169D9] border-t-transparent rounded-full animate-spin" />
+                             </div>
+                          ) : leadFiles.length > 0 ? (
+                             <div className="space-y-3">
+                                {leadFiles.map((file) => (
+                                   <div
+                                      key={file.id}
+                                      className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
+                                         isDark
+                                            ? 'bg-white/[0.02] border-white/[0.08] hover:bg-white/[0.05]'
+                                            : 'bg-white border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                   >
+                                      {/* Ícone do arquivo */}
+                                      <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
+                                         file.file_type.includes('pdf')
+                                            ? 'bg-red-500/10 text-red-500'
+                                            : file.file_type.startsWith('image/')
+                                            ? 'bg-green-500/10 text-green-500'
+                                            : file.file_type.includes('spreadsheet') || file.file_type.includes('excel') || file.file_type === 'text/csv'
+                                            ? 'bg-emerald-500/10 text-emerald-500'
+                                            : 'bg-blue-500/10 text-blue-500'
+                                      }`}>
+                                         {getFileIcon(file.file_type)}
+                                      </div>
+
+                                      {/* Informações do arquivo */}
+                                      <div className="flex-1 min-w-0">
+                                         <p className={`text-sm font-medium truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                            {file.file_name}
+                                         </p>
+                                         <div className={`flex items-center gap-2 text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                                            <span>{formatFileSize(file.file_size)}</span>
+                                            <span>•</span>
+                                            <span>{new Date(file.created_at).toLocaleDateString('pt-BR', {
+                                               day: '2-digit',
+                                               month: '2-digit',
+                                               year: 'numeric',
+                                               hour: '2-digit',
+                                               minute: '2-digit'
+                                            })}</span>
+                                         </div>
+                                      </div>
+
+                                      {/* Ações */}
+                                      <div className="flex items-center gap-2">
+                                         <button
+                                            onClick={() => handleFileDownload(file)}
+                                            className={`p-2 rounded-lg transition-colors ${
+                                               isDark
+                                                  ? 'hover:bg-white/10 text-white/60 hover:text-white'
+                                                  : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+                                            }`}
+                                            title="Baixar arquivo"
+                                         >
+                                            <Download className="w-4 h-4" />
+                                         </button>
+                                         <button
+                                            onClick={() => handleFileDelete(file)}
+                                            disabled={deletingFileId === file.id}
+                                            className={`p-2 rounded-lg transition-colors ${
+                                               deletingFileId === file.id
+                                                  ? 'opacity-50 cursor-not-allowed'
+                                                  : isDark
+                                                  ? 'hover:bg-red-500/20 text-red-400 hover:text-red-300'
+                                                  : 'hover:bg-red-100 text-red-500 hover:text-red-600'
+                                            }`}
+                                            title="Excluir arquivo"
+                                         >
+                                            {deletingFileId === file.id ? (
+                                               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                            ) : (
+                                               <Trash2 className="w-4 h-4" />
+                                            )}
+                                         </button>
+                                      </div>
+                                   </div>
+                                ))}
+                             </div>
+                          ) : (
+                             <div className={`text-center py-6 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                <p className="text-sm">
+                                   Nenhum arquivo enviado ainda
+                                </p>
+                             </div>
+                          )}
                        </div>
                     </div>
                  )}
@@ -1495,6 +2255,85 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
         </div>
       </div>
+
+      {/* Modal de Confirmação de Exclusão de Campo Personalizado */}
+      {deleteFieldModal.show && (
+        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 10001 }}>
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={cancelDeleteCustomField}
+          />
+
+          {/* Modal */}
+          <div className={`relative w-full max-w-md mx-4 rounded-xl shadow-2xl ${
+            isDark ? 'bg-[#1a1a1a] border border-white/[0.1]' : 'bg-white'
+          }`}>
+            {/* Header */}
+            <div className={`p-6 pb-4 border-b ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${isDark ? 'bg-red-500/20' : 'bg-red-100'}`}>
+                  <Trash2 className="w-5 h-5 text-red-500" />
+                </div>
+                <div>
+                  <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    Excluir Campo
+                  </h3>
+                  <p className={`text-sm ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                    Esta ação não pode ser desfeita
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className={`text-sm ${isDark ? 'text-white/80' : 'text-gray-600'}`}>
+                Tem certeza que deseja excluir o campo{' '}
+                <span className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  "{deleteFieldModal.fieldName}"
+                </span>
+                ? O valor deste campo será removido deste lead.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className={`p-6 pt-4 border-t ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={cancelDeleteCustomField}
+                  disabled={isDeletingField}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isDark
+                      ? 'text-white/70 hover:text-white hover:bg-white/10'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  } ${isDeletingField ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmDeleteCustomField}
+                  disabled={isDeletingField}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${
+                    isDeletingField
+                      ? 'bg-red-400 cursor-not-allowed'
+                      : 'bg-red-500 hover:bg-red-600'
+                  }`}
+                >
+                  {isDeletingField ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    'Excluir Campo'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

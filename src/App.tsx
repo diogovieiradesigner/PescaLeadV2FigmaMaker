@@ -24,6 +24,7 @@ import { ExtractionProgress } from './components/ExtractionProgress';
 import { CampaignView } from './components/CampaignView';
 import { AIServiceView } from './components/AIServiceView';
 import { AgentLogsView } from './components/AgentLogsView';
+import { CalendarView } from './components/CalendarView';
 import { MoveColumnLeadsModal } from './components/MoveColumnLeadsModal';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
@@ -50,7 +51,7 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
-  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs'>('dashboard');
+  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs' | 'calendar'>('dashboard');
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
   const [isAddFunnelModalOpen, setIsAddFunnelModalOpen] = useState(false);
@@ -882,40 +883,79 @@ function AppContent() {
       <div className={`h-screen flex overflow-hidden transition-colors ${
         theme === 'dark' ? 'bg-true-black' : 'bg-light-bg'
       }`}>
-        <Sidebar 
-          isCollapsed={isSidebarCollapsed} 
-          onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        {/* Desktop Sidebar */}
+        <div className="hidden md:block">
+          <Sidebar
+            isCollapsed={isSidebarCollapsed}
+            onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            theme={theme}
+            currentView={currentView}
+            onViewChange={setCurrentView}
+          />
+        </div>
+
+        {/* Mobile Sidebar */}
+        <MobileSidebar
+          isOpen={isMobileSidebarOpen}
+          onClose={() => setIsMobileSidebarOpen(false)}
           theme={theme}
           currentView={currentView}
           onViewChange={setCurrentView}
         />
-        <div className="flex-1 flex flex-col items-center justify-center p-8">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 rounded-xl bg-[#0169D9] flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-              </svg>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header - mesmo sem funis, mostra o header padrão */}
+          <Header
+            currentFunnel=""
+            funnels={[]}
+            onFunnelChange={() => {}}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onSettingsClick={() => {}}
+            theme={theme}
+            onThemeToggle={toggleTheme}
+            searchQuery=""
+            onSearchChange={() => {}}
+            onNewFunnelClick={() => setIsAddFunnelModalOpen(true)}
+            onEditFunnelClick={() => {}}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
+            onRefresh={() => {}}
+            onManageMembersClick={() => setIsWorkspaceMembersOpen(true)}
+            onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
+            onFiltersToggle={() => {}}
+            showFilters={false}
+          />
+
+          {/* Empty State Content */}
+          <div className="flex-1 flex flex-col items-center justify-center p-8">
+            <div className="text-center max-w-md">
+              <div className="w-16 h-16 rounded-xl bg-[#0169D9] flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+              </div>
+              <h2 className={`text-xl font-semibold mb-2 ${
+                theme === 'dark' ? 'text-white' : 'text-text-primary-light'
+              }`}>
+                Nenhum funil encontrado
+              </h2>
+              <p className={`mb-6 ${
+                theme === 'dark' ? 'text-white/60' : 'text-text-secondary-light'
+              }`}>
+                Crie seu primeiro funil para começar a gerenciar seus leads
+              </p>
+              <button
+                onClick={() => {
+                  console.log('[APP] 🔘 Botão "Criar Primeiro Funil" clicado');
+                  console.log('[APP] Estado atual:', { isAddFunnelModalOpen, currentView, funnels: funnels.length });
+                  setIsAddFunnelModalOpen(true);
+                }}
+                className="px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
+              >
+                Criar Primeiro Funil
+              </button>
             </div>
-            <h2 className={`text-xl font-semibold mb-2 ${
-              theme === 'dark' ? 'text-white' : 'text-text-primary-light'
-            }`}>
-              Nenhum funil encontrado
-            </h2>
-            <p className={`mb-6 ${
-              theme === 'dark' ? 'text-white/60' : 'text-text-secondary-light'
-            }`}>
-              Crie seu primeiro funil para começar a gerenciar seus leads
-            </p>
-            <button
-              onClick={() => {
-                console.log('[APP] 🔘 Botão "Criar Primeiro Funil" clicado');
-                console.log('[APP] Estado atual:', { isAddFunnelModalOpen, currentView, funnels: funnels.length });
-                setIsAddFunnelModalOpen(true);
-              }}
-              className="px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
-            >
-              Criar Primeiro Funil
-            </button>
           </div>
         </div>
 
@@ -1045,11 +1085,18 @@ function AppContent() {
             onNavigateToLogs={() => setCurrentView('agent-logs')}
           />
         ) : currentView === 'agent-logs' ? (
-          <AgentLogsView 
-            theme={theme} 
-            onBack={() => setCurrentView('ai-service')} 
+          <AgentLogsView
+            theme={theme}
+            onBack={() => setCurrentView('ai-service')}
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
+          />
+        ) : currentView === 'calendar' ? (
+          <CalendarView
+            theme={theme}
+            onThemeToggle={toggleTheme}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
+            onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
           />
         ) : (
           <>

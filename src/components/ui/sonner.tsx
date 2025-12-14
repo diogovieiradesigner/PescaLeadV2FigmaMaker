@@ -13,9 +13,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
       richColors
       expand={false}
       visibleToasts={4}
+      offset={24}
+      style={{
+        right: 24,
+        bottom: 24,
+      }}
       toastOptions={{
         classNames: {
-          toast: isDark 
+          toast: isDark
             ? 'group toast group-[.toaster]:bg-[#1A1A1A] group-[.toaster]:text-white group-[.toaster]:border-white/10 group-[.toaster]:shadow-lg'
             : 'group toast group-[.toaster]:bg-white group-[.toaster]:text-gray-900 group-[.toaster]:border-gray-200 group-[.toaster]:shadow-lg',
           description: isDark ? 'group-[.toast]:text-white/60' : 'group-[.toast]:text-gray-500',

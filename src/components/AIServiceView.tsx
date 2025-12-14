@@ -1,13 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Resizable } from 're-resizable';
-import { 
+import {
   Bot,
   Save,
   RotateCcw,
   Trash2,
   Sun,
   Moon,
-  ScrollText
+  ScrollText,
+  Calendar,
+  Search,
+  UserCheck,
+  PhoneOff,
+  Wrench,
+  MessageSquare,
+  ChevronDown,
+  Plus,
+  X,
+  Link2,
+  Copy,
+  Check,
+  ExternalLink,
+  ToggleLeft,
+  ToggleRight,
+  Code2,
+  Upload,
+  Image as ImageIcon,
+  Settings
 } from 'lucide-react';
 import { useAIBuilderChat } from '../hooks/useAIBuilderChat';
 import { AgentConfigForm } from './AgentConfigForm';
@@ -20,6 +39,7 @@ import { DatabaseSetupNotice } from './DatabaseSetupNotice';
 import { AgentSystemToolsManager } from './AgentSystemToolsManager';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 interface AIServiceViewProps {
   theme: 'dark' | 'light';
@@ -232,7 +252,7 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
         }}
         style={{ display: 'flex', flexDirection: 'column' }}
       >
-        <AIBuilderChatIntegrated isDark={isDark} theme={theme} agentId={existingAgentId} />
+        <AIBuilderChatIntegrated isDark={isDark} theme={theme} agentId={existingAgentId} workspaceId={workspaceId} />
       </Resizable>
 
       {/* RIGHT COLUMN: Configuration */}
@@ -365,12 +385,13 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
 
               {/* System Tools Management */}
               {existingAgentId && workspaceId && (
-                <AgentSystemToolsManager 
-                  isDark={isDark} 
+                <AgentSystemToolsManager
+                  isDark={isDark}
                   agentId={existingAgentId}
                   workspaceId={workspaceId}
                 />
               )}
+
             </>
           )}
         </div>
@@ -383,12 +404,163 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
 // INTEGRATED CHAT COMPONENT FOR AI BUILDER
 // ============================================
 
-function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; theme: 'dark' | 'light'; agentId: string | null }) {
-  const { conversation, isLoading, error, queueSize, handleSendMessage, handleDeleteMessage, handleResetChat, handleResetAndStartTemplate } = useAIBuilderChat(agentId);
+function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDark: boolean; theme: 'dark' | 'light'; agentId: string | null; workspaceId: string | null }) {
+  const {
+    conversation,
+    isLoading,
+    error,
+    queueSize,
+    handleSendMessage,
+    handleDeleteMessage,
+    handleResetChat,
+    handleResetAndStartTemplate,
+    // Multiple conversations
+    previewConversations,
+    selectedConversationId,
+    selectConversation,
+    createNewConversation,
+    deleteConversation,
+    deleteAllConversations
+  } = useAIBuilderChat(agentId, workspaceId);
   const [showResetMenu, setShowResetMenu] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateMessage, setTemplateMessage] = useState('');
-  
+  const [showConversationDropdown, setShowConversationDropdown] = useState(false);
+  const [showNewConversationModal, setShowNewConversationModal] = useState(false);
+  const [newConversationTemplate, setNewConversationTemplate] = useState('');
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{ isOpen: boolean; conversationId: string | null; isDeleteAll?: boolean }>({
+    isOpen: false,
+    conversationId: null,
+    isDeleteAll: false
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Estados para Links Públicos
+  const [showPublicLinkDropdown, setShowPublicLinkDropdown] = useState(false);
+  const [publicLinks, setPublicLinks] = useState<any[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(false);
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
+  const [resettingLinkId, setResettingLinkId] = useState<string | null>(null);
+  const [uploadingIcon, setUploadingIcon] = useState<string | null>(null); // 'button' | 'avatar' | null
+  const [widgetConfigModalLink, setWidgetConfigModalLink] = useState<any | null>(null); // Link selecionado para configurar widget
+
+  // Ref para input de arquivo oculto
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingUploadType, setPendingUploadType] = useState<'button' | 'avatar' | null>(null);
+  const [pendingUploadLinkId, setPendingUploadLinkId] = useState<string | null>(null);
+
+  // Upload de ícone customizado para o widget
+  const uploadWidgetIcon = async (linkId: string, iconType: 'button' | 'avatar', file: File) => {
+    if (!workspaceId) return;
+
+    setUploadingIcon(iconType);
+    try {
+      // Validar tipo de arquivo
+      const allowedTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+      if (!allowedTypes.includes(file.type)) {
+        alert('Tipo de arquivo não suportado. Use PNG, JPG, GIF, WebP ou SVG.');
+        return;
+      }
+
+      // Validar tamanho (max 1MB)
+      if (file.size > 1048576) {
+        alert('Arquivo muito grande. Máximo 1MB.');
+        return;
+      }
+
+      // Gerar nome único para o arquivo
+      const ext = file.name.split('.').pop() || 'png';
+      const fileName = `${workspaceId}/${linkId}/${iconType}-${Date.now()}.${ext}`;
+
+      // Upload para o Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('widget-icons')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw uploadError;
+      }
+
+      // Obter URL pública
+      const { data: publicUrlData } = supabase.storage
+        .from('widget-icons')
+        .getPublicUrl(fileName);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      // Atualizar o link no banco com a URL do ícone
+      const updateField = iconType === 'button' ? 'widget_button_icon_url' : 'widget_avatar_icon_url';
+      const { error: updateError } = await supabase
+        .from('ai_public_chat_links')
+        .update({ [updateField]: publicUrl })
+        .eq('id', linkId);
+
+      if (updateError) throw updateError;
+
+      // Atualizar estado local
+      setPublicLinks(prev => prev.map(link =>
+        link.id === linkId ? { ...link, [updateField]: publicUrl } : link
+      ));
+
+      // Atualizar estado do modal se estiver aberto
+      if (widgetConfigModalLink && widgetConfigModalLink.id === linkId) {
+        setWidgetConfigModalLink({ ...widgetConfigModalLink, [updateField]: publicUrl });
+      }
+
+      console.log(`✅ Widget ${iconType} icon uploaded:`, publicUrl);
+    } catch (err) {
+      console.error('Error uploading widget icon:', err);
+      alert('Erro ao fazer upload do ícone. Tente novamente.');
+    } finally {
+      setUploadingIcon(null);
+    }
+  };
+
+  // Remover ícone customizado
+  const removeWidgetIcon = async (linkId: string, iconType: 'button' | 'avatar') => {
+    try {
+      const updateField = iconType === 'button' ? 'widget_button_icon_url' : 'widget_avatar_icon_url';
+      const { error } = await supabase
+        .from('ai_public_chat_links')
+        .update({ [updateField]: null })
+        .eq('id', linkId);
+
+      if (error) throw error;
+
+      // Atualizar estado local
+      setPublicLinks(prev => prev.map(link =>
+        link.id === linkId ? { ...link, [updateField]: null } : link
+      ));
+    } catch (err) {
+      console.error('Error removing widget icon:', err);
+    }
+  };
+
+  // Handler para seleção de arquivo
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && pendingUploadType && pendingUploadLinkId) {
+      uploadWidgetIcon(pendingUploadLinkId, pendingUploadType, file);
+    }
+    // Reset
+    e.target.value = '';
+    setPendingUploadType(null);
+    setPendingUploadLinkId(null);
+  };
+
+  // Trigger file input
+  const triggerFileUpload = (linkId: string, iconType: 'button' | 'avatar') => {
+    setPendingUploadLinkId(linkId);
+    setPendingUploadType(iconType);
+    fileInputRef.current?.click();
+  };
+
   // Ref para o container de mensagens (scrollable)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   
@@ -403,6 +575,154 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
   useEffect(() => {
     scrollToBottom();
   }, [conversation.messages, scrollToBottom]);
+
+  // Carregar links públicos quando o dropdown abrir
+  const loadPublicLinks = useCallback(async () => {
+    if (!agentId || !workspaceId) return;
+    setLoadingLinks(true);
+    try {
+      const { data, error } = await supabase
+        .from('ai_public_chat_links')
+        .select('*')
+        .eq('agent_id', agentId)
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPublicLinks(data || []);
+    } catch (err) {
+      console.error('Error loading public links:', err);
+    } finally {
+      setLoadingLinks(false);
+    }
+  }, [agentId, workspaceId]);
+
+  // Criar novo link público
+  const createPublicLink = async () => {
+    if (!agentId || !workspaceId) return;
+    setCreatingLink(true);
+    try {
+      const { data, error } = await supabase.rpc('create_public_chat_link', {
+        p_agent_id: agentId,
+        p_workspace_id: workspaceId,
+        p_name: null,
+        p_welcome_message: null,
+        p_chat_title: 'Chat de Atendimento',
+        p_chat_subtitle: null,
+        p_expires_at: null,
+        p_max_conversations: null
+      });
+
+      if (error) throw error;
+      if (data?.success) {
+        await loadPublicLinks();
+      }
+    } catch (err) {
+      console.error('Error creating public link:', err);
+    } finally {
+      setCreatingLink(false);
+    }
+  };
+
+  // Toggle link ativo/inativo
+  const toggleLinkActive = async (linkId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('ai_public_chat_links')
+        .update({ is_active: !currentStatus })
+        .eq('id', linkId);
+
+      if (error) throw error;
+      setPublicLinks(prev => prev.map(link =>
+        link.id === linkId ? { ...link, is_active: !currentStatus } : link
+      ));
+    } catch (err) {
+      console.error('Error toggling link:', err);
+    }
+  };
+
+  // Copiar apenas o link para clipboard
+  const copyLinkToClipboard = (link: any) => {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const publicUrl = `${baseUrl}#/chat/${link.public_slug}`;
+
+    navigator.clipboard.writeText(publicUrl);
+    setCopiedLinkId(link.id);
+    setTimeout(() => setCopiedLinkId(null), 2000);
+  };
+
+  // Copiar link + senha para compartilhar com cliente
+  const copyLinkWithPassword = (link: any) => {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const publicUrl = `${baseUrl}#/chat/${link.public_slug}`;
+    const fullText = `🔗 Link do Chat: ${publicUrl}\n🔑 Senha de Acesso: ${link.access_code}`;
+
+    navigator.clipboard.writeText(fullText);
+    setCopiedLinkId(`${link.id}-full`);
+    setTimeout(() => setCopiedLinkId(null), 2000);
+  };
+
+  // Deletar link
+  const deletePublicLink = async (linkId: string) => {
+    try {
+      const { error } = await supabase
+        .from('ai_public_chat_links')
+        .delete()
+        .eq('id', linkId);
+
+      if (error) throw error;
+      setPublicLinks(prev => prev.filter(link => link.id !== linkId));
+    } catch (err) {
+      console.error('Error deleting link:', err);
+    }
+  };
+
+  // Resetar chat do link (limpa conversas e incrementa contador)
+  const resetPublicLinkChat = async (linkId: string) => {
+    setResettingLinkId(linkId);
+    try {
+      // Deletar todas as conversas desse link
+      const { error: deleteError } = await supabase
+        .from('ai_public_chat_conversations')
+        .delete()
+        .eq('link_id', linkId);
+
+      if (deleteError) throw deleteError;
+
+      // Incrementar contador de resets e zerar contadores de uso
+      const link = publicLinks.find(l => l.id === linkId);
+      const newResetCount = (link?.reset_count || 0) + 1;
+
+      const { error: updateError } = await supabase
+        .from('ai_public_chat_links')
+        .update({
+          reset_count: newResetCount,
+          current_conversations: 0,
+          total_messages: 0
+        })
+        .eq('id', linkId);
+
+      if (updateError) throw updateError;
+
+      // Atualizar estado local
+      setPublicLinks(prev => prev.map(l =>
+        l.id === linkId
+          ? { ...l, reset_count: newResetCount, current_conversations: 0, total_messages: 0 }
+          : l
+      ));
+    } catch (err) {
+      console.error('Error resetting link chat:', err);
+    } finally {
+      setResettingLinkId(null);
+    }
+  };
+
+  // Carregar links quando agente/workspace estiver disponível
+  useEffect(() => {
+    if (agentId && workspaceId) {
+      loadPublicLinks();
+    }
+  }, [agentId, workspaceId, loadPublicLinks]);
 
   if (isLoading && conversation.messages.length === 0) {
     return (
@@ -443,27 +763,414 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
     <div className={`h-full flex flex-col border-r overflow-hidden ${
       isDark ? 'bg-elevated border-white/[0.08]' : 'bg-gray-50 border-gray-200'
     }`}>
+      {/* Input de arquivo oculto para upload de ícones */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+        className="hidden"
+      />
+
       {/* Chat Header */}
       <div className={`h-20 px-6 border-b flex items-center justify-between shrink-0 ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
         <div className="flex items-center gap-3">
            <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>Pré-visualizar</span>
-           <div className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-white/10 text-white/60' : 'bg-gray-200 text-gray-600'}`}>
-             {agentId ? 'Test Chat' : 'Selecione um agente'}
-           </div>
-        </div>
-        <div className="relative">
-          <button 
-            onClick={() => setShowResetMenu(!showResetMenu)}
-            className={`p-2 rounded-lg transition-colors ${
-              isDark ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
-            }`}
-            title="Opções de Reset"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
 
-          {/* Dropdown Menu */}
-          {showResetMenu && (
+           {/* Conversation Selector Dropdown */}
+           {agentId && (
+             <div className="relative">
+               <button
+                 onClick={() => setShowConversationDropdown(!showConversationDropdown)}
+                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                   isDark
+                     ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white/70'
+                     : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                 }`}
+               >
+                 <MessageSquare className="w-3.5 h-3.5" />
+                 <span className="max-w-[120px] truncate">
+                   {previewConversations.find(c => c.id === selectedConversationId)?.name || 'Nova conversa'}
+                 </span>
+                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showConversationDropdown ? 'rotate-180' : ''}`} />
+               </button>
+
+               {/* Dropdown Menu */}
+               {showConversationDropdown && (
+                 <>
+                   <div className="fixed inset-0 z-40" onClick={() => setShowConversationDropdown(false)} />
+                   <div className={`absolute left-0 top-full mt-1 w-64 rounded-lg shadow-xl border z-50 overflow-hidden ${
+                     isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-gray-200'
+                   }`}>
+                     {/* New Conversation Button */}
+                     <button
+                       onClick={() => {
+                         setShowConversationDropdown(false);
+                         setShowNewConversationModal(true);
+                       }}
+                       className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 border-b transition-colors ${
+                         isDark
+                           ? 'hover:bg-white/[0.05] text-[#0169D9] border-white/[0.08]'
+                           : 'hover:bg-gray-50 text-blue-600 border-gray-100'
+                       }`}
+                     >
+                       <Plus className="w-4 h-4" />
+                       <span className="font-medium">Nova Conversa</span>
+                     </button>
+
+                     {/* Conversations List */}
+                     <div className="max-h-[300px] overflow-y-auto">
+                       {previewConversations.length === 0 ? (
+                         <div className={`px-4 py-6 text-center text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                           Nenhuma conversa ainda
+                         </div>
+                       ) : (
+                         previewConversations.map((conv) => (
+                           <div
+                             key={conv.id}
+                             className={`group flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
+                               selectedConversationId === conv.id
+                                 ? isDark ? 'bg-white/[0.08]' : 'bg-blue-50'
+                                 : isDark ? 'hover:bg-white/[0.03]' : 'hover:bg-gray-50'
+                             }`}
+                             onClick={() => {
+                               selectConversation(conv.id);
+                               setShowConversationDropdown(false);
+                             }}
+                           >
+                             <div className="flex-1 min-w-0">
+                               <div className={`text-sm font-medium truncate ${
+                                 isDark ? 'text-white/90' : 'text-gray-900'
+                               }`}>
+                                 {conv.name}
+                               </div>
+                               <div className={`text-xs truncate mt-0.5 ${
+                                 isDark ? 'text-white/40' : 'text-gray-400'
+                               }`}>
+                                 {conv.lastMessage || `${conv.messageCount} mensagens`}
+                               </div>
+                             </div>
+                             {/* Só mostrar botão de delete se houver mais de 1 conversa */}
+                             {previewConversations.length > 1 && (
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setDeleteConfirmModal({ isOpen: true, conversationId: conv.id });
+                                 }}
+                                 className={`opacity-0 group-hover:opacity-100 p-1.5 rounded transition-all ${
+                                   isDark
+                                     ? 'hover:bg-red-500/20 text-white/40 hover:text-red-400'
+                                     : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
+                                 }`}
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </button>
+                             )}
+                           </div>
+                         ))
+                       )}
+                     </div>
+
+                     {/* Delete All Button */}
+                     {previewConversations.length > 1 && (
+                       <button
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           setShowConversationDropdown(false);
+                           setDeleteConfirmModal({ isOpen: true, conversationId: null, isDeleteAll: true });
+                         }}
+                         className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 border-t transition-colors ${
+                           isDark
+                             ? 'hover:bg-red-500/10 text-red-400 border-white/[0.08]'
+                             : 'hover:bg-red-50 text-red-500 border-gray-100'
+                         }`}
+                       >
+                         <Trash2 className="w-4 h-4" />
+                         <span className="font-medium">Limpar Histórico</span>
+                         <span className={`ml-auto text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                           ({previewConversations.length - 1})
+                         </span>
+                       </button>
+                     )}
+                   </div>
+                 </>
+               )}
+             </div>
+           )}
+        </div>
+        <div className="flex items-center gap-1">
+          {/* Widget Config Button - Separate system */}
+          {agentId && publicLinks.length > 0 && (
+            <button
+              onClick={() => {
+                // Abre o modal de configuração do widget com o primeiro link disponível
+                const activeLink = publicLinks.find(l => l.is_active) || publicLinks[0];
+                if (activeLink) {
+                  setWidgetConfigModalLink(activeLink);
+                }
+              }}
+              className={`p-2 rounded-lg transition-colors ${
+                isDark ? 'hover:bg-white/10 text-purple-400 hover:text-purple-300' : 'hover:bg-gray-200 text-purple-500 hover:text-purple-600'
+              }`}
+              title="Configurar Widget Embeddable"
+            >
+              <Code2 className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Public Link Button */}
+          {agentId && (
+            <div className="relative">
+              <button
+                onClick={() => setShowPublicLinkDropdown(!showPublicLinkDropdown)}
+                className={`p-2 rounded-lg transition-colors ${
+                  isDark ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+                }`}
+                title="Links Públicos"
+              >
+                <Link2 className="w-4 h-4" />
+              </button>
+
+              {/* Public Link Dropdown */}
+              {showPublicLinkDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowPublicLinkDropdown(false)}
+                  />
+                  <div className={`absolute right-0 top-full mt-2 w-80 rounded-lg shadow-xl border z-20 ${
+                    isDark ? 'bg-[#1C1C1E] border-white/[0.08]' : 'bg-white border-gray-200'
+                  }`}>
+                    <div className={`px-4 py-3 border-b ${isDark ? 'border-white/[0.08]' : 'border-gray-100'}`}>
+                      <div className="flex items-center justify-between">
+                        <h3 className={`font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          Links Públicos
+                        </h3>
+                        <button
+                          onClick={createPublicLink}
+                          disabled={creatingLink}
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            isDark
+                              ? 'bg-[#0169D9] hover:bg-[#0169D9]/80 text-white'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          } disabled:opacity-50`}
+                        >
+                          {creatingLink ? (
+                            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <Plus className="w-3 h-3" />
+                          )}
+                          Criar
+                        </button>
+                      </div>
+                      <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                        Compartilhe com clientes para testar o chat
+                      </p>
+                    </div>
+
+                    <div className="max-h-[300px] overflow-y-auto">
+                      {loadingLinks ? (
+                        <div className="py-8 text-center">
+                          <div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto" />
+                        </div>
+                      ) : publicLinks.length === 0 ? (
+                        <div className={`py-8 text-center text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                          Nenhum link criado
+                        </div>
+                      ) : (
+                        publicLinks.map((link) => (
+                          <div
+                            key={link.id}
+                            className={`border-b last:border-b-0 ${
+                              isDark ? 'border-white/[0.05]' : 'border-gray-50'
+                            }`}
+                          >
+                            {/* Header do Link */}
+                            <div className="p-4">
+                              {/* Status + Expand */}
+                              <div className="flex items-center justify-between mb-3">
+                                <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${
+                                  link.is_active
+                                    ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-red-500/20 text-red-400'
+                                }`}>
+                                  {link.is_active ? '● Ativo' : '○ Inativo'}
+                                </span>
+                                <button
+                                  onClick={() => setExpandedLinkId(expandedLinkId === link.id ? null : link.id)}
+                                  className={`p-1.5 rounded transition-colors ${
+                                    isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-gray-100 text-gray-500'
+                                  }`}
+                                  title="Ver detalhes"
+                                >
+                                  <ChevronDown className={`w-4 h-4 transition-transform ${expandedLinkId === link.id ? 'rotate-180' : ''}`} />
+                                </button>
+                              </div>
+
+                              {/* Senha - Bem clara */}
+                              <div className={`mb-3 p-3 rounded-lg ${isDark ? 'bg-white/[0.03]' : 'bg-gray-50'}`}>
+                                <div className={`text-[10px] uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                  🔑 Senha de Acesso
+                                </div>
+                                <div className={`text-xl font-mono font-bold tracking-[0.3em] ${
+                                  isDark ? 'text-[#0169D9]' : 'text-blue-600'
+                                }`}>
+                                  {link.access_code}
+                                </div>
+                              </div>
+
+                              {/* Link */}
+                              <div className={`mb-3`}>
+                                <div className={`text-[10px] uppercase tracking-wider mb-1.5 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                  🔗 Link Público
+                                </div>
+                                <div className={`text-xs truncate ${isDark ? 'text-white/60' : 'text-gray-600'}`}>
+                                  {window.location.origin}{window.location.pathname}#/chat/{link.public_slug}
+                                </div>
+                              </div>
+
+                              {/* Botões de Copiar */}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => copyLinkToClipboard(link)}
+                                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                                    isDark
+                                      ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white/70'
+                                      : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                                  }`}
+                                  title="Copiar apenas o link"
+                                >
+                                  {copiedLinkId === link.id ? (
+                                    <Check className="w-3.5 h-3.5 text-green-500" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                  Copiar Link
+                                </button>
+                                <button
+                                  onClick={() => copyLinkWithPassword(link)}
+                                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                                    isDark
+                                      ? 'bg-[#0169D9]/20 hover:bg-[#0169D9]/30 text-[#0169D9]'
+                                      : 'bg-blue-100 hover:bg-blue-200 text-blue-600'
+                                  }`}
+                                  title="Copiar link + senha para enviar ao cliente"
+                                >
+                                  {copiedLinkId === `${link.id}-full` ? (
+                                    <Check className="w-3.5 h-3.5 text-green-500" />
+                                  ) : (
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  )}
+                                  Enviar p/ Cliente
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Dropdown de Detalhes */}
+                            {expandedLinkId === link.id && (
+                              <div className={`px-4 pb-3 pt-0 space-y-3 ${isDark ? 'bg-black/20' : 'bg-gray-50'}`}>
+                                {/* Estatísticas */}
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className={`p-2 rounded-lg text-center ${isDark ? 'bg-white/5' : 'bg-white'}`}>
+                                    <div className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                      {link.total_messages || 0}
+                                    </div>
+                                    <div className={`text-[9px] uppercase ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                      Mensagens
+                                    </div>
+                                  </div>
+                                  <div className={`p-2 rounded-lg text-center ${isDark ? 'bg-white/5' : 'bg-white'}`}>
+                                    <div className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                      {link.current_conversations || 0}
+                                    </div>
+                                    <div className={`text-[9px] uppercase ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                      Conversas
+                                    </div>
+                                  </div>
+                                  <div className={`p-2 rounded-lg text-center ${isDark ? 'bg-white/5' : 'bg-white'}`}>
+                                    <div className={`text-lg font-bold ${isDark ? 'text-[#0169D9]' : 'text-blue-600'}`}>
+                                      {link.reset_count || 0}
+                                    </div>
+                                    <div className={`text-[9px] uppercase ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                                      Resets
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Ações */}
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => resetPublicLinkChat(link.id)}
+                                    disabled={resettingLinkId === link.id}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                                      isDark
+                                        ? 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-400'
+                                        : 'bg-orange-100 hover:bg-orange-200 text-orange-600'
+                                    } disabled:opacity-50`}
+                                  >
+                                    {resettingLinkId === link.id ? (
+                                      <div className="w-3 h-3 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="w-3 h-3" />
+                                    )}
+                                    Resetar Chat
+                                  </button>
+                                  <button
+                                    onClick={() => toggleLinkActive(link.id, link.is_active)}
+                                    className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                                      link.is_active
+                                        ? isDark ? 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400' : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-600'
+                                        : isDark ? 'bg-green-500/20 hover:bg-green-500/30 text-green-400' : 'bg-green-100 hover:bg-green-200 text-green-600'
+                                    }`}
+                                  >
+                                    {link.is_active ? (
+                                      <>
+                                        <ToggleLeft className="w-3 h-3" />
+                                        Desativar
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ToggleRight className="w-3 h-3" />
+                                        Ativar
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => deletePublicLink(link.id)}
+                                    className={`p-2 rounded-lg transition-colors ${
+                                      isDark ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400' : 'bg-red-100 hover:bg-red-200 text-red-600'
+                                    }`}
+                                    title="Excluir link"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Reset Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowResetMenu(!showResetMenu)}
+              className={`p-2 rounded-lg transition-colors ${
+                isDark ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
+              }`}
+              title="Opções de Reset"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showResetMenu && (
             <>
               <div 
                 className="fixed inset-0 z-10" 
@@ -504,9 +1211,10 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
-      
+
       {/* Chat Content - Full height */}
       <div className={`flex-1 flex flex-col min-h-0 ${isDark ? 'bg-true-black' : 'bg-light-bg'}`}>
         {/* Messages */}
@@ -552,19 +1260,62 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                       {/* Metadata + Pipeline (inline) */}
                       {!message.isLoading && message.metadata && (
                         <div className="mt-1 px-1">
+                          {/* Tool Calls Badge (destaque) */}
+                          {message.metadata.toolCalls && message.metadata.toolCalls.length > 0 && (
+                            <div className="mb-1 flex flex-wrap gap-1">
+                              {message.metadata.toolCalls.map((tool, idx) => {
+                                const getToolIcon = () => {
+                                  switch (tool.name) {
+                                    case 'agendar_reuniao': return <Calendar size={10} />;
+                                    case 'consultar_disponibilidade': return <Search size={10} />;
+                                    case 'transferir_para_humano': return <UserCheck size={10} />;
+                                    case 'finalizar_atendimento': return <PhoneOff size={10} />;
+                                    default: return <Wrench size={10} />;
+                                  }
+                                };
+                                const getToolLabel = () => {
+                                  switch (tool.name) {
+                                    case 'agendar_reuniao': return 'Agendar';
+                                    case 'consultar_disponibilidade': return 'Disponibilidade';
+                                    case 'transferir_para_humano': return 'Transferir';
+                                    case 'finalizar_atendimento': return 'Finalizar';
+                                    default: return tool.displayName || tool.name;
+                                  }
+                                };
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
+                                      tool.status === 'success'
+                                        ? isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700'
+                                        : tool.status === 'error'
+                                          ? isDark ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700'
+                                          : isDark ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                    }`}
+                                    title={`Tool: ${tool.name}${tool.isPreview ? ' (Preview)' : ''}`}
+                                  >
+                                    {getToolIcon()}
+                                    {getToolLabel()}
+                                    {tool.isPreview && <span className="opacity-60">(P)</span>}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
                           {/* Linha de métricas */}
                           <div className={`text-[10px] flex items-center gap-2 flex-wrap ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
                             {/* Pipeline Logs (primeiro) */}
                             {message.metadata.pipeline && (
                               <div className="flex-shrink-0">
-                                <PipelineLogsViewer 
+                                <PipelineLogsViewer
                                   pipeline={message.metadata.pipeline}
                                   defaultExpanded={false}
                                   isDark={isDark}
                                 />
                               </div>
                             )}
-                            
+
                             {/* Tokens e Tempo: só mostrar se NÃO houver pipeline (para evitar duplicação) */}
                             {!message.metadata.pipeline && (
                               <>
@@ -572,14 +1323,14 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                                 {message.metadata.tokensUsed != null && message.metadata.tokensUsed > 0 && (
                                   <span>🎫 {message.metadata.tokensUsed} tokens</span>
                                 )}
-                                
+
                                 {/* Tempo */}
                                 {message.metadata.durationMs != null && message.metadata.durationMs > 0 && (
                                   <span>⏱️ {(message.metadata.durationMs / 1000).toFixed(1)}s</span>
                                 )}
                               </>
                             )}
-                            
+
                             {/* Outras métricas */}
                             {message.metadata.model && (
                               <span>🤖 {message.metadata.model.split('/').pop()}</span>
@@ -754,6 +1505,367 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId }: { isDark: boolean; 
                 className="px-4 py-2 bg-[#0169D9] text-white rounded-lg hover:bg-[#0159C1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Iniciar Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nova Conversa */}
+      {showNewConversationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowNewConversationModal(false)}>
+          <div
+            className={`w-full max-w-md mx-4 rounded-xl shadow-2xl ${
+              isDark ? 'bg-[#1C1C1E] border border-white/[0.08]' : 'bg-white border border-gray-200'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <h3 className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Nova Conversa de Teste
+              </h3>
+              <button
+                onClick={() => setShowNewConversationModal(false)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  isDark ? 'hover:bg-white/10 text-white/50' : 'hover:bg-gray-100 text-gray-400'
+                }`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className={`text-sm ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                Escolha como iniciar a nova conversa:
+              </p>
+
+              {/* Conversa Vazia */}
+              <button
+                onClick={() => {
+                  createNewConversation();
+                  setShowNewConversationModal(false);
+                }}
+                className={`w-full p-4 rounded-lg border text-left transition-colors ${
+                  isDark
+                    ? 'border-white/[0.08] hover:bg-white/[0.03] hover:border-white/[0.12]'
+                    : 'border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                }`}
+              >
+                <div className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Conversa Vazia
+                </div>
+                <div className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
+                  Começar do zero, você envia a primeira mensagem
+                </div>
+              </button>
+
+              {/* Com Template */}
+              <div className={`p-4 rounded-lg border ${
+                isDark ? 'border-white/[0.08]' : 'border-gray-200'
+              }`}>
+                <div className={`font-medium mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Com Mensagem Inicial (Template)
+                </div>
+                <textarea
+                  value={newConversationTemplate}
+                  onChange={(e) => setNewConversationTemplate(e.target.value)}
+                  placeholder="Ex: Olá! Meu nome é Maria da XYZ Company..."
+                  rows={4}
+                  className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors resize-none text-sm ${
+                    isDark
+                      ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/40 focus:border-[#0169D9]'
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#0169D9]'
+                  }`}
+                />
+                <button
+                  onClick={() => {
+                    if (newConversationTemplate.trim()) {
+                      createNewConversation(newConversationTemplate.trim());
+                      setShowNewConversationModal(false);
+                      setNewConversationTemplate('');
+                    }
+                  }}
+                  disabled={!newConversationTemplate.trim()}
+                  className="mt-3 w-full px-4 py-2 bg-[#0169D9] text-white text-sm rounded-lg hover:bg-[#0159C1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Criar com Template
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmação para deletar conversa */}
+      <ConfirmDialog
+        isOpen={deleteConfirmModal.isOpen}
+        onClose={() => setDeleteConfirmModal({ isOpen: false, conversationId: null, isDeleteAll: false })}
+        onConfirm={async () => {
+          setIsDeleting(true);
+          try {
+            if (deleteConfirmModal.isDeleteAll) {
+              // Deletar todas as conversas
+              const result = await deleteAllConversations();
+              if (result.success) {
+                setDeleteConfirmModal({ isOpen: false, conversationId: null, isDeleteAll: false });
+              } else {
+                setDeleteConfirmModal({ isOpen: false, conversationId: null, isDeleteAll: false });
+                alert(result.error || 'Erro ao limpar histórico');
+              }
+            } else if (deleteConfirmModal.conversationId) {
+              // Deletar uma conversa
+              const result = await deleteConversation(deleteConfirmModal.conversationId);
+              if (result.success) {
+                setDeleteConfirmModal({ isOpen: false, conversationId: null, isDeleteAll: false });
+              } else {
+                setDeleteConfirmModal({ isOpen: false, conversationId: null, isDeleteAll: false });
+                alert(result.error || 'Erro ao deletar conversa');
+              }
+            }
+          } finally {
+            setIsDeleting(false);
+          }
+        }}
+        title={deleteConfirmModal.isDeleteAll ? "Limpar histórico" : "Deletar conversa"}
+        description={
+          deleteConfirmModal.isDeleteAll
+            ? `Tem certeza que deseja deletar ${previewConversations.length - 1} conversa(s)? A conversa mais recente será mantida. Esta ação não pode ser desfeita.`
+            : previewConversations.length <= 1
+              ? "Esta é a única conversa. Não é possível deletá-la."
+              : "Tem certeza que deseja deletar esta conversa? Esta ação não pode ser desfeita."
+        }
+        confirmText={deleteConfirmModal.isDeleteAll ? "Limpar" : "Deletar"}
+        cancelText="Cancelar"
+        variant="danger"
+        isDark={isDark}
+        isLoading={isDeleting}
+      />
+
+      {/* Modal de Configuração do Widget */}
+      {widgetConfigModalLink && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setWidgetConfigModalLink(null)}
+        >
+          <div
+            className={`w-full max-w-lg mx-4 rounded-xl shadow-2xl overflow-hidden ${
+              isDark ? 'bg-[#1C1C1E] border border-white/[0.08]' : 'bg-white border border-gray-200'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${isDark ? 'bg-purple-500/20' : 'bg-purple-100'}`}>
+                  <Code2 className={`w-5 h-5 ${isDark ? 'text-purple-400' : 'text-purple-600'}`} />
+                </div>
+                <div>
+                  <h3 className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    Configurar Widget
+                  </h3>
+                  <p className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                    Personalize a aparência do widget
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWidgetConfigModalLink(null)}
+                className={`p-2 rounded-lg transition-colors ${
+                  isDark ? 'hover:bg-white/10 text-white/50' : 'hover:bg-gray-100 text-gray-400'
+                }`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Link Selector - se houver múltiplos links */}
+              {publicLinks.length > 1 && (
+                <div>
+                  <label className={`block text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                    Selecionar Link
+                  </label>
+                  <select
+                    value={widgetConfigModalLink.id}
+                    onChange={(e) => {
+                      const selected = publicLinks.find(l => l.id === e.target.value);
+                      if (selected) setWidgetConfigModalLink(selected);
+                    }}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm ${
+                      isDark
+                        ? 'bg-white/[0.05] border-white/[0.1] text-white'
+                        : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    {publicLinks.map(link => (
+                      <option key={link.id} value={link.id}>
+                        {link.public_slug} {link.is_active ? '(Ativo)' : '(Inativo)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Código do Widget */}
+              <div>
+                <label className={`block text-xs font-medium uppercase tracking-wider mb-2 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                  Código para Incorporar
+                </label>
+                <div className={`p-3 rounded-lg font-mono text-xs break-all ${isDark ? 'bg-black/30 text-white/70' : 'bg-gray-100 text-gray-600'}`}>
+                  {`<script src="${import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co'}/functions/v1/widget-chat?slug=${widgetConfigModalLink.public_slug}"></script>`}
+                </div>
+                <button
+                  onClick={() => {
+                    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co';
+                    const widgetCode = `<script src="${supabaseUrl}/functions/v1/widget-chat?slug=${widgetConfigModalLink.public_slug}"></script>`;
+                    navigator.clipboard.writeText(widgetCode);
+                    setCopiedLinkId(`${widgetConfigModalLink.id}-widget-modal`);
+                    setTimeout(() => setCopiedLinkId(null), 2000);
+                  }}
+                  className={`mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isDark
+                      ? 'bg-purple-500/30 hover:bg-purple-500/40 text-purple-300'
+                      : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                  }`}
+                >
+                  {copiedLinkId === `${widgetConfigModalLink.id}-widget-modal` ? (
+                    <>
+                      <Check className="w-4 h-4 text-green-500" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Copiar Código
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Ícones Customizados */}
+              <div>
+                <label className={`block text-xs font-medium uppercase tracking-wider mb-3 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                  Ícones Customizados
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Ícone do Botão */}
+                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className={`text-xs font-medium mb-3 ${isDark ? 'text-white/70' : 'text-gray-700'}`}>
+                      Botão Flutuante
+                    </div>
+                    {widgetConfigModalLink.widget_button_icon_url ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <img
+                          src={widgetConfigModalLink.widget_button_icon_url}
+                          alt="Button icon"
+                          className="w-16 h-16 rounded-xl object-cover border-2 border-purple-500/30 shadow-lg"
+                        />
+                        <button
+                          onClick={() => {
+                            removeWidgetIcon(widgetConfigModalLink.id, 'button');
+                            setWidgetConfigModalLink({ ...widgetConfigModalLink, widget_button_icon_url: null });
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                            isDark ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400' : 'bg-red-100 hover:bg-red-200 text-red-600'
+                          }`}
+                        >
+                          <X className="w-3 h-3" />
+                          Remover
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3">
+                        <div className={`w-16 h-16 rounded-xl flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-gray-200'}`}>
+                          <MessageSquare className={`w-8 h-8 ${isDark ? 'text-white/20' : 'text-gray-400'}`} />
+                        </div>
+                        <button
+                          onClick={() => triggerFileUpload(widgetConfigModalLink.id, 'button')}
+                          disabled={uploadingIcon === 'button'}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                            isDark
+                              ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300'
+                              : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                          } disabled:opacity-50`}
+                        >
+                          {uploadingIcon === 'button' ? (
+                            <div className="w-3 h-3 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                          ) : (
+                            <Upload className="w-3 h-3" />
+                          )}
+                          Upload
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ícone do Avatar */}
+                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-white/[0.02] border-white/[0.08]' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className={`text-xs font-medium mb-3 ${isDark ? 'text-white/70' : 'text-gray-700'}`}>
+                      Avatar do Chat
+                    </div>
+                    {widgetConfigModalLink.widget_avatar_icon_url ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <img
+                          src={widgetConfigModalLink.widget_avatar_icon_url}
+                          alt="Avatar icon"
+                          className="w-16 h-16 rounded-full object-cover border-2 border-purple-500/30 shadow-lg"
+                        />
+                        <button
+                          onClick={() => {
+                            removeWidgetIcon(widgetConfigModalLink.id, 'avatar');
+                            setWidgetConfigModalLink({ ...widgetConfigModalLink, widget_avatar_icon_url: null });
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                            isDark ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400' : 'bg-red-100 hover:bg-red-200 text-red-600'
+                          }`}
+                        >
+                          <X className="w-3 h-3" />
+                          Remover
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3">
+                        <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-gray-200'}`}>
+                          <Bot className={`w-8 h-8 ${isDark ? 'text-white/20' : 'text-gray-400'}`} />
+                        </div>
+                        <button
+                          onClick={() => triggerFileUpload(widgetConfigModalLink.id, 'avatar')}
+                          disabled={uploadingIcon === 'avatar'}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                            isDark
+                              ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300'
+                              : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                          } disabled:opacity-50`}
+                        >
+                          {uploadingIcon === 'avatar' ? (
+                            <div className="w-3 h-3 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                          ) : (
+                            <Upload className="w-3 h-3" />
+                          )}
+                          Upload
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <p className={`text-[10px] mt-3 text-center ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                  Formatos aceitos: PNG, JPG, GIF, WebP ou SVG. Tamanho máximo: 1MB
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className={`px-6 py-4 border-t ${isDark ? 'border-white/[0.08] bg-white/[0.02]' : 'border-gray-200 bg-gray-50'}`}>
+              <button
+                onClick={() => setWidgetConfigModalLink(null)}
+                className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  isDark
+                    ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                }`}
+              >
+                Fechar
               </button>
             </div>
           </div>

@@ -215,6 +215,35 @@ export async function deleteCustomFieldValuesByLead(leadId: string): Promise<{
 }
 
 // ============================================
+// DELETE SINGLE CUSTOM FIELD VALUE
+// ============================================
+
+export async function deleteCustomFieldValue(
+  leadId: string,
+  customFieldId: string
+): Promise<{ error: Error | null }> {
+  try {
+    const { error: deleteError } = await supabase
+      .from('lead_custom_values')
+      .delete()
+      .eq('lead_id', leadId)
+      .eq('custom_field_id', customFieldId);
+
+    if (deleteError) {
+      console.error('[CUSTOM FIELDS] Erro ao deletar valor do campo:', deleteError);
+      return { error: deleteError };
+    }
+
+    console.log('[CUSTOM FIELDS] Valor do campo deletado com sucesso:', customFieldId);
+    return { error: null };
+
+  } catch (error) {
+    console.error('[CUSTOM FIELDS] Erro inesperado:', error);
+    return { error: error as Error };
+  }
+}
+
+// ============================================
 // LOAD CUSTOM FIELDS FOR LEAD
 // ============================================
 

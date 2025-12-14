@@ -93,6 +93,33 @@ body.light-theme .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   animation: shimmer 2s infinite;
 }
 
+/* Animação fade in para mensagens do chat */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Animação shake para erros */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
 /* ========================================
    SONNER TOAST NOTIFICATIONS
    ======================================== */

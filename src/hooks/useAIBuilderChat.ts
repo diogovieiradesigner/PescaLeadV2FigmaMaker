@@ -103,7 +103,8 @@ export interface UseAIBuilderChatReturn {
   selectedConversationId: string | null;
   selectConversation: (conversationId: string) => Promise<void>;
   createNewConversation: (templateMessage?: string) => Promise<void>;
-  deleteConversation: (conversationId: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  deleteAllConversations: () => Promise<{ success: boolean; error?: string }>;
   loadPreviewConversations: (autoSelectFirst?: boolean) => Promise<void>;
 }
 
@@ -126,7 +127,7 @@ function formatConversationName(date: Date): string {
   });
 }
 
-export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn {
+export function useAIBuilderChat(agentId: string | null, workspaceId: string | null): UseAIBuilderChatReturn {
   const [conversation, setConversation] = useState<Conversation>({
     id: '',
     messages: []
@@ -162,8 +163,18 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
 
       console.log('[useAIBuilderChat] 🔍 Messages result:', {
         messageCount: rpcData?.length || 0,
-        error: rpcError
+        error: rpcError,
+        messagesWithPipelineId: rpcData?.filter((m: any) => m.pipeline_id)?.length || 0
       });
+
+      // Log detalhado de cada mensagem com pipeline_id
+      if (rpcData) {
+        rpcData.forEach((m: any) => {
+          if (m.pipeline_id) {
+            console.log(`[useAIBuilderChat] 📋 Message ${m.id} has pipeline_id: ${m.pipeline_id}`);
+          }
+        });
+      }
 
       if (rpcError) {
         console.error('[useAIBuilderChat] ⚠️ Error loading messages:', rpcError);
@@ -183,9 +194,16 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
           };
 
           if (msg.pipeline_id) {
+            console.log(`[useAIBuilderChat] 🔍 Loading pipeline ${msg.pipeline_id} for message ${msg.id}`);
             // Buscar pipeline usando RPC
-            const { data: pipelineData } = await supabase
+            const { data: pipelineData, error: pipelineError } = await supabase
               .rpc('get_pipeline_with_steps', { p_pipeline_id: msg.pipeline_id });
+
+            if (pipelineError) {
+              console.error(`[useAIBuilderChat] ❌ Error loading pipeline ${msg.pipeline_id}:`, pipelineError);
+            } else {
+              console.log(`[useAIBuilderChat] ✅ Pipeline ${msg.pipeline_id} loaded:`, pipelineData ? 'found' : 'not found');
+            }
 
             if (pipelineData) {
               const transformedPipeline: PipelineInfo = {
@@ -510,7 +528,7 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
 
   // ==================== RESETAR E INICIAR COM TEMPLATE ====================
   const handleResetAndStartTemplate = useCallback(async (templateMessage: string) => {
-    if (!agentId || !templateMessage.trim()) return;
+    if (!agentId || !templateMessage.trim() || !workspaceId) return;
 
     try {
       // 1. Primeiro resetar tudo
@@ -519,27 +537,14 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
       // 2. Aguardar um pouco para garantir que o reset foi processado
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      // 3. Obter workspace do usuário
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('Usuário não autenticado');
-      }
-
-      const { data: memberData } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (!memberData) {
-        throw new Error('Workspace não encontrado');
-      }
+      // 3. Usar o workspace passado como parâmetro (workspace atual que o usuário está acessando)
+      console.log('[useAIBuilderChat] Using workspace from context:', workspaceId);
 
       // 4. Criar nova conversa (inbox_id pode ser NULL para preview)
       const { data: newConversation, error: convError } = await supabase
         .from('conversations')
         .insert({
-          workspace_id: memberData.workspace_id,
+          workspace_id: workspaceId, // ✅ Usar workspace do contexto, não do usuário
           inbox_id: null, // NULL é permitido para conversas de preview
           channel: 'preview', // Canal específico para preview
           contact_phone: agentId,
@@ -598,25 +603,38 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
         messageId: newMessage.id
       });
 
-      // Recarregar lista de conversas
-      await loadPreviewConversations();
+      // Atualizar lista localmente (evita chamada circular)
+      const newConvItem: PreviewConversationItem = {
+        id: newConversation.id,
+        name: 'Preview ' + new Date().toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        createdAt: new Date(newConversation.created_at),
+        lastMessage: templateMessage,
+        messageCount: 1
+      };
+      setPreviewConversations(prev => [newConvItem, ...prev]);
       setSelectedConversationId(newConversation.id);
     } catch (err: any) {
       console.error('[useAIBuilderChat] Erro ao iniciar template:', err);
       setError(err.message || 'Erro ao iniciar template');
     }
-  }, [agentId, handleResetChat]);
+  }, [agentId, workspaceId, handleResetChat]);
 
   // ==================== CARREGAR LISTA DE CONVERSAS DE PREVIEW ====================
   const loadPreviewConversations = useCallback(async (autoSelectFirst: boolean = false) => {
-    if (!agentId) return;
+    if (!agentId || !workspaceId) return;
 
     try {
-      console.log('[useAIBuilderChat] 📋 Loading preview conversations for agent:', agentId);
+      console.log('[useAIBuilderChat] 📋 Loading preview conversations for agent:', agentId, 'workspace:', workspaceId);
 
-      // Usar RPC para bypass RLS
+      // Usar RPC para bypass RLS - passa workspace para filtrar conversas do workspace atual
       const { data: rpcData, error: rpcError } = await supabase
-        .rpc('list_preview_conversations', { p_agent_id: agentId });
+        .rpc('list_preview_conversations', { p_agent_id: agentId, p_workspace_id: workspaceId });
 
       console.log('[useAIBuilderChat] 📋 RPC list_preview_conversations result:', { rpcData, rpcError, rawData: JSON.stringify(rpcData) });
 
@@ -710,7 +728,7 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
     } catch (err) {
       console.error('[useAIBuilderChat] Error:', err);
     }
-  }, [agentId, selectedConversationId]);
+  }, [agentId, workspaceId, selectedConversationId]);
 
   // ==================== SELECIONAR CONVERSA ====================
   const selectConversation = useCallback(async (conversationId: string) => {
@@ -751,16 +769,17 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
 
   // ==================== CRIAR NOVA CONVERSA ====================
   const createNewConversation = useCallback(async (templateMessage?: string) => {
-    if (!agentId) return;
+    if (!agentId || !workspaceId) return;
 
     try {
-      console.log('[useAIBuilderChat] ➕ Creating new conversation, template:', !!templateMessage);
+      console.log('[useAIBuilderChat] ➕ Creating new conversation, template:', !!templateMessage, 'workspace:', workspaceId);
 
-      // Usar RPC para criar conversa (bypass RLS)
+      // Usar RPC para criar conversa (bypass RLS) - passa workspace_id explícito
       const { data: rpcData, error: rpcError } = await supabase
         .rpc('create_preview_conversation', {
           p_agent_id: agentId,
-          p_template_message: templateMessage?.trim() || null
+          p_template_message: templateMessage?.trim() || null,
+          p_workspace_id: workspaceId // ✅ Passar workspace atual
         });
 
       console.log('[useAIBuilderChat] 📝 RPC create_preview_conversation result:', { rpcData, rpcError });
@@ -811,7 +830,7 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
       console.error('[useAIBuilderChat] Error creating conversation:', err);
       setError(err.message || 'Erro ao criar conversa');
     }
-  }, [agentId]);
+  }, [agentId, workspaceId]);
 
   // ==================== DELETAR CONVERSA ====================
   const deleteConversation = useCallback(async (conversationId: string): Promise<{ success: boolean; error?: string }> => {
@@ -858,16 +877,65 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
     }
   }, [agentId, selectedConversationId, previewConversations, loadPreviewConversations, loadConversation]);
 
-  // Carregar lista de conversas quando agentId mudar
+  // ==================== DELETAR TODAS AS CONVERSAS ====================
+  const deleteAllConversations = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (!agentId) return { success: false, error: 'Agent ID não encontrado' };
+
+    try {
+      console.log('[useAIBuilderChat] 🗑️ Deleting all conversations except one');
+
+      // Precisa ter pelo menos 2 conversas para deletar (mantém 1)
+      if (previewConversations.length <= 1) {
+        console.log('[useAIBuilderChat] ⚠️ Only one conversation exists, nothing to delete');
+        return { success: false, error: 'Existe apenas uma conversa. Nada a deletar.' };
+      }
+
+      // Manter a primeira conversa (mais recente), deletar o resto
+      const conversationsToDelete = previewConversations.slice(1);
+      const firstConversation = previewConversations[0];
+
+      console.log(`[useAIBuilderChat] Keeping: ${firstConversation.id}, Deleting: ${conversationsToDelete.length} conversations`);
+
+      // Deletar todas exceto a primeira
+      let deletedCount = 0;
+      for (const conv of conversationsToDelete) {
+        const { data: rpcData, error: rpcError } = await supabase
+          .rpc('delete_preview_conversation', { p_conversation_id: conv.id });
+
+        if (!rpcError && rpcData?.success) {
+          deletedCount++;
+        } else {
+          console.warn(`[useAIBuilderChat] Failed to delete ${conv.id}:`, rpcError?.message || rpcData?.error);
+        }
+      }
+
+      console.log(`[useAIBuilderChat] ✅ Deleted ${deletedCount}/${conversationsToDelete.length} conversations`);
+
+      // Selecionar a primeira conversa (que foi mantida)
+      setSelectedConversationId(firstConversation.id);
+      await loadConversation(firstConversation.id);
+
+      // Recarregar lista
+      await loadPreviewConversations();
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('[useAIBuilderChat] Error deleting all conversations:', err);
+      setError(err.message || 'Erro ao deletar conversas');
+      return { success: false, error: err.message || 'Erro ao deletar conversas' };
+    }
+  }, [agentId, previewConversations, loadPreviewConversations, loadConversation]);
+
+  // Carregar lista de conversas quando agentId ou workspaceId mudar
   useEffect(() => {
-    if (agentId) {
+    if (agentId && workspaceId) {
       loadPreviewConversations(true); // Auto-selecionar a primeira conversa
     } else {
       setPreviewConversations([]);
       setSelectedConversationId(null);
       setConversation({ id: '', messages: [] });
     }
-  }, [agentId]); // Removida dependência de loadPreviewConversations para evitar loop
+  }, [agentId, workspaceId]); // Removida dependência de loadPreviewConversations para evitar loop
 
   return {
     conversation,
@@ -885,6 +953,7 @@ export function useAIBuilderChat(agentId: string | null): UseAIBuilderChatReturn
     selectConversation,
     createNewConversation,
     deleteConversation,
+    deleteAllConversations,
     loadPreviewConversations
   };
 }

@@ -175,7 +175,7 @@ async function getAgentToolsDirect(supabase: any, agentId: string) {
             parameters: {
               type: 'object',
               properties: {
-                campo: { type: 'string', description: 'Campo a atualizar (empresa, cargo, email, telefone)' },
+                campo: { type: 'string', description: 'Campo a atualizar: nome/cliente (nome do cliente), empresa/company (empresa), notas/observacao (anotações), ou nome de campo personalizado' },
                 valor: { type: 'string', description: 'Novo valor para o campo' },
                 observacao: { type: 'string', description: 'Observação adicional (opcional)' }
               },
@@ -632,9 +632,111 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
       };
     }
     case "finalizar_atendimento": {
-      await supabase.from("conversations").update({ status: "resolved" }).eq("id", context.conversationId);
-      await supabase.from("ai_conversation_sessions").update({ status: "completed", end_reason: "resolved", context_summary: args.resumo, ended_at: new Date().toISOString() }).eq("id", context.sessionId);
-      return { success: true, result: { finalized: true }, message: previewPrefix + "Atendimento finalizado com sucesso." };
+      const stepStart = Date.now();
+
+      // Validar parâmetro obrigatório
+      if (!args.resumo || args.resumo.trim() === '') {
+        await logger.step(
+          "tool_finalizar_atendimento",
+          "Finalizar Atendimento",
+          "✅",
+          "error",
+          "❌ Parâmetro obrigatório ausente: resumo",
+          { preview_mode: isPreview },
+          null,
+          args,
+          null,
+          null,
+          0, 0,
+          Date.now() - stepStart,
+          "Parâmetro 'resumo' é obrigatório"
+        );
+        return { success: false, result: null, message: "Parâmetro obrigatório ausente: resumo. Por favor, forneça um resumo do atendimento." };
+      }
+
+      // Atualizar status da conversa
+      const { error: convError } = await supabase
+        .from("conversations")
+        .update({ status: "resolved" })
+        .eq("id", context.conversationId);
+
+      if (convError) {
+        console.error("[Finalizar] Erro ao atualizar conversa:", convError);
+        await logger.step(
+          "tool_finalizar_atendimento",
+          "Finalizar Atendimento",
+          "✅",
+          "error",
+          "❌ Erro ao finalizar conversa",
+          { preview_mode: isPreview },
+          null,
+          args,
+          null,
+          null,
+          0, 0,
+          Date.now() - stepStart,
+          convError.message
+        );
+        return { success: false, result: null, message: "Erro ao finalizar conversa: " + convError.message };
+      }
+
+      // Atualizar sessão AI
+      const { error: sessionError } = await supabase
+        .from("ai_conversation_sessions")
+        .update({
+          status: "completed",
+          end_reason: "resolved",
+          context_summary: args.resumo.trim(),
+          ended_at: new Date().toISOString()
+        })
+        .eq("id", context.sessionId);
+
+      if (sessionError) {
+        console.error("[Finalizar] Erro ao atualizar sessão:", sessionError);
+        await logger.step(
+          "tool_finalizar_atendimento",
+          "Finalizar Atendimento",
+          "✅",
+          "error",
+          "❌ Erro ao atualizar sessão",
+          { preview_mode: isPreview },
+          null,
+          args,
+          null,
+          null,
+          0, 0,
+          Date.now() - stepStart,
+          sessionError.message
+        );
+        return { success: false, result: null, message: "Erro ao atualizar sessão: " + sessionError.message };
+      }
+
+      // Log de sucesso
+      await logger.step(
+        "tool_finalizar_atendimento",
+        "Finalizar Atendimento",
+        "✅",
+        "success",
+        "✅ Atendimento finalizado com sucesso",
+        { preview_mode: isPreview },
+        `Resumo: ${args.resumo.substring(0, 100)}${args.resumo.length > 100 ? '...' : ''}`,
+        args,
+        "Conversa marcada como resolvida",
+        { finalized: true, conversation_id: context.conversationId, session_id: context.sessionId },
+        0, 0,
+        Date.now() - stepStart
+      );
+
+      return {
+        success: true,
+        result: {
+          finalized: true,
+          conversation_id: context.conversationId,
+          session_id: context.sessionId,
+          resolved_at: new Date().toISOString()
+        },
+        message: previewPrefix + "Atendimento finalizado com sucesso. A conversa foi marcada como resolvida."
+      };
     }
     case "atualizar_crm": {
       if (!context.leadId) return { success: false, result: null, message: "Lead não encontrado para esta conversa" };
@@ -681,6 +783,23 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
           return { success: false, result: null, message: "Parâmetros obrigatórios: titulo, data (YYYY-MM-DD), hora (HH:MM)" };
         }
 
+        // Validar formato de data (YYYY-MM-DD)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(args.data)) {
+          return { success: false, result: null, message: "Formato de data inválido. Use YYYY-MM-DD (exemplo: 2025-12-15)" };
+        }
+
+        // Validar formato de hora (HH:MM)
+        if (!/^\d{2}:\d{2}$/.test(args.hora)) {
+          return { success: false, result: null, message: "Formato de hora inválido. Use HH:MM (exemplo: 14:30)" };
+        }
+
+        // Validar se não é no passado
+        const now = new Date();
+        const requestedDateTime = new Date(`${args.data}T${args.hora}:00`);
+        if (requestedDateTime < now) {
+          return { success: false, result: null, message: "Não é possível agendar para data/hora no passado. Por favor, escolha uma data/hora futura." };
+        }
+
         // Buscar workspace_id da conversa (para preview e produção funcionar no mesmo workspace)
         const { data: conversationData, error: convError } = await supabase.from("conversations").select("workspace_id").eq("id", context.conversationId).single();
         console.log("[agendar_reuniao] Conversation data:", JSON.stringify(conversationData), "Error:", convError?.message);
@@ -698,7 +817,12 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
         console.log("[agendar_reuniao] WorkspaceId (da conversa):", workspaceId);
 
         // VALIDAÇÃO 1: Verificar se o dia/horário está dentro do expediente configurado
-        const { data: calendarSettings, error: calSettingsError } = await supabase.rpc('get_calendar_settings', { p_workspace_id: workspaceId });
+        const { data: calendarSettings, error: calSettingsError } = await supabase
+          .from('calendar_settings')
+          .select('*')
+          .eq('workspace_id', workspaceId)
+          .is('internal_calendar_id', null)
+          .maybeSingle();
 
         if (calSettingsError) {
           console.error("[agendar_reuniao] Error fetching calendar settings:", calSettingsError);
@@ -837,6 +961,17 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
         if (!args.data) {
           return { success: false, result: null, message: "Parâmetro obrigatório: data (YYYY-MM-DD)" };
         }
+
+        // Validar formato de data (YYYY-MM-DD)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(args.data)) {
+          return { success: false, result: null, message: "Formato de data inválido. Use YYYY-MM-DD (exemplo: 2025-12-15)" };
+        }
+
+        // Validar formato de horário preferido se fornecido
+        if (args.horario_preferido && !/^\d{2}:\d{2}$/.test(args.horario_preferido)) {
+          return { success: false, result: null, message: "Formato de horário preferido inválido. Use HH:MM (exemplo: 14:30)" };
+        }
+
         // Buscar workspace_id da conversa (para preview e produção funcionar no mesmo workspace)
         const { data: conversationData } = await supabase.from("conversations").select("workspace_id").eq("id", context.conversationId).single();
         let workspaceId = conversationData?.workspace_id;
@@ -848,8 +983,13 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
         if (!workspaceId) {
           return { success: false, result: null, message: "Workspace não encontrado" };
         }
-        // Buscar configurações de disponibilidade usando RPC (bypass RLS)
-        const { data: calendarSettings, error: calSettingsError } = await supabase.rpc('get_calendar_settings', { p_workspace_id: workspaceId });
+        // Buscar configurações de disponibilidade usando query direta
+        const { data: calendarSettings, error: calSettingsError } = await supabase
+          .from('calendar_settings')
+          .select('*')
+          .eq('workspace_id', workspaceId)
+          .is('internal_calendar_id', null)
+          .maybeSingle();
 
         // Se houver erro na query, tratar
         if (calSettingsError) {

@@ -422,7 +422,6 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
     deleteConversation,
     deleteAllConversations
   } = useAIBuilderChat(agentId, workspaceId);
-  const [showResetMenu, setShowResetMenu] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateMessage, setTemplateMessage] = useState('');
   const [showConversationDropdown, setShowConversationDropdown] = useState(false);
@@ -899,14 +898,49 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
            )}
         </div>
         <div className="flex items-center gap-1">
-          {/* Widget Config Button - Separate system */}
-          {agentId && publicLinks.length > 0 && (
+          {/* Widget Config Button - Always visible when agent exists */}
+          {agentId && (
             <button
-              onClick={() => {
-                // Abre o modal de configuração do widget com o primeiro link disponível
-                const activeLink = publicLinks.find(l => l.is_active) || publicLinks[0];
-                if (activeLink) {
-                  setWidgetConfigModalLink(activeLink);
+              onClick={async () => {
+                // Se já tem links, abre o modal com o primeiro ativo
+                if (publicLinks.length > 0) {
+                  const activeLink = publicLinks.find(l => l.is_active) || publicLinks[0];
+                  if (activeLink) {
+                    setWidgetConfigModalLink(activeLink);
+                  }
+                } else {
+                  // Se não tem links, cria um automaticamente
+                  setCreatingLink(true);
+                  try {
+                    const { data, error } = await supabase.rpc('create_public_chat_link', {
+                      p_agent_id: agentId,
+                      p_workspace_id: workspaceId,
+                      p_name: 'Widget Embed',
+                      p_welcome_message: null,
+                      p_chat_title: 'Chat de Atendimento',
+                      p_chat_subtitle: null,
+                      p_expires_at: null,
+                      p_max_conversations: null
+                    });
+                    if (error) throw error;
+                    if (data?.success && data?.link_id) {
+                      // Buscar o link criado do banco
+                      const { data: newLink, error: fetchError } = await supabase
+                        .from('ai_public_chat_links')
+                        .select('*')
+                        .eq('id', data.link_id)
+                        .single();
+
+                      if (!fetchError && newLink) {
+                        setPublicLinks([newLink]);
+                        setWidgetConfigModalLink(newLink);
+                      }
+                    }
+                  } catch (err) {
+                    console.error('Error creating link for widget:', err);
+                  } finally {
+                    setCreatingLink(false);
+                  }
                 }
               }}
               className={`p-2 rounded-lg transition-colors ${
@@ -1157,61 +1191,6 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
             </div>
           )}
 
-          {/* Reset Button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowResetMenu(!showResetMenu)}
-              className={`p-2 rounded-lg transition-colors ${
-                isDark ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-gray-200 text-gray-400 hover:text-gray-600'
-              }`}
-              title="Opções de Reset"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-
-            {/* Dropdown Menu */}
-            {showResetMenu && (
-            <>
-              <div 
-                className="fixed inset-0 z-10" 
-                onClick={() => setShowResetMenu(false)}
-              />
-              <div className={`absolute right-0 top-full mt-2 w-64 rounded-lg shadow-lg border z-20 ${
-                isDark ? 'bg-[#1C1C1E] border border-white/[0.08]' : 'bg-white border border-gray-200'
-              }`}>
-                <button
-                  onClick={() => {
-                    setShowResetMenu(false);
-                    handleResetChat();
-                  }}
-                  className={`w-full px-4 py-3 text-left text-sm transition-colors rounded-t-lg ${
-                    isDark ? 'hover:bg-white/5 text-white' : 'hover:bg-gray-50 text-gray-900'
-                  }`}
-                >
-                  <div className="font-medium">Resetar Completamente</div>
-                  <div className={`text-xs mt-0.5 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                    Limpar todo o histórico de mensagens
-                  </div>
-                </button>
-                <div className={`border-t ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`} />
-                <button
-                  onClick={() => {
-                    setShowResetMenu(false);
-                    setShowTemplateModal(true);
-                  }}
-                  className={`w-full px-4 py-3 text-left text-sm transition-colors rounded-b-lg ${
-                    isDark ? 'hover:bg-white/5 text-white' : 'hover:bg-gray-50 text-gray-900'
-                  }`}
-                >
-                  <div className="font-medium">Resetar e Iniciar Template</div>
-                  <div className={`text-xs mt-0.5 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                    Iniciar com mensagem do bot (prospecção)
-                  </div>
-                </button>
-              </div>
-            </>
-          )}
-          </div>
         </div>
       </div>
 
@@ -1713,12 +1692,12 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
                   Código para Incorporar
                 </label>
                 <div className={`p-3 rounded-lg font-mono text-xs break-all ${isDark ? 'bg-black/30 text-white/70' : 'bg-gray-100 text-gray-600'}`}>
-                  {`<script src="${import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co'}/functions/v1/widget-chat?slug=${widgetConfigModalLink.public_slug}"></script>`}
+                  {`<script src="${import.meta.env.VITE_WIDGET_URL || 'https://widget.pescalead.com.br'}/api/chat?slug=${widgetConfigModalLink.public_slug}"></script>`}
                 </div>
                 <button
                   onClick={() => {
-                    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co';
-                    const widgetCode = `<script src="${supabaseUrl}/functions/v1/widget-chat?slug=${widgetConfigModalLink.public_slug}"></script>`;
+                    const widgetUrl = import.meta.env.VITE_WIDGET_URL || 'https://widget.pescalead.com.br';
+                    const widgetCode = `<script src="${widgetUrl}/api/chat?slug=${widgetConfigModalLink.public_slug}"></script>`;
                     navigator.clipboard.writeText(widgetCode);
                     setCopiedLinkId(`${widgetConfigModalLink.id}-widget-modal`);
                     setTimeout(() => setCopiedLinkId(null), 2000);

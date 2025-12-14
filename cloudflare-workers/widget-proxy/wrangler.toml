@@ -1,0 +1,12 @@
+name = "widget-proxy"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+# Rotas do worker
+# Configurar no Cloudflare Dashboard ou via CLI:
+# wrangler deploy --route "widget.pescalead.com.br/*"
+
+[vars]
+SUPABASE_URL = "https://nlbcwaxkeaddfocigwuk.supabase.co"
+# SUPABASE_ANON_KEY deve ser configurado como secret:
+# wrangler secret put SUPABASE_ANON_KEY

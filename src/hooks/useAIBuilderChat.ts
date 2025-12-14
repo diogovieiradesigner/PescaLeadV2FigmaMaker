@@ -667,11 +667,12 @@ export function useAIBuilderChat(agentId: string | null, workspaceId: string | n
       if (items.length === 0) {
         console.log('[useAIBuilderChat] ⚠️ No conversations found, creating one automatically');
 
-        // Criar conversa via RPC
+        // Criar conversa via RPC - passa workspace_id explícito
         const { data: createData, error: createError } = await supabase
           .rpc('create_preview_conversation', {
             p_agent_id: agentId,
-            p_template_message: null
+            p_template_message: null,
+            p_workspace_id: workspaceId
           });
 
         if (createError) {
@@ -684,7 +685,7 @@ export function useAIBuilderChat(agentId: string | null, workspaceId: string | n
 
           // Recarregar a lista (sem recursão infinita pois agora terá 1 conversa)
           const { data: newRpcData } = await supabase
-            .rpc('list_preview_conversations', { p_agent_id: agentId });
+            .rpc('list_preview_conversations', { p_agent_id: agentId, p_workspace_id: workspaceId });
 
           if (Array.isArray(newRpcData) && newRpcData.length > 0) {
             const newItems: PreviewConversationItem[] = newRpcData.map((conv: any) => ({
@@ -839,6 +840,15 @@ export function useAIBuilderChat(agentId: string | null, workspaceId: string | n
     try {
       console.log('[useAIBuilderChat] 🗑️ Deleting conversation:', conversationId);
 
+      // Verificar se a conversa ainda existe na lista local
+      const conversationExists = previewConversations.some(c => c.id === conversationId);
+      if (!conversationExists) {
+        console.log('[useAIBuilderChat] ⚠️ Conversation not in local list, refreshing...');
+        // A conversa pode já ter sido deletada, apenas recarregar a lista
+        await loadPreviewConversations();
+        return { success: true }; // Considerar sucesso pois a conversa não existe mais
+      }
+
       // Verificar se é a última conversa - não permitir deletar
       if (previewConversations.length <= 1) {
         console.log('[useAIBuilderChat] ⚠️ Cannot delete last conversation');
@@ -850,12 +860,27 @@ export function useAIBuilderChat(agentId: string | null, workspaceId: string | n
         .rpc('delete_preview_conversation', { p_conversation_id: conversationId });
 
       if (rpcError) throw new Error(rpcError.message);
-      if (!rpcData?.success) throw new Error(rpcData?.error || 'Erro ao deletar conversa');
+
+      // Se a conversa não foi encontrada no banco, pode já ter sido deletada
+      if (!rpcData?.success) {
+        if (rpcData?.error?.includes('not found')) {
+          console.log('[useAIBuilderChat] ⚠️ Conversation already deleted in DB, refreshing list...');
+          // Atualizar lista local removendo a conversa
+          setPreviewConversations(prev => prev.filter(c => c.id !== conversationId));
+          await loadPreviewConversations();
+          return { success: true };
+        }
+        throw new Error(rpcData?.error || 'Erro ao deletar conversa');
+      }
+
+      // IMPORTANTE: Atualizar estado local IMEDIATAMENTE
+      setPreviewConversations(prev => prev.filter(c => c.id !== conversationId));
 
       // Se era a conversa selecionada, selecionar outra
       if (selectedConversationId === conversationId) {
-        // Encontrar outra conversa para selecionar
-        const otherConversation = previewConversations.find(c => c.id !== conversationId);
+        // Encontrar outra conversa para selecionar (usando lista filtrada)
+        const remainingConversations = previewConversations.filter(c => c.id !== conversationId);
+        const otherConversation = remainingConversations[0];
         if (otherConversation) {
           setSelectedConversationId(otherConversation.id);
           await loadConversation(otherConversation.id);
@@ -865,13 +890,15 @@ export function useAIBuilderChat(agentId: string | null, workspaceId: string | n
         }
       }
 
-      // Recarregar lista
+      // Recarregar lista para garantir consistência
       await loadPreviewConversations();
 
       console.log('[useAIBuilderChat] ✅ Deleted conversation');
       return { success: true };
     } catch (err: any) {
       console.error('[useAIBuilderChat] Error deleting conversation:', err);
+      // Se houver erro, recarregar a lista para sincronizar
+      await loadPreviewConversations();
       setError(err.message || 'Erro ao deletar conversa');
       return { success: false, error: err.message || 'Erro ao deletar conversa' };
     }
@@ -911,11 +938,15 @@ export function useAIBuilderChat(agentId: string | null, workspaceId: string | n
 
       console.log(`[useAIBuilderChat] ✅ Deleted ${deletedCount}/${conversationsToDelete.length} conversations`);
 
+      // IMPORTANTE: Atualizar estado local IMEDIATAMENTE para evitar dessincronização
+      // Isso evita que o usuário tente deletar conversas que já foram removidas
+      setPreviewConversations([firstConversation]);
+
       // Selecionar a primeira conversa (que foi mantida)
       setSelectedConversationId(firstConversation.id);
       await loadConversation(firstConversation.id);
 
-      // Recarregar lista
+      // Recarregar lista do banco para garantir consistência
       await loadPreviewConversations();
 
       return { success: true };

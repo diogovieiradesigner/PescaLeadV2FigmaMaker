@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, MessageSquare, FileText, Activity, Save, User, Building2, Calendar, Tag, DollarSign, Phone, Mail, MoreVertical, CheckCircle, XCircle, Globe, Send, Settings, FolderOpen, Upload, Download, Trash2, File, FileImage, FileSpreadsheet, FileType, Plus } from 'lucide-react';
+import { X, MessageSquare, FileText, Activity, Save, User, Building2, Calendar, Tag, DollarSign, Phone, Mail, MoreVertical, CheckCircle, XCircle, Globe, Send, Settings, FolderOpen, Upload, Download, Trash2, File, FileImage, FileSpreadsheet, FileType, Plus, BookOpen, ArrowLeft } from 'lucide-react';
 import { CRMLead, CustomField } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
 import { Avatar } from './Avatar';
@@ -14,6 +14,25 @@ import { createConversation } from '../services/chat-service';
 import { supabase } from '../utils/supabase/client';
 import { NoInboxNotification } from './NoInboxNotification';
 import { openEmailCompose } from '../utils/email-helper';
+import { DocumentsList } from './documents/DocumentsList';
+import { DocumentEditor } from './documents/DocumentEditor';
+import { TemplateSelector } from './documents/TemplateSelector';
+import { SaveAsTemplateModal } from './documents/SaveAsTemplateModal';
+import type { LeadDocument, LeadDocumentFolder, LeadDocumentTemplate, SaveStatus } from '../types/documents';
+import type { JSONContent } from '@tiptap/react';
+import {
+  getDocumentsByLead,
+  getFoldersByLead,
+  createDocument,
+  updateDocument,
+  deleteDocument as deleteDocumentService,
+  createFolder,
+  deleteFolder as deleteFolderService,
+  updateFolder,
+  extractTextFromContent,
+  createVersion,
+  getLatestVersionNumber,
+} from '../services/documents-service';
 
 // ✅ Tipos para campos JSONB
 interface EmailEntry {
@@ -63,7 +82,7 @@ interface LeadFullViewModalProps {
   };
 }
 
-type ActiveTab = 'chat' | 'data' | 'activities' | 'files';
+type ActiveTab = 'chat' | 'data' | 'activities' | 'files' | 'documents';
 
 // ✅ Interface para arquivos do lead
 interface LeadFile {
@@ -371,7 +390,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     navigationState
   });
   
-  const { currentWorkspace } = useAuth();
+  const { currentWorkspace, user } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('data');
   const [formData, setFormData] = useState<CRMLead | null>(lead);
   const [activities, setActivities] = useState<any[]>([]);
@@ -405,7 +424,27 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   const [uploadingFile, setUploadingFile] = useState(false);
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  
+
+  // ✅ Estados para aba de Documentos
+  const [leadDocuments, setLeadDocuments] = useState<LeadDocument[]>([]);
+  const [documentFolders, setDocumentFolders] = useState<LeadDocumentFolder[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState<LeadDocument | null>(null);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [documentSaveStatus, setDocumentSaveStatus] = useState<SaveStatus>('saved');
+  const [isEditingDocument, setIsEditingDocument] = useState(false);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
+  const [pendingFolderId, setPendingFolderId] = useState<string | undefined>(undefined);
+
+  // ✅ Estados para modal de confirmação de exclusão de documento/pasta
+  const [deleteDocModal, setDeleteDocModal] = useState<{
+    show: boolean;
+    type: 'document' | 'folder';
+    id: string;
+    name: string;
+  }>({ show: false, type: 'document', id: '', name: '' });
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+
   // ✅ LAZY LOADING: Custom fields carregam sob demanda (sem cache - sempre recarrega no kanban)
   const { 
     customFields, 
@@ -519,6 +558,26 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     }
   }, [lead?.id, currentWorkspace?.id]);
 
+  // ✅ Carregar documentos do lead
+  const fetchLeadDocuments = useCallback(async () => {
+    if (!lead?.id || !currentWorkspace?.id) return;
+
+    setLoadingDocuments(true);
+    try {
+      const [documentsResult, foldersResult] = await Promise.all([
+        getDocumentsByLead(lead.id),
+        getFoldersByLead(lead.id)
+      ]);
+
+      setLeadDocuments(documentsResult.documents || []);
+      setDocumentFolders(foldersResult.folders || []);
+    } catch (error) {
+      console.error('[LeadFullViewModal] Erro ao carregar documentos:', error);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }, [lead?.id, currentWorkspace?.id]);
+
   // Inicializar dados quando abrir
   useEffect(() => {
     if (isOpen && lead) {
@@ -543,8 +602,11 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
       // ✅ Carregar arquivos do lead
       fetchLeadFiles();
+
+      // ✅ Carregar documentos do lead
+      fetchLeadDocuments();
     }
-  }, [isOpen, lead, currentWorkspace?.id, customFields, fetchLeadFiles]); // ✅ Incluir customFields e fetchLeadFiles nas dependências
+  }, [isOpen, lead, currentWorkspace?.id, customFields, fetchLeadFiles, fetchLeadDocuments]); // ✅ Incluir customFields, fetchLeadFiles e fetchLeadDocuments nas dependências
 
   // ✅ Gerenciar seleção de telefone
   useEffect(() => {
@@ -966,6 +1028,255 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     return <File className="w-5 h-5" />;
   };
 
+  // ✅ HANDLERS PARA DOCUMENTOS
+
+  // Abrir seletor de templates para criar documento
+  const handleCreateDocument = (folderId?: string) => {
+    console.log('[LeadFullViewModal] handleCreateDocument chamado com folderId:', folderId);
+    setPendingFolderId(folderId);
+    setShowTemplateSelector(true);
+  };
+
+  // Criar documento a partir do template selecionado (ou em branco)
+  const handleSelectTemplate = async (template: LeadDocumentTemplate | null) => {
+    if (!lead?.id || !currentWorkspace?.id || !user?.id) {
+      console.warn('[LeadFullViewModal] Missing required data for document creation');
+      setShowTemplateSelector(false);
+      return;
+    }
+
+    try {
+      const { document: newDoc, error } = await createDocument({
+        lead_id: lead.id,
+        workspace_id: currentWorkspace.id,
+        folder_id: pendingFolderId || null,
+        title: template ? template.title : 'Novo Documento',
+        content: template ? template.content : undefined,
+        content_text: template ? template.content_text : undefined,
+        created_by: user.id
+      });
+
+      if (error || !newDoc) {
+        throw error || new Error('Documento não criado');
+      }
+
+      setLeadDocuments(prev => [newDoc, ...prev]);
+      setSelectedDocument(newDoc);
+      setIsEditingDocument(true);
+      setShowTemplateSelector(false);
+      setPendingFolderId(undefined);
+      toast.success(template ? 'Documento criado a partir do template!' : 'Documento criado!');
+    } catch (error: unknown) {
+      console.error('[LeadFullViewModal] Erro ao criar documento:', error);
+      toast.error('Erro ao criar documento');
+    }
+  };
+
+  // Salvar documento atual como template
+  const handleSaveAsTemplate = () => {
+    if (selectedDocument) {
+      setShowSaveAsTemplate(true);
+    }
+  };
+
+  // Restaurar versão anterior de um documento
+  const handleRestoreVersion = () => {
+    toast.success('Versão restaurada com sucesso!');
+  };
+
+  // Atualizar documento (título ou conteúdo)
+  const handleUpdateDocument = async (
+    docId: string,
+    updates: { title?: string; content?: JSONContent; is_pinned?: boolean }
+  ) => {
+    // Verificar se user está disponível
+    if (!user?.id) {
+      console.warn('[LeadFullViewModal] User not available for document update');
+      return;
+    }
+
+    try {
+      setDocumentSaveStatus('saving');
+
+      // Se estamos atualizando conteúdo, criar uma versão do estado atual ANTES de salvar
+      if (updates.content !== undefined && selectedDocument?.id === docId) {
+        const currentContent = selectedDocument.content as JSONContent;
+        const newContentStr = JSON.stringify(updates.content);
+        const currentContentStr = JSON.stringify(currentContent);
+
+        // Só criar versão se o conteúdo realmente mudou e não está vazio
+        if (currentContentStr !== newContentStr && currentContent) {
+          const currentText = selectedDocument.content_text || extractTextFromContent(currentContent);
+
+          // Só criar versão se o documento atual tem conteúdo significativo
+          if (currentText && currentText.trim().length > 10) {
+            try {
+              const latestVersion = await getLatestVersionNumber(docId);
+              await createVersion({
+                document_id: docId,
+                content: currentContent,
+                content_text: currentText,
+                version_number: latestVersion + 1,
+                created_by: user.id,
+              });
+              console.log('[LeadFullViewModal] Versão criada:', latestVersion + 1);
+            } catch (versionError) {
+              // Não bloquear o save se a versão falhar
+              console.warn('[LeadFullViewModal] Erro ao criar versão (não bloqueante):', versionError);
+            }
+          }
+        }
+      }
+
+      const updateData: Record<string, unknown> = {
+        updated_by: user.id
+      };
+
+      if (updates.title !== undefined) updateData.title = updates.title;
+      if (updates.content !== undefined) {
+        updateData.content = updates.content;
+        updateData.content_text = extractTextFromContent(updates.content);
+      }
+      if (updates.is_pinned !== undefined) updateData.is_pinned = updates.is_pinned;
+
+      const { document: updated, error } = await updateDocument(docId, updateData);
+
+      if (error || !updated) {
+        throw error || new Error('Documento não retornado');
+      }
+
+      setLeadDocuments(prev => prev.map(d => d.id === docId ? updated : d));
+      if (selectedDocument?.id === docId) {
+        setSelectedDocument(updated);
+      }
+
+      setDocumentSaveStatus('saved');
+    } catch (error: unknown) {
+      console.error('[LeadFullViewModal] Erro ao atualizar documento:', error);
+      setDocumentSaveStatus('error');
+      toast.error('Erro ao salvar documento');
+    }
+  };
+
+  // Abrir modal de confirmação para deletar documento
+  const handleDeleteDocument = (docId: string) => {
+    const doc = leadDocuments.find(d => d.id === docId);
+    setDeleteDocModal({
+      show: true,
+      type: 'document',
+      id: docId,
+      name: doc?.title || 'Documento'
+    });
+  };
+
+  // Abrir modal de confirmação para deletar pasta
+  const handleDeleteFolder = (folderId: string) => {
+    const folder = documentFolders.find(f => f.id === folderId);
+    setDeleteDocModal({
+      show: true,
+      type: 'folder',
+      id: folderId,
+      name: folder?.name || 'Pasta'
+    });
+  };
+
+  // Confirmar exclusão de documento/pasta
+  const confirmDeleteDoc = async () => {
+    const { type, id } = deleteDocModal;
+    setIsDeletingDoc(true);
+
+    try {
+      if (type === 'document') {
+        await deleteDocumentService(id);
+        setLeadDocuments(prev => prev.filter(d => d.id !== id));
+
+        if (selectedDocument?.id === id) {
+          setSelectedDocument(null);
+          setIsEditingDocument(false);
+        }
+
+        toast.success('Documento excluído!');
+      } else {
+        await deleteFolderService(id);
+        setDocumentFolders(prev => prev.filter(f => f.id !== id));
+        // Mover documentos da pasta para a raiz
+        setLeadDocuments(prev => prev.map(d =>
+          d.folder_id === id ? { ...d, folder_id: null } : d
+        ));
+        toast.success('Pasta excluída!');
+      }
+
+      setDeleteDocModal({ show: false, type: 'document', id: '', name: '' });
+    } catch (error: any) {
+      console.error(`[LeadFullViewModal] Erro ao deletar ${type}:`, error);
+      toast.error(`Erro ao excluir ${type === 'document' ? 'documento' : 'pasta'}`);
+    } finally {
+      setIsDeletingDoc(false);
+    }
+  };
+
+  // Cancelar exclusão
+  const cancelDeleteDoc = () => {
+    if (!isDeletingDoc) {
+      setDeleteDocModal({ show: false, type: 'document', id: '', name: '' });
+    }
+  };
+
+  // Criar pasta
+  const handleCreateFolder = async (name: string) => {
+    if (!lead?.id || !currentWorkspace?.id) return;
+
+    try {
+      const newFolder = await createFolder({
+        lead_id: lead.id,
+        workspace_id: currentWorkspace.id,
+        name,
+        position: documentFolders.length
+      });
+
+      setDocumentFolders(prev => [...prev, newFolder]);
+      toast.success('Pasta criada!');
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro ao criar pasta:', error);
+      toast.error('Erro ao excluir pasta');
+    }
+  };
+
+  // Renomear pasta
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    try {
+      const updated = await updateFolder(folderId, { name: newName });
+      setDocumentFolders(prev => prev.map(f => f.id === folderId ? updated : f));
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro ao renomear pasta:', error);
+      toast.error('Erro ao renomear pasta');
+    }
+  };
+
+  // Mover documento para pasta
+  const handleMoveDocument = async (docId: string, folderId: string | null) => {
+    try {
+      const { document: updated, error } = await updateDocument(docId, { folder_id: folderId });
+
+      if (error || !updated) {
+        console.error('[LeadFullViewModal] Erro ao mover documento:', error);
+        toast.error('Erro ao mover documento');
+        return;
+      }
+
+      // Atualizar o documento mantendo todos os campos existentes
+      setLeadDocuments(prev => prev.map(d => d.id === docId ? { ...d, folder_id: folderId } : d));
+      if (selectedDocument?.id === docId) {
+        setSelectedDocument(prev => prev ? { ...prev, folder_id: folderId } : null);
+      }
+
+      toast.success(folderId ? 'Documento movido para pasta' : 'Documento removido da pasta');
+    } catch (error: any) {
+      console.error('[LeadFullViewModal] Erro ao mover documento:', error);
+      toast.error('Erro ao mover documento');
+    }
+  };
+
   // Salvar alterações na Sidebar Direita
   const handleSidebarSave = async () => {
     if (!formData || !currentWorkspace) return;
@@ -1194,6 +1505,24 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                         isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'
                       }`}>
                         {leadFiles.length}
+                      </span>
+                    )}
+                 </button>
+                 <button
+                    onClick={() => setActiveTab('documents')}
+                    className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                       activeTab === 'documents'
+                          ? 'border-[#0169D9] text-[#0169D9]'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    }`}
+                 >
+                    <BookOpen className="w-4 h-4" />
+                    Documentos
+                    {leadDocuments.length > 0 && (
+                      <span className={`ml-1 px-1.5 py-0.5 text-xs rounded-full ${
+                        isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'
+                      }`}>
+                        {leadDocuments.length}
                       </span>
                     )}
                  </button>
@@ -2134,6 +2463,64 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                        </div>
                     </div>
                  )}
+
+                 {/* Aba de Documentos */}
+                 {activeTab === 'documents' && (
+                    <div className={`h-full flex ${isDark ? 'bg-[#000000]' : 'bg-gray-50'}`}>
+                       {/* Lista de Documentos */}
+                       <div className="flex-1 p-6 overflow-y-auto">
+                          <div className="max-w-3xl mx-auto">
+                             {loadingDocuments ? (
+                                <div className="flex items-center justify-center py-12">
+                                   <div className="w-8 h-8 border-2 border-[#0169D9] border-t-transparent rounded-full animate-spin" />
+                                </div>
+                             ) : (
+                                <DocumentsList
+                                   documents={leadDocuments}
+                                   folders={documentFolders}
+                                   onCreateDocument={handleCreateDocument}
+                                   onSelectDocument={(doc) => {
+                                      setSelectedDocument(doc);
+                                      setIsEditingDocument(true);
+                                   }}
+                                   onDeleteDocument={handleDeleteDocument}
+                                   onPinDocument={(docId, isPinned) => handleUpdateDocument(docId, { is_pinned: isPinned })}
+                                   onRenameDocument={(docId, newTitle) => handleUpdateDocument(docId, { title: newTitle })}
+                                   onCreateFolder={handleCreateFolder}
+                                   onDeleteFolder={handleDeleteFolder}
+                                   onRenameFolder={handleRenameFolder}
+                                   onMoveDocument={handleMoveDocument}
+                                   theme={theme}
+                                />
+                             )}
+                          </div>
+                       </div>
+                    </div>
+                 )}
+
+                 {/* Editor de Documento Expandido (Fullscreen Google Docs Style) */}
+                 {isEditingDocument && selectedDocument && (
+                    <DocumentEditor
+                       document={selectedDocument}
+                       onSave={(content) => handleUpdateDocument(selectedDocument.id, { content })}
+                       saveStatus={documentSaveStatus}
+                       onSaveStatusChange={setDocumentSaveStatus}
+                       theme={theme}
+                       workspaceId={currentWorkspace?.id}
+                       userId={user?.id}
+                       onSaveAsTemplate={handleSaveAsTemplate}
+                       onRestoreVersion={handleRestoreVersion}
+                       onBack={() => {
+                          setIsEditingDocument(false);
+                          setSelectedDocument(null);
+                       }}
+                       onTitleChange={(newTitle) => {
+                          setSelectedDocument(prev => prev ? { ...prev, title: newTitle } : null);
+                          handleUpdateDocument(selectedDocument.id, { title: newTitle });
+                       }}
+                       startExpanded={true}
+                    />
+                 )}
               </div>
            </div>
 
@@ -2327,6 +2714,119 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                     </>
                   ) : (
                     'Excluir Campo'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Seleção de Template */}
+      <TemplateSelector
+        isOpen={showTemplateSelector}
+        onClose={() => {
+          setShowTemplateSelector(false);
+          setPendingFolderId(undefined);
+        }}
+        onSelectTemplate={handleSelectTemplate}
+        workspaceId={currentWorkspace?.id || ''}
+        theme={theme}
+      />
+
+      {/* Modal de Salvar como Template */}
+      {selectedDocument && (
+        <SaveAsTemplateModal
+          isOpen={showSaveAsTemplate}
+          onClose={() => setShowSaveAsTemplate(false)}
+          onSaved={() => {
+            setShowSaveAsTemplate(false);
+            toast.success('Template salvo com sucesso!');
+          }}
+          content={selectedDocument.content as Record<string, unknown>}
+          defaultTitle={selectedDocument.title}
+          workspaceId={currentWorkspace?.id || ''}
+          userId={user?.id || ''}
+          theme={theme}
+        />
+      )}
+
+      {/* Modal de Confirmação de Exclusão de Documento/Pasta */}
+      {deleteDocModal.show && (
+        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 10001 }}>
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={cancelDeleteDoc}
+          />
+
+          {/* Modal */}
+          <div className={`relative w-full max-w-md mx-4 rounded-xl shadow-2xl ${
+            isDark ? 'bg-[#1a1a1a] border border-white/[0.1]' : 'bg-white'
+          }`}>
+            {/* Header */}
+            <div className={`p-6 pb-4 border-b ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${isDark ? 'bg-red-500/20' : 'bg-red-100'}`}>
+                  <Trash2 className="w-5 h-5 text-red-500" />
+                </div>
+                <div>
+                  <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    Excluir {deleteDocModal.type === 'document' ? 'Documento' : 'Pasta'}
+                  </h3>
+                  <p className={`text-sm ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
+                    Esta ação não pode ser desfeita
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className={`text-sm ${isDark ? 'text-white/80' : 'text-gray-600'}`}>
+                Tem certeza que deseja excluir {deleteDocModal.type === 'document' ? 'o documento' : 'a pasta'}{' '}
+                <span className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  "{deleteDocModal.name}"
+                </span>
+                ?
+                {deleteDocModal.type === 'folder' && (
+                  <span className={`block mt-2 ${isDark ? 'text-yellow-400' : 'text-yellow-600'}`}>
+                    Os documentos desta pasta serão movidos para a raiz.
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className={`p-6 pt-4 border-t ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={cancelDeleteDoc}
+                  disabled={isDeletingDoc}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isDark
+                      ? 'text-white/70 hover:text-white hover:bg-white/10'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  } ${isDeletingDoc ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmDeleteDoc}
+                  disabled={isDeletingDoc}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${
+                    isDeletingDoc
+                      ? 'bg-red-400 cursor-not-allowed'
+                      : 'bg-red-500 hover:bg-red-600'
+                  }`}
+                >
+                  {isDeletingDoc ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    `Excluir ${deleteDocModal.type === 'document' ? 'Documento' : 'Pasta'}`
                   )}
                 </button>
               </div>

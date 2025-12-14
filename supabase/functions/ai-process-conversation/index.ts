@@ -697,6 +697,62 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
         }
         console.log("[agendar_reuniao] WorkspaceId (da conversa):", workspaceId);
 
+        // VALIDAÇÃO 1: Verificar se o dia/horário está dentro do expediente configurado
+        const { data: calendarSettings, error: calSettingsError } = await supabase.rpc('get_calendar_settings', { p_workspace_id: workspaceId });
+
+        if (calSettingsError) {
+          console.error("[agendar_reuniao] Error fetching calendar settings:", calSettingsError);
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "error", `❌ Erro ao buscar configurações`, { preview_mode: isPreview }, `${args.data} ${args.hora}`, args, null, null, 0, 0, Date.now() - stepStart, calSettingsError.message);
+          return { success: false, result: null, message: "Erro ao verificar configurações de calendário: " + calSettingsError.message };
+        }
+
+        if (!calendarSettings || !calendarSettings.availability) {
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "warning", `⚠️ Calendário não configurado`, { preview_mode: isPreview }, `${args.data} ${args.hora}`, args, null, null, 0, 0, Date.now() - stepStart);
+          return { success: false, result: null, message: "O calendário de agendamentos não está configurado. Não é possível agendar reuniões no momento." };
+        }
+
+        // Validar dia da semana
+        const requestedDate = new Date(`${args.data}T12:00:00`);
+        const dayOfWeek = requestedDate.getDay();
+        const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+        const dayName = dayNames[dayOfWeek];
+        const dayAvailability = calendarSettings.availability[dayName] || [];
+
+        console.log("[agendar_reuniao] Day validation:", { requestedDate: args.data, dayOfWeek, dayName, dayAvailability: JSON.stringify(dayAvailability) });
+
+        // Se o dia não tem expediente (array vazio), não permitir agendamento
+        if (!dayAvailability || dayAvailability.length === 0) {
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "warning", `⚠️ Sem expediente neste dia`, { preview_mode: isPreview }, `${args.data} ${args.hora}`, args, `Dia: ${dayName}`, { day: dayName, available: false }, 0, 0, Date.now() - stepStart);
+          return { success: false, result: null, message: `Não há expediente configurado para ${dayName === 'sunday' ? 'domingo' : dayName === 'saturday' ? 'sábado' : 'este dia'}. Por favor, consulte os horários disponíveis e sugira outro dia ao cliente.` };
+        }
+
+        // Validar se o horário solicitado está dentro dos períodos de expediente
+        const requestedTime = args.hora; // formato "HH:MM"
+        const [reqHour, reqMin] = requestedTime.split(':').map(Number);
+        const requestedMinutes = reqHour * 60 + reqMin;
+        const durationMinutes = args.duracao_minutos || 60;
+        const endTimeMinutes = requestedMinutes + durationMinutes;
+
+        let isWithinWorkingHours = false;
+        for (const period of dayAvailability) {
+          const [startHour, startMin] = period.start.split(':').map(Number);
+          const [endHour, endMin] = period.end.split(':').map(Number);
+          const periodStartMinutes = startHour * 60 + startMin;
+          const periodEndMinutes = endHour * 60 + endMin;
+
+          // Verificar se o horário solicitado (início E fim) está dentro deste período
+          if (requestedMinutes >= periodStartMinutes && endTimeMinutes <= periodEndMinutes) {
+            isWithinWorkingHours = true;
+            break;
+          }
+        }
+
+        if (!isWithinWorkingHours) {
+          const workingHours = dayAvailability.map((p: any) => `${p.start} às ${p.end}`).join(', ');
+          await logger.step("tool_agendar_reuniao", "Agendar Reunião", "📅", "warning", `⚠️ Horário fora do expediente`, { preview_mode: isPreview }, `${args.data} ${args.hora}`, args, `Expediente: ${workingHours}`, { requested_time: requestedTime, working_hours: workingHours }, 0, 0, Date.now() - stepStart);
+          return { success: false, result: null, message: `O horário ${requestedTime} está fora do expediente configurado. Horários disponíveis para ${dayName === 'sunday' ? 'domingo' : dayName === 'saturday' ? 'sábado' : 'este dia'}: ${workingHours}. Por favor, consulte os horários disponíveis e sugira outro horário ao cliente.` };
+        }
+
         // Buscar calendário interno do workspace
         let { data: calendar, error: calendarError } = await supabase.from("internal_calendars").select("id").eq("workspace_id", workspaceId).eq("is_active", true).limit(1).single();
         console.log("[agendar_reuniao] Calendar encontrado:", JSON.stringify(calendar), "Error:", calendarError?.message);
@@ -719,11 +775,10 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
         }
         // Montar data/hora do evento
         const startDateTime = new Date(`${args.data}T${args.hora}:00`);
-        const durationMinutes = args.duracao_minutos || 60;
         const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
         console.log("[agendar_reuniao] DateTime:", { start: startDateTime.toISOString(), end: endDateTime.toISOString(), duration: durationMinutes });
 
-        // Verificar disponibilidade
+        // VALIDAÇÃO 2: Verificar conflitos com eventos existentes
         const { data: conflictingEvents } = await supabase.from("internal_events")
           .select("id, title, start_time, end_time")
           .eq("workspace_id", workspaceId)
@@ -793,16 +848,35 @@ async function executeSystemTool(supabase, openrouterApiKey, toolName, args, con
         if (!workspaceId) {
           return { success: false, result: null, message: "Workspace não encontrado" };
         }
-        // Buscar configurações de disponibilidade
-        const { data: calendarSettings } = await supabase.from("calendar_settings").select("availability, buffer_between_events").eq("workspace_id", workspaceId).limit(1).single();
+        // Buscar configurações de disponibilidade usando RPC (bypass RLS)
+        const { data: calendarSettings, error: calSettingsError } = await supabase.rpc('get_calendar_settings', { p_workspace_id: workspaceId });
+
+        // Se houver erro na query, tratar
+        if (calSettingsError) {
+          console.error("[consultar_disponibilidade] Error fetching calendar settings:", calSettingsError);
+          await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "error", `❌ Erro ao buscar configurações`, { preview_mode: isPreview }, args.data, args, "Erro", { error: calSettingsError.message }, 0, 0, Date.now() - stepStart, calSettingsError.message);
+          return { success: false, result: null, message: "Erro ao verificar disponibilidade: " + calSettingsError.message };
+        }
+
+        console.log("[consultar_disponibilidade] Calendar settings:", { workspaceId, hasSettings: !!calendarSettings });
+
+        // Se não existe configuração de calendário, não permitir agendamentos
+        if (!calendarSettings || !calendarSettings.availability) {
+          await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 Calendário não configurado`, { preview_mode: isPreview }, args.data, args, "Calendário não configurado", { available: false }, 0, 0, Date.now() - stepStart);
+          return { success: true, result: { date: args.data, available_slots: [], message: "Calendário não configurado" }, message: "O calendário de agendamentos não está configurado. Não é possível agendar reuniões no momento." };
+        }
+
         // Dia da semana (0 = domingo, 1 = segunda, etc.)
         const requestedDate = new Date(args.data + "T12:00:00");
         const dayOfWeek = requestedDate.getDay();
         const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
         const dayName = dayNames[dayOfWeek];
-        // Disponibilidade padrão se não configurado
-        const defaultAvailability = { start: "09:00", end: "18:00" };
-        const dayAvailability = calendarSettings?.availability?.[dayName] || [defaultAvailability];
+
+        // Buscar disponibilidade do dia - array vazio [] significa dia sem expediente
+        const dayAvailability = calendarSettings.availability[dayName] || [];
+
+        console.log("[consultar_disponibilidade] Day check:", { requestedDate: args.data, dayOfWeek, dayName, dayAvailability: JSON.stringify(dayAvailability), availabilityLength: dayAvailability?.length });
+
         if (!dayAvailability || dayAvailability.length === 0) {
           await logger.step("tool_consultar_disponibilidade", "Consultar Disponibilidade", "🕐", "success", `📅 Sem expediente configurado`, { preview_mode: isPreview }, args.data, args, "Sem horários disponíveis", { day: dayName, available: false }, 0, 0, Date.now() - stepStart);
           return { success: true, result: { date: args.data, day_name: dayName, available_slots: [], message: "Sem expediente neste dia" }, message: `Não há horários de atendimento configurados para ${dayName === 'sunday' ? 'domingo' : dayName === 'saturday' ? 'sábado' : 'este dia'}.` };

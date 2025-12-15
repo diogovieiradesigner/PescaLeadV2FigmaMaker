@@ -3,8 +3,8 @@ import { supabase } from '../utils/supabase/client';
 import { Conversation, Message } from '../types/chat';
 import { fetchConversation, fetchConversationByLeadId, sendMessageViaServer, sendAudioViaServer, sendMediaViaServer, sendMessage as sendMessageService, markMessagesAsRead, deleteConversation as deleteConversationService, clearConversationHistory } from '../services/chat-service';
 import { CreateMessageData } from '../utils/supabase/chat-converters';
-import { toast } from 'sonner@2.0.3';
-import { RealtimeChannel } from 'npm:@supabase/supabase-js@2';
+import { toast } from 'sonner';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface UseSingleConversationReturn {
   conversation: Conversation | null;
@@ -308,14 +308,19 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
         if (!accessToken) return;
 
         const { projectId } = await import('../utils/supabase/info.tsx'); // Lazy import to avoid cycle if any
-        await fetch(
+        const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/messages/${messageId}/delete?workspaceId=${workspaceId}`,
           {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${accessToken}` },
           }
         );
-        
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Falha ao deletar mensagem');
+        }
+
         // ✅ OTIMIZAÇÃO: Update otimista imediato
         setConversation(prev => {
             if(!prev) return null;
@@ -323,9 +328,15 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
                 ...prev,
                 messages: prev.messages.map(m => m.id === messageId ? { ...m, type: 'delete' } : m)
             }
-        })
-      } catch(e) {
+        });
+
+        // ✅ Notificação de sucesso
+        toast.success('Mensagem deletada');
+      } catch(e: any) {
           console.error(e);
+          toast.error('Erro ao deletar mensagem', {
+            description: e.message || 'Tente novamente'
+          });
       }
   }, [workspaceId]);
 

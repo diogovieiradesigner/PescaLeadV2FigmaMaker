@@ -39,11 +39,15 @@ export interface DbConversation {
 export interface DbMessage {
   id: string;
   conversation_id: string;
-  content_type: 'text' | 'image' | 'audio';
+  content_type: 'text' | 'image' | 'audio' | 'video' | 'document'; // ✅ Adicionado video e document
   message_type: 'sent' | 'received'; // ✅ Corrigido: banco usa message_type
   text_content?: string;
   media_url?: string;
   media_duration?: number; // for audio
+  // ✅ Campos para documentos e vídeos
+  file_name?: string;   // Nome do arquivo
+  file_size?: number;   // Tamanho em bytes
+  mime_type?: string;   // MIME type
   is_read: boolean;
   sent_by?: string; // user_id (quem enviou)
   pipeline_id?: string; // ✅ ID do pipeline de IA

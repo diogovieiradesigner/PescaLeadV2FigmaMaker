@@ -17,6 +17,11 @@ export function dbMessageToFrontend(dbMessage: DbMessage): Message {
     imageUrl: dbMessage.content_type === 'image' ? dbMessage.media_url : undefined,
     audioUrl: dbMessage.content_type === 'audio' ? dbMessage.media_url : undefined,
     audioDuration: dbMessage.media_duration,
+    // ✅ Campos para video e document
+    mediaUrl: (dbMessage.content_type === 'video' || dbMessage.content_type === 'document') ? dbMessage.media_url : undefined,
+    fileName: dbMessage.file_name,
+    fileSize: dbMessage.file_size,
+    mimeType: dbMessage.mime_type,
     type: dbMessage.message_type, // ✅ Usa diretamente message_type do banco
     status: dbMessage.message_type === 'sent' ? 'sent' : undefined, // ✅ Define status enviado para mensagens do banco
     timestamp: (() => {
@@ -72,6 +77,10 @@ export function dbConversationToFrontend(
       lastMessageText = '📷 Imagem';
     } else if (lastNonDeletedMessage.contentType === 'audio') {
       lastMessageText = '🎤 Áudio';
+    } else if (lastNonDeletedMessage.contentType === 'video') {
+      lastMessageText = '🎬 Vídeo';
+    } else if (lastNonDeletedMessage.contentType === 'document') {
+      lastMessageText = `📎 ${lastNonDeletedMessage.fileName || 'Documento'}`;
     }
   }
 
@@ -129,10 +138,13 @@ export interface CreateMessageData {
   conversation_id: string;
   sent_by?: string; // user_id que enviou
   message_type: 'sent' | 'received' | 'delete'; // ✅ Corrigido: banco usa message_type
-  content_type: 'text' | 'image' | 'audio';
+  content_type: 'text' | 'image' | 'audio' | 'video' | 'document'; // ✅ Adicionado video e document
   text_content?: string;
   media_url?: string;
   media_duration?: number;
+  file_name?: string;   // ✅ Nome do arquivo (para documentos)
+  file_size?: number;   // ✅ Tamanho em bytes
+  mime_type?: string;   // ✅ MIME type
 }
 
 // ============================================

@@ -10,11 +10,12 @@
  */
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { 
-  timeToDate, 
+import {
+  timeToDate,
   getCurrentTimeInTimezone,
   randomInterval,
-  generateRandomScheduleWithLimit
+  generateRandomScheduleWithLimit,
+  calculateOptimalInterval
 } from "../_shared/timezone-helpers.ts";
 
 // ==================== VALIDATION HELPERS ====================
@@ -523,50 +524,39 @@ Deno.serve(async (req) => {
     );
 
     // 8. Gerar horários aleatórios respeitando start_time e end_time
-    // ✅ FASE 2: Validar min_interval_seconds antes de usar
-    const minInterval = config.min_interval_seconds;
-    if (!minInterval || minInterval < 30) {
-      await log(supabase, run.id, 'VALIDAÇÃO', 'error', 
-        `min_interval_seconds inválido: ${minInterval}. Deve ser >= 30`,
-        { invalid_value: minInterval }
+    // ✅ CORREÇÃO: Para "Executar Agora", usar intervalo PADRÃO de 3 minutos (180s)
+    // O intervalo personalizado (config.min_interval_seconds) só se aplica ao scheduler automático
+    const DEFAULT_MIN_INTERVAL = 180; // 3 minutos - padrão interno para todos os workspaces
+    const DEFAULT_MAX_INTERVAL = 300; // 5 minutos - variação para parecer natural
+
+    let minInterval = DEFAULT_MIN_INTERVAL;
+    let maxInterval = DEFAULT_MAX_INTERVAL;
+
+    // Se tiver end_time definido, calcular intervalo ótimo para caber todos os leads
+    if (endTimeToday && leads.length > 1) {
+      const optimalIntervals = calculateOptimalInterval(
+        actualStartTime,
+        endTimeToday,
+        leads.length,
+        DEFAULT_MIN_INTERVAL
       );
-      await supabase
-        .from('campaign_runs')
-        .update({ status: 'failed', error_message: `min_interval_seconds inválido: ${minInterval}. Deve ser >= 30`, completed_at: new Date().toISOString() })
-        .eq('id', run.id);
-      return new Response(JSON.stringify({ 
-        error: `min_interval_seconds inválido: ${minInterval}. Deve ser >= 30`,
-        error_code: 'INVALID_MIN_INTERVAL',
-        min_interval: minInterval
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+
+      // Usar intervalo otimizado se for menor que o padrão (para caber todos)
+      if (optimalIntervals.maxInterval < DEFAULT_MAX_INTERVAL) {
+        minInterval = Math.max(optimalIntervals.minInterval, 30); // mínimo absoluto: 30 segundos
+        maxInterval = Math.max(optimalIntervals.maxInterval, 45); // mínimo absoluto: 45 segundos
+
+        await log(supabase, run.id, 'AGENDAMENTO', 'info',
+          `📊 Intervalo ajustado automaticamente para caber ${leads.length} leads: ${minInterval}s - ${maxInterval}s`,
+          {
+            default_interval: `${DEFAULT_MIN_INTERVAL}s - ${DEFAULT_MAX_INTERVAL}s`,
+            optimized_interval: `${minInterval}s - ${maxInterval}s`,
+            reason: 'Ajustado para caber todos os leads na janela de horário'
+          }
+        );
+      }
     }
-    
-    const maxInterval = minInterval * 2.5;
-    
-    // ✅ NOVO: Validar minInterval <= maxInterval
-    if (minInterval > maxInterval) {
-      await log(supabase, run.id, 'ERRO', 'error', 
-        `Intervalo inválido: minInterval (${minInterval}s) é maior que maxInterval (${maxInterval}s)`,
-        { min_interval: minInterval, max_interval: maxInterval }
-      );
-      await supabase
-        .from('campaign_runs')
-        .update({ status: 'failed', error_message: `Intervalo inválido: minInterval (${minInterval}s) > maxInterval (${maxInterval}s)`, completed_at: new Date().toISOString() })
-        .eq('id', run.id);
-      return new Response(JSON.stringify({ 
-        error: `Intervalo inválido: minInterval (${minInterval}s) é maior que maxInterval (${maxInterval}s)`,
-        error_code: 'INVALID_INTERVAL',
-        min_interval: minInterval,
-        max_interval: maxInterval
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    
+
     const { schedules, fitsAll, scheduledCount } = generateRandomScheduleWithLimit(
       actualStartTime, // ✅ Usar actualStartTime (maior entre now e start_time)
       leads.length,
@@ -574,15 +564,17 @@ Deno.serve(async (req) => {
       maxInterval,
       endTimeToday
     );
-    
+
+    // ✅ Se AINDA não couber todos (caso extremo), logar aviso
     if (!fitsAll) {
-      await log(supabase, run.id, 'AGENDAMENTO', 'warning', 
-        `⚠️ Apenas ${scheduledCount} de ${leads.length} leads cabem no horário de hoje (${config.start_time || 'agora'} até ${config.end_time || 'sem limite'}). Os demais serão ignorados nesta execução.`,
-        { 
-          total_leads: leads.length, 
+      await log(supabase, run.id, 'AGENDAMENTO', 'warning',
+        `⚠️ Apenas ${scheduledCount} de ${leads.length} leads cabem no horário de hoje (${config.start_time || 'agora'} até ${config.end_time || 'sem limite'}), mesmo com intervalo mínimo de ${minInterval}s.`,
+        {
+          total_leads: leads.length,
           scheduled_today: scheduledCount,
           start_time: config.start_time,
-          end_time: config.end_time
+          end_time: config.end_time,
+          min_interval_used: minInterval
         }
       );
     }
@@ -592,20 +584,21 @@ Deno.serve(async (req) => {
       : 0;
     const totalDurationMin = Math.round(totalDurationMs / 60000);
     
-    const startTimeStr = actualStartTime > now 
-      ? `a partir de ${config.start_time}` 
+    const startTimeStr = actualStartTime > now
+      ? `a partir de ${config.start_time}`
       : 'AGORA';
-    
-    await log(supabase, run.id, 'AGENDAMENTO', 'info', 
-      `Agendando ${scheduledCount} mensagens com intervalo aleatório (${minInterval}s - ${Math.round(maxInterval)}s) ${startTimeStr}${endTimeToday ? ` até ${config.end_time}` : ''}`,
-      { 
-        min_interval: minInterval, 
+
+    await log(supabase, run.id, 'AGENDAMENTO', 'info',
+      `Agendando ${scheduledCount} mensagens com intervalo (${minInterval}s - ${Math.round(maxInterval)}s) ${startTimeStr}${endTimeToday ? ` até ${config.end_time}` : ''} - Duração total: ~${totalDurationMin} min`,
+      {
+        min_interval: minInterval,
         max_interval: Math.round(maxInterval),
         total_duration_minutes: totalDurationMin,
         starts_immediately: actualStartTime <= now,
         actual_start_time: actualStartTime.toISOString(),
         respects_start_time: !!startTimeToday,
-        respects_end_time: !!endTimeToday
+        respects_end_time: !!endTimeToday,
+        using_default_interval: minInterval === DEFAULT_MIN_INTERVAL
       }
     );
 

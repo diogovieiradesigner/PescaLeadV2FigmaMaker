@@ -1,11 +1,31 @@
 import React, { memo, useState } from 'react';
-import { Clock, AlertCircle, Check, CheckCheck, Trash2 } from 'lucide-react';
+import { Clock, AlertCircle, Check, CheckCheck, Trash2, FileText, Download, Play } from 'lucide-react';
 import { Message } from '../../types/chat';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { AudioPlayer } from './AudioPlayer';
 import { PipelineLogsViewer } from '../PipelineLogsViewer';
 import { usePipelineLogs } from '../../hooks/usePipelineLogs';
 import { TranscriptionDropdown } from './TranscriptionDropdown';
+
+// ✅ Helper para formatar tamanho de arquivo
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ✅ Helper para obter ícone do documento baseado no MIME type
+function getDocumentIcon(mimeType?: string): string {
+  if (!mimeType) return '📄';
+  if (mimeType.includes('pdf')) return '📕';
+  if (mimeType.includes('word') || mimeType.includes('document')) return '📘';
+  if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '📗';
+  if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return '📙';
+  if (mimeType.includes('text')) return '📝';
+  if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('7z')) return '🗜️';
+  return '📄';
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -94,7 +114,9 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
   const { pipeline, loading: loadingPipeline } = usePipelineLogs(message.pipelineId);
 
   // Verificar se pode deletar: apenas mensagens enviadas com menos de 1 hora
-  const canDelete = message.type === 'sent' && message.createdAt && onDeleteMessage && (() => {
+  // ✅ Não permitir deletar se transcrição está pendente ou processando
+  const isTranscribing = message.transcriptionStatus === 'pending' || message.transcriptionStatus === 'processing';
+  const canDelete = message.type === 'sent' && message.createdAt && onDeleteMessage && !isTranscribing && (() => {
     const messageTime = new Date(message.createdAt).getTime();
     const now = Date.now();
     const timeDiff = now - messageTime;
@@ -155,6 +177,12 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
             {message.contentType === 'audio' && (
               <p className="text-sm line-through opacity-60">🎤 Áudio</p>
             )}
+            {message.contentType === 'video' && (
+              <p className="text-sm line-through opacity-60">🎬 Vídeo</p>
+            )}
+            {message.contentType === 'document' && (
+              <p className="text-sm line-through opacity-60">📄 {message.fileName || 'Documento'}</p>
+            )}
             <p className="text-xs italic opacity-70">Esta mensagem foi deletada</p>
           </div>
         ) : (
@@ -202,17 +230,95 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
 
             {message.contentType === 'audio' && message.audioUrl && (
               <div className="w-full min-w-0">
-                <AudioPlayer 
+                <AudioPlayer
                   src={message.audioUrl}
                   duration={message.audioDuration}
                   isOwnMessage={message.type === 'sent'}
                   isDark={isDark}
                 />
                 {/* ✅ Dropdown de Transcrição para Áudio */}
-                <TranscriptionDropdown 
-                  message={message} 
-                  isDark={message.type === 'sent' ? true : isDark} 
+                <TranscriptionDropdown
+                  message={message}
+                  isDark={message.type === 'sent' ? true : isDark}
                 />
+              </div>
+            )}
+
+            {/* ✅ Renderização de Vídeo */}
+            {message.contentType === 'video' && message.mediaUrl && (
+              <div className="w-full">
+                <video
+                  src={message.mediaUrl}
+                  controls
+                  className="max-w-full h-auto rounded-lg"
+                  style={{ maxHeight: '300px' }}
+                  preload="metadata"
+                />
+                {message.text && (
+                  <p className="text-sm mt-2 px-2 whitespace-pre-wrap break-words">
+                    {linkifyText(message.text, message.type === 'sent')}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* ✅ Renderização de Documento */}
+            {message.contentType === 'document' && message.mediaUrl && (
+              <div className="w-full">
+                <button
+                  onClick={async () => {
+                    try {
+                      // Fazer fetch do arquivo para evitar bloqueio de popup
+                      const response = await fetch(message.mediaUrl!);
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = message.fileName || 'documento';
+                      link.style.display = 'none';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                    } catch (error) {
+                      // Fallback: abrir em nova aba se fetch falhar
+                      window.open(message.mediaUrl!, '_blank');
+                    }
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors w-full text-left ${
+                    message.type === 'sent'
+                      ? 'bg-white/10 hover:bg-white/20'
+                      : isDark
+                      ? 'bg-white/5 hover:bg-white/10'
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  <span className="text-2xl">{getDocumentIcon(message.mimeType)}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {message.fileName || 'Documento'}
+                    </p>
+                    {message.fileSize && (
+                      <p className={`text-xs ${
+                        message.type === 'sent'
+                          ? 'text-white/60'
+                          : isDark ? 'text-white/40' : 'text-gray-500'
+                      }`}>
+                        {formatFileSize(message.fileSize)}
+                      </p>
+                    )}
+                  </div>
+                  <Download className={`w-5 h-5 ${
+                    message.type === 'sent'
+                      ? 'text-white/70'
+                      : isDark ? 'text-white/50' : 'text-gray-500'
+                  }`} />
+                </button>
+                {message.text && (
+                  <p className="text-sm mt-2 px-1 whitespace-pre-wrap break-words">
+                    {linkifyText(message.text, message.type === 'sent')}
+                  </p>
+                )}
               </div>
             )}
           </>

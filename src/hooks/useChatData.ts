@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { Conversation, Message, ConversationStatus } from '../types/chat';
 import {
   fetchConversations,
@@ -555,18 +556,31 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
         imageUrl: messageData.imageUrl,
         audioUrl: messageData.audioUrl,
         audioDuration: messageData.audioDuration,
+        mediaUrl: messageData.mediaUrl,      // ✅ Para documentos e vídeos
+        fileName: messageData.fileName,      // ✅ Nome do arquivo
+        fileSize: messageData.fileSize,      // ✅ Tamanho do arquivo
+        mimeType: messageData.mimeType,      // ✅ MIME type
         type: 'sent', // ✅ Adicionar tipo da mensagem
         status: 'sending', // Status temporário
       };
 
       // Adicionar mensagem temporária na UI
+      // Determinar texto para lastMessage baseado no tipo de conteúdo
+      let lastMessageText = messageData.text || 'Mídia';
+      if (!messageData.text) {
+        if (messageData.contentType === 'image') lastMessageText = '📷 Imagem';
+        else if (messageData.contentType === 'video') lastMessageText = '🎥 Vídeo';
+        else if (messageData.contentType === 'document') lastMessageText = `📎 ${messageData.fileName || 'Documento'}`;
+        else if (messageData.contentType === 'audio') lastMessageText = '🎤 Áudio';
+      }
+
       setConversations((prev) =>
         prev.map((conv) =>
           conv.id === conversationId
             ? {
                 ...conv,
                 messages: [...conv.messages, optimisticMessage],
-                lastMessage: messageData.text || 'Mídia',
+                lastMessage: lastMessageText,
                 lastUpdate: 'Agora',
               }
             : conv
@@ -626,7 +640,7 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           );
         } else if (messageData.contentType === 'image' && messageData.imageUrl) {
           // ✅ Enviar imagem via servidor (Evolution API)
-          
+
           // Tentar detectar mimeType do base64 se possível
           let mimeType = 'image/jpeg';
           if (messageData.imageUrl.startsWith('data:image/png')) mimeType = 'image/png';
@@ -634,8 +648,8 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           else if (messageData.imageUrl.startsWith('data:image/webp')) mimeType = 'image/webp';
 
           const result = await sendMediaViaServer(
-            conversationId, 
-            workspaceId, 
+            conversationId,
+            workspaceId,
             {
               mediaUrl: messageData.imageUrl,
               mediaType: 'image',
@@ -644,7 +658,42 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
               fileName: 'image.' + mimeType.split('/')[1]
             }
           );
-          
+
+          // ✅ Atualizar mensagem temporária com dados reais
+          setConversations((prev) =>
+            prev.map((conv) =>
+              conv.id === conversationId
+                ? {
+                    ...conv,
+                    messages: conv.messages.map((msg) =>
+                      msg.id === optimisticMessageId
+                        ? { ...msg, id: result.message.id, status: 'sent' }
+                        : msg
+                    ),
+                  }
+                : conv
+            )
+          );
+        } else if ((messageData.contentType === 'document' || messageData.contentType === 'video') && messageData.mediaUrl) {
+          // ✅ Enviar documento ou vídeo via servidor
+          console.log(`📎 [useChatData] Sending ${messageData.contentType}:`, {
+            fileName: messageData.fileName,
+            mimeType: messageData.mimeType,
+            fileSize: messageData.fileSize
+          });
+
+          const result = await sendMediaViaServer(
+            conversationId,
+            workspaceId,
+            {
+              mediaUrl: messageData.mediaUrl,
+              mediaType: messageData.contentType,
+              mimeType: messageData.mimeType || 'application/octet-stream',
+              caption: messageData.text || '',
+              fileName: messageData.fileName || `file.${messageData.contentType === 'video' ? 'mp4' : 'pdf'}`
+            }
+          );
+
           // ✅ Atualizar mensagem temporária com dados reais
           setConversations((prev) =>
             prev.map((conv) =>
@@ -837,8 +886,14 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
         );
 
         console.log(`[useChatData] Message deleted successfully`);
-      } catch (err) {
+
+        // ✅ Notificação de sucesso
+        toast.success('Mensagem deletada');
+      } catch (err: any) {
         console.error('[useChatData] Error deleting message:', err);
+        toast.error('Erro ao deletar mensagem', {
+          description: err.message || 'Tente novamente'
+        });
         throw err;
       }
     },

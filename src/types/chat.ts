@@ -1,6 +1,6 @@
 export type MessageType = 'sent' | 'received' | 'delete';
 
-export type MessageContentType = 'text' | 'image' | 'audio';
+export type MessageContentType = 'text' | 'image' | 'audio' | 'video' | 'document';
 
 export type ConversationStatus = 'waiting' | 'in-progress' | 'resolved';
 
@@ -15,6 +15,10 @@ export interface Message {
   imageUrl?: string;
   audioUrl?: string;
   audioDuration?: number;
+  mediaUrl?: string;        // ✅ URL genérica para qualquer mídia (video, document)
+  fileName?: string;        // ✅ Nome do arquivo (para documentos)
+  fileSize?: number;        // ✅ Tamanho do arquivo em bytes
+  mimeType?: string;        // ✅ MIME type do arquivo
   type: MessageType;
   timestamp: string; // Formatado para exibição (HH:MM)
   createdAt?: string; // ISO timestamp completo para ordenação

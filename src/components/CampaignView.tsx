@@ -90,7 +90,17 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Estados para dados do Supabase
-  const [inboxes, setInboxes] = useState<Array<{ id: string; name: string }>>([]);
+  const [inboxes, setInboxes] = useState<Array<{
+    id: string;
+    name: string;
+    inbox_instances?: Array<{
+      instance_id: string;
+      instances?: {
+        status: string;
+        name: string;
+      };
+    }>;
+  }>>([]);
   const [funnels, setFunnels] = useState<Array<{ id: string; name: string }>>([]);
   const [columns, setColumns] = useState<Array<{ id: string; title: string; position: number }>>([]);
 
@@ -426,6 +436,18 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
     setSaving(false);
   };
 
+  // Função helper para verificar se inbox está conectado
+  const isInboxConnected = (selectedInboxId: string): boolean => {
+    const inbox = inboxes.find(i => i.id === selectedInboxId);
+    return inbox?.inbox_instances?.[0]?.instances?.status === 'connected';
+  };
+
+  // Função para obter nome da instância de um inbox
+  const getInboxInstanceName = (selectedInboxId: string): string => {
+    const inbox = inboxes.find(i => i.id === selectedInboxId);
+    return inbox?.inbox_instances?.[0]?.instances?.name || inbox?.name || 'WhatsApp';
+  };
+
   // Função para executar campanha agora
   const executeNow = async () => {
     console.log('🚀 [EXECUTE NOW] Iniciando execução da campanha...');
@@ -456,6 +478,17 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       return;
     }
 
+    // Verificar se instância está conectada ANTES de executar
+    if (inboxId && !isInboxConnected(inboxId)) {
+      const instanceName = getInboxInstanceName(inboxId);
+      console.error(`❌ [EXECUTE NOW] Instância '${instanceName}' está desconectada`);
+      toast.error(`WhatsApp '${instanceName}' está desconectado`, {
+        duration: 5000,
+        description: 'Reconecte o WhatsApp nas Configurações antes de executar a campanha.'
+      });
+      return;
+    }
+
     setExecuting(true);
     console.log('⏳ [EXECUTE NOW] Estado de execução ativado');
 
@@ -476,7 +509,30 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
         console.error('❌ [EXECUTE NOW] Erro no invoke da edge function:', error);
         console.error('❌ [EXECUTE NOW] Error message:', error.message);
         console.error('❌ [EXECUTE NOW] Error completo:', JSON.stringify(error, null, 2));
-        toast.error(error.message || 'Erro ao executar campanha');
+
+        // Tentar extrair mensagem do data se disponível (fallback)
+        if (data?.error) {
+          const errorCode = data.error_code;
+          if (errorCode === 'INSTANCE_DISCONNECTED') {
+            toast.error(data.error, {
+              duration: 5000,
+              description: 'Reconecte o WhatsApp nas Configurações.'
+            });
+          } else if (errorCode === 'INSTANCE_BUSY') {
+            toast.error(data.error, {
+              duration: 6000,
+              description: 'Pause ou aguarde a campanha atual concluir.'
+            });
+          } else {
+            toast.error(data.error);
+          }
+        } else {
+          // Mensagem genérica mais clara quando SDK retorna erro HTTP
+          toast.error('Erro ao executar campanha', {
+            duration: 5000,
+            description: 'Verifique se o WhatsApp está conectado nas Configurações.'
+          });
+        }
         return;
       }
 
@@ -533,10 +589,20 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
   const loadSupabaseData = async () => {
     if (!currentWorkspace) return;
 
-    // Carregar inboxes
+    // Carregar inboxes com status da instância
     const { data: inboxesData, error: inboxesError } = await supabase
       .from('inboxes')
-      .select('id, name')
+      .select(`
+        id,
+        name,
+        inbox_instances(
+          instance_id,
+          instances(
+            status,
+            name
+          )
+        )
+      `)
       .eq('workspace_id', currentWorkspace.id);
     if (inboxesError) {
       console.error('Erro ao carregar inboxes:', inboxesError);
@@ -946,18 +1012,24 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                   value={inboxId}
                   onChange={(e) => setInboxId(e.target.value)}
                   className={`w-full px-4 py-2 border-b transition-all ${
-                    isDark 
-                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' 
+                    isDark
+                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]'
                       : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
                   } focus:outline-none`}
                 >
                   <option value="">Selecione uma caixa de entrada...</option>
-                  {inboxes.map(inbox => (
-                    <option key={inbox.id} value={inbox.id}>{inbox.name}</option>
-                  ))}
+                  {inboxes.map(inbox => {
+                    const instanceStatus = inbox.inbox_instances?.[0]?.instances?.status;
+                    const isConnected = instanceStatus === 'connected';
+                    return (
+                      <option key={inbox.id} value={inbox.id}>
+                        {isConnected ? '🟢' : '🔴'} {inbox.name}
+                      </option>
+                    );
+                  })}
                 </select>
                 <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                  WhatsApp usado para enviar mensagens
+                  WhatsApp usado para enviar mensagens (🟢 conectado / 🔴 desconectado)
                 </p>
               </div>
 

@@ -1082,11 +1082,12 @@ app.post('/make-server-e4f9d774/conversations/:conversationId/messages/send', va
       conversation_id: conversationId,
       content_type: 'text',
       message_type: 'sent',
+      // ⚠️ topic e extension REMOVIDOS - colunas não existem na tabela messages
       text_content: text.trim(),
       is_read: true,
       created_at: now,
-      provider_message_id: providerMessageId || null, // ✅ Salvar o ID do provider (WhatsApp)
-      sent_by: userId // ✅ Adicionado sent_by para vincular ao usuário
+      provider_message_id: providerMessageId || null,
+      sent_by: userId
     };
     
     console.log('💾 [SEND-MESSAGE] Attempting to save message to database...');
@@ -1381,13 +1382,14 @@ app.post('/make-server-e4f9d774/conversations/:conversationId/messages/send-audi
       conversation_id: conversationId,
       content_type: 'audio',
       message_type: 'sent',
+      // ⚠️ topic e extension REMOVIDOS - colunas não existem na tabela messages
       text_content: null,
       media_url: audioUrl.trim(),
       audio_duration: audioDuration || null,
       is_read: true,
       created_at: now,
-      provider_message_id: providerMessageId || null, // ✅ Salvar o ID do provider (WhatsApp)
-      sent_by: userId // ✅ Adicionado sent_by para vincular ao usuário
+      provider_message_id: providerMessageId || null,
+      sent_by: userId
     };
     
     console.log('💾 [SEND-AUDIO] ==========================================');
@@ -1701,17 +1703,90 @@ app.post('/make-server-e4f9d774/conversations/:conversationId/messages/send-medi
     const now = new Date().toISOString();
     const userId = c.get('userId');
     
+    // Determinar extensão baseado no mimeType real ou fileName
+    const mimeToExtension: Record<string, string> = {
+      // Images
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/svg+xml': 'svg',
+      'image/bmp': 'bmp',
+      'image/tiff': 'tiff',
+      // Videos
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/avi': 'avi',
+      'video/quicktime': 'mov',
+      'video/x-msvideo': 'avi',
+      'video/x-matroska': 'mkv',
+      // Audio
+      'audio/ogg': 'ogg',
+      'audio/mpeg': 'mp3',
+      'audio/mp3': 'mp3',
+      'audio/wav': 'wav',
+      'audio/webm': 'weba',
+      'audio/aac': 'aac',
+      'audio/flac': 'flac',
+      // Documents
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/zip': 'zip',
+      'application/x-rar-compressed': 'rar',
+      'application/x-7z-compressed': '7z',
+      'application/gzip': 'gz',
+      'text/plain': 'txt',
+      'text/csv': 'csv',
+      'application/json': 'json',
+      'application/xml': 'xml',
+      'text/xml': 'xml',
+      'application/octet-stream': 'bin'
+    };
+
+    // Tentar extrair extensão do fileName se disponível
+    let fileExtension = 'bin';
+    if (fileName && fileName.includes('.')) {
+      fileExtension = fileName.split('.').pop()?.toLowerCase() || 'bin';
+    } else if (mimeType && mimeToExtension[mimeType]) {
+      fileExtension = mimeToExtension[mimeType];
+    } else if (mediaType) {
+      // Fallback para mediaType genérico
+      const fallbackExtensions: Record<string, string> = {
+        'image': 'jpg',
+        'video': 'mp4',
+        'document': 'pdf',
+        'audio': 'ogg'
+      };
+      fileExtension = fallbackExtensions[mediaType] || 'bin';
+    }
+
+    // ✅ CONFORMIDADE TOTAL COM BANCO - Campos validados em 15/12/2024
+    // ✅ Determinar se precisa de transcrição (imagem = descrição, áudio = transcrição)
+    const needsTranscription = ['image', 'audio', 'video'].includes(mediaType || 'image');
+
     const messageData: any = {
       conversation_id: conversationId,
       content_type: mediaType || 'image',
       message_type: 'sent',
       text_content: caption || null,
-      media_url: finalMediaUrl, // ✅ Salvar signed URL do Storage ao invés de base64
+      media_url: finalMediaUrl,
+      file_name: fileName || null,
+      mime_type: mimeType || null, // ✅ EXISTE no banco (verificado)
       is_read: true,
       created_at: now,
-      provider_message_id: providerMessageId || null, // ✅ Salvar o ID do provider (WhatsApp)
-      sent_by: userId // ✅ Adicionado sent_by para vincular ao usuário
+      provider_message_id: providerMessageId || null,
+      sent_by: userId,
+      // ✅ Transcrição para imagens/áudios enviados
+      transcription_status: needsTranscription ? 'pending' : 'none'
     };
+
+    console.log('📋 [SEND-MEDIA] Message data to insert:', JSON.stringify(messageData, null, 2));
 
     // ✅ Inserir mensagem (Postgres gera UUID automaticamente para o id)
     const { data: savedMessage, error: saveError } = await supabase
@@ -1724,17 +1799,51 @@ app.post('/make-server-e4f9d774/conversations/:conversationId/messages/send-medi
       console.error('❌ [SEND-MEDIA] Error saving message to DB:', saveError);
       // Retornar sucesso do envio mesmo se falhar o salvamento no DB?
       // Melhor retornar erro para debug
-       return c.json({ 
-        error: 'Media sent but failed to save to database', 
+       return c.json({
+        error: 'Media sent but failed to save to database',
         details: saveError
       }, 500);
     }
 
+    // ✅ 7.1 Adicionar à fila de transcrição se for imagem/áudio/vídeo
+    if (needsTranscription && savedMessage?.id && finalMediaUrl) {
+      try {
+        const transcriptionType = mediaType === 'image' ? 'image' : 'audio';
+        const { error: transcriptionError } = await supabase.rpc(
+          "ai_queue_transcription",
+          {
+            p_message_id: savedMessage.id,
+            p_media_url: finalMediaUrl,
+            p_content_type: transcriptionType
+          }
+        );
+
+        if (transcriptionError) {
+          console.error('⚠️ [SEND-MEDIA] Error queuing transcription:', transcriptionError);
+          // Não falhar o envio por causa da transcrição
+        } else {
+          console.log(`✅ [SEND-MEDIA] Transcription queued for message ${savedMessage.id} (type: ${transcriptionType})`);
+        }
+      } catch (transcriptionQueueError) {
+        console.error('⚠️ [SEND-MEDIA] Failed to queue transcription:', transcriptionQueueError);
+        // Não falhar o envio por causa da transcrição
+      }
+    }
+
     // 7. Update conversation
+    // ✅ Determinar preview da última mensagem baseado no tipo de mídia
+    let lastMessagePreview = caption || '📎 Mídia';
+    if (!caption) {
+      if (mediaType === 'image') lastMessagePreview = '📷 Imagem';
+      else if (mediaType === 'video') lastMessagePreview = '🎬 Vídeo';
+      else if (mediaType === 'document') lastMessagePreview = `📎 ${fileName || 'Documento'}`;
+      else if (mediaType === 'audio') lastMessagePreview = '🎤 Áudio';
+    }
+
     await supabase
       .from('conversations')
       .update({
-        last_message: caption || (mediaType === 'image' ? '📷 Imagem' : '📎 Mídia'),
+        last_message: lastMessagePreview,
         last_message_at: now,
         updated_at: now
       })

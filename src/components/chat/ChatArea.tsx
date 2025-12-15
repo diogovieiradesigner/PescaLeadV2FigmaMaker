@@ -1,4 +1,4 @@
-import { Send, ImageIcon, Mic, X, Clock, Check, CheckCheck, AlertCircle, Trash2, CheckCircle } from 'lucide-react';
+import { Send, ImageIcon, Mic, X, Clock, Check, CheckCheck, AlertCircle, Trash2, CheckCircle, FileText, Film, Paperclip } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import { Conversation, Message } from '../../types/chat';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
@@ -71,12 +71,22 @@ interface ChatAreaProps {
   onDeleteMessage?: (messageId: string) => void;
 }
 
+// ✅ Interface para arquivo selecionado (qualquer tipo)
+interface SelectedFile {
+  dataUrl: string;         // Base64 data URL
+  fileName: string;        // Nome do arquivo
+  fileSize: number;        // Tamanho em bytes
+  mimeType: string;        // MIME type
+  mediaType: 'image' | 'video' | 'document'; // Tipo de mídia para API
+}
+
 export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved, onStatusChange, onClearHistory, onDeleteConversation, onNavigateToPipeline, onDeleteMessage }: ChatAreaProps) {
   const [messageText, setMessageText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null); // ✅ Arquivo genérico selecionado
   const [isSending, setIsSending] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<string | null>(null); // ✅ Estado para imagem expandida
@@ -182,17 +192,35 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
         // ✅ Limpar preview imediatamente (otimistic UI)
         const imageToSend = imagePreview;
         setImagePreview(null);
-        
+
         await onSendMessage({
           contentType: 'image',
           imageUrl: imageToSend,
           read: false,
         });
+      } else if (selectedFile) {
+        // ✅ Enviar documento/vídeo selecionado
+        const fileToSend = selectedFile;
+        setSelectedFile(null);
+
+        console.log(`[ChatArea] Sending ${fileToSend.mediaType}: ${fileToSend.fileName}`);
+
+        await onSendMessage({
+          contentType: fileToSend.mediaType,
+          mediaUrl: fileToSend.dataUrl,
+          fileName: fileToSend.fileName,
+          fileSize: fileToSend.fileSize,
+          mimeType: fileToSend.mimeType,
+          text: messageText.trim() || undefined, // Caption opcional
+          read: false,
+        });
+
+        setMessageText(''); // Limpar caption se houver
       } else if (messageText.trim()) {
         // ✅ Limpar input imediatamente (otimistic UI)
         const textToSend = messageText.trim();
         setMessageText('');
-        
+
         await onSendMessage({
           text: textToSend,
           contentType: 'text',
@@ -356,31 +384,62 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     setIsDragging(false);
   };
 
+  // ✅ Helper para determinar mediaType baseado no MIME type
+  const getMediaType = (mimeType: string): 'image' | 'video' | 'document' => {
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    return 'document'; // Tudo que não é imagem ou vídeo é documento (PDF, TXT, DOCX, etc)
+  };
+
+  // ✅ Processar arquivo selecionado (drag & drop ou input)
+  const processFile = (file: File) => {
+    const mimeType = file.type || 'application/octet-stream';
+    const mediaType = getMediaType(mimeType);
+
+    console.log(`[ChatArea] Processing file: ${file.name}, type: ${mimeType}, mediaType: ${mediaType}`);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+
+      // Se for imagem, usar o estado antigo para compatibilidade
+      if (mediaType === 'image') {
+        setImagePreview(dataUrl);
+        setSelectedFile(null);
+      } else {
+        // Para vídeo e documento, usar o novo estado
+        setSelectedFile({
+          dataUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType,
+          mediaType
+        });
+        setImagePreview(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const imageFile = files.find(file => file.type.startsWith('image/'));
+    const file = files[0]; // Pegar primeiro arquivo
 
-    if (imageFile) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImagePreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(imageFile);
+    if (file) {
+      processFile(file);
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImagePreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (file) {
+      processFile(file);
     }
+    // Limpar input para permitir selecionar o mesmo arquivo novamente
+    e.target.value = '';
   };
 
   const formatTime = (seconds: number) => {
@@ -560,6 +619,52 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
           </div>
         )}
 
+        {/* ✅ Document/Video Preview */}
+        {selectedFile && (
+          <div className={`mb-3 p-3 rounded-lg border ${
+            isDark ? 'bg-elevated border-white/[0.08]' : 'bg-light-elevated border-border-light'
+          }`}>
+            <div className="flex items-center gap-3">
+              {/* Ícone baseado no tipo */}
+              <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                selectedFile.mediaType === 'video'
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'bg-blue-500/20 text-blue-400'
+              }`}>
+                {selectedFile.mediaType === 'video' ? (
+                  <Film className="w-6 h-6" />
+                ) : (
+                  <FileText className="w-6 h-6" />
+                )}
+              </div>
+
+              {/* Info do arquivo */}
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium truncate ${
+                  isDark ? 'text-white' : 'text-text-primary-light'
+                }`}>
+                  {selectedFile.fileName}
+                </p>
+                <p className={`text-xs ${
+                  isDark ? 'text-white/50' : 'text-text-secondary-light'
+                }`}>
+                  {(selectedFile.fileSize / 1024).toFixed(1)} KB • {selectedFile.mimeType.split('/')[1]?.toUpperCase() || 'FILE'}
+                </p>
+              </div>
+
+              {/* Botão remover */}
+              <button
+                onClick={() => setSelectedFile(null)}
+                className={`p-1 rounded-lg transition-colors ${
+                  isDark ? 'hover:bg-white/[0.05] text-white/50' : 'hover:bg-light-elevated-hover text-text-secondary-light'
+                }`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Recording State */}
         {isRecording && (
           <div className={`mb-3 p-3 rounded-lg border flex items-center gap-3 ${
@@ -587,7 +692,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
         )}
 
         <div className="flex items-end gap-2">
-          {/* Image Button */}
+          {/* Attachment Button (Images, Videos, Documents) */}
           <button
             onClick={() => fileInputRef.current?.click()}
             className={`p-2 rounded-lg transition-colors ${
@@ -595,13 +700,14 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
                 ? 'hover:bg-white/[0.05] text-white/50'
                 : 'hover:bg-light-elevated text-text-secondary-light'
             }`}
+            title="Anexar arquivo (imagem, vídeo, documento)"
           >
-            <ImageIcon className="w-5 h-5" />
+            <Paperclip className="w-5 h-5" />
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -622,7 +728,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
           />
 
           {/* Voice/Send Button */}
-          {messageText.trim() || imagePreview ? (
+          {messageText.trim() || imagePreview || selectedFile ? (
             <button
               onClick={handleSend}
               className="p-2 rounded-lg transition-colors bg-[#0169D9] hover:bg-[#0169D9]/90 text-white"

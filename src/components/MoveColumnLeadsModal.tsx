@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { Theme } from '../hooks/useTheme';
 import { supabase } from '../utils/supabase/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,6 +30,12 @@ import {
   SelectValue,
 } from './ui/select';
 
+interface LeadFilters {
+  hasEmail?: boolean;
+  hasWhatsapp?: boolean;
+  searchQuery?: string;
+}
+
 interface MoveColumnLeadsModalProps {
   theme: Theme;
   sourceColumnId: string;
@@ -36,6 +43,7 @@ interface MoveColumnLeadsModalProps {
   sourceFunnelId: string;
   sourceFunnelName: string;
   leadCount: number;
+  filters?: LeadFilters;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
@@ -60,6 +68,7 @@ export function MoveColumnLeadsModal({
   sourceFunnelId,
   sourceFunnelName,
   leadCount,
+  filters,
   open,
   onOpenChange,
   onSuccess,
@@ -72,6 +81,7 @@ export function MoveColumnLeadsModal({
   const [selectedColumnId, setSelectedColumnId] = useState<string>('');
   const [loadingFunnels, setLoadingFunnels] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState<string>('');
   const [success, setSuccess] = useState(false);
 
   // Carregar funnels e colunas
@@ -87,6 +97,7 @@ export function MoveColumnLeadsModal({
       setSelectedFunnelId('');
       setSelectedColumnId('');
       setProcessing(false);
+      setProcessingProgress('');
       setSuccess(false);
     }
   }, [open]);
@@ -162,7 +173,8 @@ export function MoveColumnLeadsModal({
         sourceFunnelName,
         targetFunnelId: selectedFunnelId,
         targetColumnId: selectedColumnId,
-        leadCount
+        leadCount,
+        filters: filters || 'sem filtros'
       });
 
       // Verificar autenticação
@@ -172,14 +184,23 @@ export function MoveColumnLeadsModal({
       }
 
       console.log('[MoveColumnLeadsModal] Chamando RPC queue_column_leads_migration...');
-      
-      // Chamar função RPC do Supabase
-      const { data, error } = await supabase.rpc('queue_column_leads_migration', {
+
+      // Preparar parâmetros da RPC incluindo filtros
+      const rpcParams: Record<string, any> = {
         p_source_column_id: sourceColumnId,
         p_target_funnel_id: selectedFunnelId,
         p_target_column_id: selectedColumnId,
-        p_batch_size: 100
-      });
+        p_batch_size: 100,
+        // Passar filtros se existirem
+        p_filter_has_email: filters?.hasEmail || null,
+        p_filter_has_whatsapp: filters?.hasWhatsapp || null,
+        p_filter_search_query: filters?.searchQuery || null,
+      };
+
+      console.log('[MoveColumnLeadsModal] Parâmetros RPC:', rpcParams);
+
+      // Chamar função RPC do Supabase
+      const { data, error } = await supabase.rpc('queue_column_leads_migration', rpcParams);
 
       console.log('[MoveColumnLeadsModal] Resposta RPC:', { data, error });
 
@@ -195,51 +216,130 @@ export function MoveColumnLeadsModal({
 
       console.log('[MoveColumnLeadsModal] ✅ Movimentação enfileirada com sucesso:', data);
       
-      // Processar a fila imediatamente para melhor UX
-      console.log('[MoveColumnLeadsModal] 🚀 Processando fila imediatamente...');
+      // Processar a fila até completar todos os leads
+      console.log('[MoveColumnLeadsModal] 🚀 Processando fila até completar...');
+      let totalMoved = 0;
+      let attempts = 0;
+      const BATCH_SIZE = 25;
+      const PARALLEL_CALLS = 5;
+      const maxAttempts = Math.ceil(data.total_leads / BATCH_SIZE) + 5;
+
       try {
         const { data: { session: processSession } } = await supabase.auth.getSession();
-        if (processSession?.access_token) {
-          const processResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/process-column-leads-migration-queue`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${processSession.access_token}`,
-              },
-              body: JSON.stringify({ batch_size: 100 }),
-            }
-          );
 
-          if (processResponse.ok) {
-            const processResult = await processResponse.json();
-            console.log('[MoveColumnLeadsModal] ✅ Fila processada:', processResult);
-            
-            if (processResult.total_leads_moved > 0) {
-              toast.success(`✅ ${processResult.total_leads_moved} lead(s) movido(s) com sucesso!`);
-            } else {
-              toast.success(`✅ Movimentação enfileirada: ${leadCount} leads serão movidos em breve!`);
+        if (processSession?.access_token) {
+          // Função para processar um batch
+          const processBatch = async (): Promise<{ moved: number; finished: boolean }> => {
+            try {
+              const response = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/process-column-leads-migration-queue`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${processSession.access_token}`,
+                  },
+                  body: JSON.stringify({ batch_size: BATCH_SIZE }),
+                }
+              );
+
+              if (response.ok) {
+                const result = await response.json();
+                const moved = result.total_leads_moved || 0;
+                const finished = result.batches_processed === 0 ||
+                                 result.message === 'Nenhuma mensagem na fila' ||
+                                 result.results?.[result.results.length - 1]?.leads_remaining === 0;
+                return { moved, finished };
+              }
+              return { moved: 0, finished: true };
+            } catch {
+              return { moved: 0, finished: false };
             }
-          } else {
-            console.warn('[MoveColumnLeadsModal] ⚠️ Erro ao processar fila imediatamente, mas a movimentação foi enfileirada');
-            toast.success(`✅ Movimentação enfileirada: ${leadCount} leads serão movidos em breve!`);
+          };
+
+          // Loop principal com chamadas paralelas
+          let finished = false;
+
+          const processRound = async () => {
+            if (finished || attempts >= maxAttempts) return;
+
+            attempts++;
+            console.log(`[MoveColumnLeadsModal] 📦 Rodada ${attempts} - ${PARALLEL_CALLS} batches em paralelo...`);
+
+            // Executar múltiplos batches em paralelo
+            const results = await Promise.all(
+              Array(PARALLEL_CALLS).fill(null).map(() => processBatch())
+            );
+
+            // Somar resultados
+            let roundMoved = 0;
+            for (const r of results) {
+              roundMoved += r.moved;
+              if (r.finished) finished = true;
+            }
+
+            totalMoved += roundMoved;
+            console.log(`[MoveColumnLeadsModal] ✅ Rodada ${attempts}: +${roundMoved} leads (total: ${totalMoved})`);
+
+            // Se não moveu nada nesta rodada, provavelmente terminou
+            if (roundMoved === 0) {
+              finished = true;
+            }
+
+            return { roundMoved, finished };
+          };
+
+          // Processar em loop com updates visuais
+          while (!finished && attempts < maxAttempts) {
+            // Forçar React a renderizar IMEDIATAMENTE
+            flushSync(() => {
+              setProcessingProgress(`${totalMoved}/${data.total_leads}`);
+            });
+
+            // Processar rodada
+            const result = await processRound();
+
+            // Forçar atualização visual após processar
+            flushSync(() => {
+              setProcessingProgress(`${totalMoved}/${data.total_leads}`);
+            });
+
+            // Atualizar kanban a cada rodada
+            if (result?.roundMoved && result.roundMoved > 0 && onSuccess) {
+              onSuccess();
+            }
+
+            // Delay entre rodadas
+            if (!finished) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
           }
         }
-      } catch (processError) {
-        console.warn('[MoveColumnLeadsModal] ⚠️ Erro ao processar fila imediatamente, mas a movimentação foi enfileirada:', processError);
-        toast.success(`✅ Movimentação enfileirada: ${leadCount} leads serão movidos em breve!`);
-      }
-      
-      setSuccess(true);
 
-      // Fechar modal após 2 segundos
-      setTimeout(() => {
-        onOpenChange(false);
+        // Atualização final
         if (onSuccess) {
           onSuccess();
         }
-      }, 2000);
+
+        // Mostrar resultado final
+        if (totalMoved > 0) {
+          toast.success(`✅ ${totalMoved} lead(s) movido(s) com sucesso!`);
+        } else {
+          toast.success(`✅ Movimentação concluída!`);
+        }
+      } catch (processError) {
+        console.warn('[MoveColumnLeadsModal] ⚠️ Erro ao processar fila:', processError);
+        if (onSuccess) onSuccess();
+        toast.success(`✅ Movimentação em andamento...`);
+      }
+
+      setSuccess(true);
+      setProcessingProgress(`${data.total_leads}/${data.total_leads}`);
+
+      // Fechar modal após 1.5 segundos
+      setTimeout(() => {
+        onOpenChange(false);
+      }, 1500);
     } catch (error: any) {
       console.error('[MoveColumnLeadsModal] ❌ Erro ao mover leads:', error);
       toast.error(error.message || 'Erro ao mover leads');
@@ -319,6 +419,41 @@ export function MoveColumnLeadsModal({
                   isDark ? "text-white" : "text-zinc-900"
                 )}>{leadCount} leads</p>
               </div>
+              {/* Mostrar filtros ativos */}
+              {filters && (filters.hasEmail || filters.hasWhatsapp || filters.searchQuery) && (
+                <div className="col-span-2 mt-2">
+                  <span className={cn(
+                    "text-xs",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
+                  )}>Filtros ativos:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {filters.hasEmail && (
+                      <span className={cn(
+                        "px-2 py-0.5 text-xs rounded-full",
+                        isDark ? "bg-blue-900/50 text-blue-300" : "bg-blue-100 text-blue-700"
+                      )}>
+                        📧 Com e-mail
+                      </span>
+                    )}
+                    {filters.hasWhatsapp && (
+                      <span className={cn(
+                        "px-2 py-0.5 text-xs rounded-full",
+                        isDark ? "bg-green-900/50 text-green-300" : "bg-green-100 text-green-700"
+                      )}>
+                        📱 Com WhatsApp
+                      </span>
+                    )}
+                    {filters.searchQuery && (
+                      <span className={cn(
+                        "px-2 py-0.5 text-xs rounded-full",
+                        isDark ? "bg-purple-900/50 text-purple-300" : "bg-purple-100 text-purple-700"
+                      )}>
+                        🔍 "{filters.searchQuery}"
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -462,12 +597,12 @@ export function MoveColumnLeadsModal({
             {processing ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Enfileirando...
+                {processingProgress ? `Movendo ${processingProgress}...` : 'Iniciando...'}
               </>
             ) : success ? (
               <>
                 <CheckCircle className="w-4 h-4 mr-2" />
-                Enfileirado!
+                Concluído!
               </>
             ) : (
               'Mover Leads'

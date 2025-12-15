@@ -50,10 +50,14 @@ BEGIN
   RAISE NOTICE '[save_incoming_message] fromMe: %', p_from_me;
   
   -- 1. Procurar conversa existente (mesmo workspace + inbox + phone)
+  -- IMPORTANTE: Cada combinação workspace + inbox + phone deve ter sua própria conversa
   SELECT id, attendant_type INTO v_conversation_id, v_attendant_type
   FROM conversations
   WHERE workspace_id = p_workspace_id
-    AND (inbox_id = p_inbox_id OR p_inbox_id IS NULL)
+    AND (
+      (p_inbox_id IS NOT NULL AND inbox_id = p_inbox_id) OR
+      (p_inbox_id IS NULL AND inbox_id IS NULL)
+    )
     AND contact_phone = v_clean_phone
   ORDER BY created_at DESC
   LIMIT 1;

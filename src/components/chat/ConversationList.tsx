@@ -2,6 +2,7 @@ import { Search, MessageSquare } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import { Conversation, ConversationStatus } from '../../types/chat';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
+import { Avatar } from '../Avatar';
 import { useState, useRef, useEffect } from 'react';
 import { ConversationFilters, ConversationFiltersState, LeadExtraction, CampaignRun } from './ConversationFilters';
 import { DbUser } from '../../types/database-chat';
@@ -215,11 +216,19 @@ export function ConversationList({
             <div className="flex gap-3">
               {/* Avatar */}
               <div className="relative flex-shrink-0">
-                <ImageWithFallback
-                  src={conversation.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(conversation.contactName)}&background=random`}
-                  alt={conversation.contactName}
-                  className="w-12 h-12 rounded-full object-cover"
-                />
+                {conversation.avatar ? (
+                  <ImageWithFallback
+                    src={conversation.avatar}
+                    alt={conversation.contactName}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <Avatar
+                    name={conversation.contactName}
+                    size="lg"
+                    className="w-12 h-12"
+                  />
+                )}
                 {conversation.unreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-white text-xs">
                     {conversation.unreadCount}

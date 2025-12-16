@@ -2,7 +2,7 @@
  * Hook para gerenciar dados de chat com Supabase Realtime
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { Conversation, Message, ConversationStatus } from '../types/chat';
 import {
@@ -19,9 +19,9 @@ import {
   createConversation,
   fetchConversationCount,
 } from '../services/chat-service';
-import { CreateMessageData, CreateConversationData } from '../utils/supabase/chat-converters';
+import { CreateMessageData, CreateConversationData, dbMessageToFrontend } from '../utils/supabase/chat-converters';
 import { supabase } from '../utils/supabase/client.tsx';
-import { projectId, publicAnonKey } from '../utils/supabase/info.tsx'; // ✅ Importar publicAnonKey
+import { projectId } from '../utils/supabase/info.tsx';
 
 interface UseChatDataProps {
   workspaceId: string | null;
@@ -119,133 +119,70 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
   }, [searchQuery]); // Resetar busca quando query mudar
 
   // ============================================
-  // PROFILE PICTURE SYNC
+  // PROFILE PICTURE SYNC (BAIXA PRIORIDADE - RODA EM BACKGROUND)
   // ============================================
 
-  // Fila de telefones já consultados na sessão para evitar loops
-  const [checkedAvatars] = useState(new Set<string>());
+  // ✅ Refs para tracking sem causar re-renders
+  const checkedAvatarsRef = useRef(new Set<string>());
+  const avatarCacheRef = useRef(new Map<string, string>());
 
   useEffect(() => {
-    if (!workspaceId || conversations.length === 0) return;
+    // ✅ Só rodar depois que conversas carregaram
+    if (!workspaceId || conversations.length === 0 || loading) return;
 
-    const fetchMissingAvatars = async () => {
+    // ✅ BAIXA PRIORIDADE: Esperar 3 segundos antes de buscar avatares
+    // Isso garante que chat, mensagens e interações funcionem primeiro
+    const timeoutId = setTimeout(async () => {
       const missingAvatars = conversations.filter(
-        (c) => !c.avatar && 
-               c.channel === 'whatsapp' && 
-               !checkedAvatars.has(c.contactPhone) &&
-               !c.contactPhone.includes('@g.us') && // Ignorar grupos
-               !c.contactPhone.includes('status@broadcast') // Ignorar status
+        (c) => !c.avatar &&
+               !avatarCacheRef.current.has(c.id) &&
+               c.channel === 'whatsapp' &&
+               !checkedAvatarsRef.current.has(c.contactPhone) &&
+               !c.contactPhone.includes('@g.us') &&
+               !c.contactPhone.includes('status@broadcast')
       );
 
       if (missingAvatars.length === 0) return;
 
-      // Marcar como verificados para não chamar novamente imediatamente
-      missingAvatars.forEach(c => checkedAvatars.add(c.contactPhone));
+      // Marcar como verificados para não tentar de novo
+      missingAvatars.forEach(c => checkedAvatarsRef.current.add(c.contactPhone));
 
-      console.log(`[useChatData] Fetching avatars for ${missingAvatars.length} contacts...`);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
 
-      for (const conv of missingAvatars) {
+      // ✅ Processar em background, um por vez com delay (não bloqueia UI)
+      for (const conv of missingAvatars.slice(0, 5)) { // Máximo 5 por vez
         try {
-          // Usar o ID do projeto Supabase para construir a URL da Edge Function
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
+          let phone = conv.contactPhone;
+          if (phone.includes('@s.whatsapp.net')) phone = phone.split('@')[0];
+          const formattedPhone = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
 
-          if (!token) continue;
-          
-          // Função auxiliar para formatar telefone e fazer a chamada
-          const tryFetchAvatar = async (phoneToTry: string): Promise<{url: string | null, success: boolean}> => {
-             // URL format: https://<project_id>.supabase.co/functions/v1/<function_name>/<route>
-             const functionUrl = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/contacts/profile-picture?phone=${encodeURIComponent(phoneToTry)}&workspaceId=${workspaceId}&conversationId=${conv.id}`;
-             
-             console.log(`[useChatData] Requesting avatar for ${phoneToTry}: ${functionUrl}`);
-             
-             try {
-               // Adicionar timeout de 5 segundos para evitar travamentos
-               const controller = new AbortController();
-               const timeoutId = setTimeout(() => controller.abort(), 5000);
-               
-               const res = await fetch(functionUrl, {
-                 headers: { Authorization: `Bearer ${token}` },
-                 signal: controller.signal
-               });
-               
-               clearTimeout(timeoutId);
-               
-               if (!res.ok) {
-                   const text = await res.text();
-                   console.warn(`[useChatData] Avatar fetch failed for ${phoneToTry}: ${res.status} - ${text}`);
-                   return { url: null, success: false };
-               }
-               
-               const data = await res.json();
-               return { url: data.url, success: !!data.url };
-             } catch (fetchError: any) {
-               // Não logar erro se for timeout ou network error - muito comum
-               if (fetchError.name === 'AbortError') {
-                 console.warn(`[useChatData] Avatar fetch timeout for ${phoneToTry}`);
-               } else if (fetchError.message?.includes('fetch')) {
-                 console.warn(`[useChatData] Network error fetching avatar for ${phoneToTry}`);
-               } else {
-                 console.warn(`[useChatData] Avatar fetch error for ${phoneToTry}:`, fetchError.message);
-               }
-               return { url: null, success: false };
-             }
-          };
+          const res = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/contacts/profile-picture?phone=${encodeURIComponent(formattedPhone)}&workspaceId=${workspaceId}&conversationId=${conv.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
 
-          // Estratégia 1: Tentar com o número sanitizado padrão
-          let initialPhone = conv.contactPhone;
-          if (initialPhone.includes('@s.whatsapp.net')) initialPhone = initialPhone.split('@')[0];
-          
-          // Normalização básica
-          let formattedPhone = initialPhone;
-          if (formattedPhone.startsWith('+')) {
-             formattedPhone = '+' + formattedPhone.substring(1).replace(/\D/g, '');
-          } else {
-             formattedPhone = `+${formattedPhone.replace(/\D/g, '')}`;
-          }
-
-          // Tentar fetch inicial
-          let result = await tryFetchAvatar(formattedPhone);
-          
-          // Estratégia 2: Se falhou e é número brasileiro (DDI 55), verificar regra do 9º dígito
-          // Formato esperado BR com 9: +55 (2 dígitos DDD) (9 dígitos número) = 13 dígitos (sem contar o + dá 13 chars? Não. +55 + 11 digits = 13 chars total.
-          // +55 XX 9XXXX-XXXX -> 13 dígitos numéricos.
-          // Se tiver 12 dígitos numéricos (+55 XX XXXX-XXXX), falta o 9.
-          if (!result.success && formattedPhone.startsWith('+55')) {
-              const digitsOnly = formattedPhone.replace(/\D/g, ''); // '55838564818' -> 11 digits. Wait.
-              // DDI(2) + DDD(2) + Num(8) = 12 digits total.
-              // DDI(2) + DDD(2) + 9 + Num(8) = 13 digits total.
-              
-              if (digitsOnly.length === 12) {
-                  console.log(`[useChatData] Avatar not found for ${formattedPhone}. Trying to inject '9' digit for Brazil...`);
-                  // Inserir 9 após o DDD (índice 4 na string de dígitos: 0,1=DDI, 2,3=DDD, inserir no 4)
-                  // digitsOnly = 55 83 8564818
-                  // newDigits = 55 83 9 8564818
-                  const newDigits = digitsOnly.slice(0, 4) + '9' + digitsOnly.slice(4);
-                  const phoneWith9 = `+${newDigits}`;
-                  
-                  result = await tryFetchAvatar(phoneWith9);
-              }
-          }
-
-          if (result.success && result.url) {
-             // Atualizar estado local imediatamente
-              setConversations(prev => prev.map(c => 
-                c.id === conv.id ? { ...c, avatar: result.url! } : c
+          if (res.ok) {
+            const data = await res.json();
+            if (data.url) {
+              avatarCacheRef.current.set(conv.id, data.url);
+              setConversations(prev => prev.map(c =>
+                c.id === conv.id ? { ...c, avatar: data.url } : c
               ));
+            }
           }
-          
-        } catch (error: any) {
-          // Silenciar erros de rede comuns para não poluir console
-          if (!error.message?.includes('fetch') && !error.message?.includes('network')) {
-            console.error(`[useChatData] Error processing avatar for ${conv.contactPhone}`, error);
-          }
+        } catch {
+          // Silenciar - avatares não são críticos
         }
+        // Pequeno delay entre requests para não sobrecarregar
+        await new Promise(r => setTimeout(r, 200));
       }
-    };
+    }, 3000); // ✅ 3 segundos de delay - prioridade é o chat funcionar
 
-    fetchMissingAvatars();
-  }, [conversations, workspaceId, checkedAvatars]);
+    return () => clearTimeout(timeoutId);
+  }, [conversations.length, workspaceId, loading]);
+
 
   // ============================================
   // REALTIME SUBSCRIPTIONS (100% REALTIME - SEM POLLING!)
@@ -308,22 +245,28 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
               console.error('❌ [REALTIME] Failed to fetch new conversation details');
             }
           } else if (payload.eventType === 'UPDATE') {
-            // Conversa atualizada
-            const updatedConversation = await fetchConversation(payload.new.id);
-            if (updatedConversation) {
-              console.log('✅ [REALTIME] Updating conversation:', updatedConversation.contactName);
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === updatedConversation.id 
-                    ? { 
-                        ...updatedConversation, 
-                        // ✅ Preservar avatar se já existir no estado local
-                        avatar: conv.avatar || updatedConversation.avatar 
-                      } 
-                    : conv
-                )
-              );
-            }
+            // ✅ OTIMIZADO: Update incremental sem fetchConversation
+            // Apenas atualiza campos que mudaram no payload
+            const updatedFields = payload.new;
+            setConversations((prev) =>
+              prev.map((conv) => {
+                if (conv.id !== updatedFields.id) return conv;
+
+                // ✅ Preservar avatar do cache ou estado local
+                const cachedAvatar = avatarCacheRef.current.get(conv.id);
+
+                return {
+                  ...conv,
+                  // Atualizar apenas campos relevantes do payload
+                  status: updatedFields.status || conv.status,
+                  contactName: updatedFields.contact_name || conv.contactName,
+                  attendantType: updatedFields.attendant_type || conv.attendantType,
+                  tags: updatedFields.tags || conv.tags,
+                  // ✅ Preservar avatar
+                  avatar: cachedAvatar || conv.avatar,
+                };
+              })
+            );
           } else if (payload.eventType === 'DELETE') {
             // Conversa deletada
             console.log('✅ [REALTIME] Deleting conversation:', payload.old.id);
@@ -348,6 +291,7 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
       });
 
     // Subscribe to messages changes
+    // ✅ OTIMIZADO: Update incremental em vez de fetchConversation completo
     const messagesChannel = supabase
       .channel(`messages-realtime-${workspaceId}`, {
         config: {
@@ -362,46 +306,91 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           table: 'messages',
         },
         async (payload) => {
-          console.log('✅ [REALTIME] Message change detected:', payload.eventType, payload);
-
-          // Recarregar a conversa afetada
           const conversationId = payload.new?.conversation_id || payload.old?.conversation_id;
-          
-          if (!conversationId) {
-            console.log('⚠️ [REALTIME] No conversation_id found in message payload');
-            return;
-          }
 
-          const updatedConversation = await fetchConversation(conversationId);
+          if (!conversationId) return;
 
-          if (updatedConversation && updatedConversation.workspaceId === workspaceId) {
-            console.log('✅ [REALTIME] Updating conversation with new message:', updatedConversation.contactName);
-            setConversations((prev) => {
-              // ✅ Filtrar TODAS as ocorrências (caso haja duplicatas)
-              const filtered = prev.filter((c) => c.id !== conversationId);
-              // ✅ Preservar avatar da conversa anterior se existir
-              const previousConv = prev.find((c) => c.id === conversationId);
-              const conversationWithAvatar = {
-                ...updatedConversation,
-                avatar: previousConv?.avatar || updatedConversation.avatar,
-              };
-              // ✅ Adicionar no início e garantir unicidade
-              const newList = [conversationWithAvatar, ...filtered];
-              
-              // ✅ DEDUPLICAÇÃO FINAL: Remover qualquer duplicata por ID
-              const seen = new Set<string>();
-              return newList.filter(conv => {
-                if (seen.has(conv.id)) {
-                  console.warn('⚠️ [REALTIME] Duplicate conversation detected and removed:', conv.id);
-                  return false;
+          // ✅ UPDATE INCREMENTAL: Não fazer fetchConversation completo
+          setConversations((prev) => {
+            const existingConv = prev.find((c) => c.id === conversationId);
+
+            // Se a conversa não está no estado local, ignorar (pode ser de outro workspace)
+            if (!existingConv) {
+              console.log('⚠️ [REALTIME] Message for unknown conversation, ignoring');
+              return prev;
+            }
+
+            // Verificar se pertence ao workspace correto
+            if (existingConv.workspaceId !== workspaceId) {
+              return prev;
+            }
+
+            let updatedMessages = [...existingConv.messages];
+            let lastMessageText = existingConv.lastMessage;
+
+            if (payload.eventType === 'INSERT') {
+              // ✅ Nova mensagem - converter e adicionar
+              const newMessage = dbMessageToFrontend(payload.new as any);
+
+              // Verificar se já existe (evitar duplicata de optimistic update)
+              const exists = updatedMessages.some(m => m.id === newMessage.id);
+              if (!exists) {
+                updatedMessages.push(newMessage);
+                // Atualizar lastMessage preview
+                if (newMessage.contentType === 'text' && newMessage.text) {
+                  lastMessageText = newMessage.text;
+                } else if (newMessage.contentType === 'image') {
+                  lastMessageText = '📷 Imagem';
+                } else if (newMessage.contentType === 'audio') {
+                  lastMessageText = '🎤 Áudio';
+                } else if (newMessage.contentType === 'video') {
+                  lastMessageText = '🎬 Vídeo';
+                } else if (newMessage.contentType === 'document') {
+                  lastMessageText = `📎 ${newMessage.fileName || 'Documento'}`;
                 }
-                seen.add(conv.id);
-                return true;
-              });
+              }
+
+            } else if (payload.eventType === 'UPDATE') {
+              // ✅ Mensagem atualizada - atualizar no array
+              const updatedMessage = dbMessageToFrontend(payload.new as any);
+              updatedMessages = updatedMessages.map(m =>
+                m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m
+              );
+
+            } else if (payload.eventType === 'DELETE') {
+              // ✅ Mensagem deletada - marcar como delete ou remover
+              const deletedId = payload.old?.id;
+              if (deletedId) {
+                updatedMessages = updatedMessages.map(m =>
+                  m.id === deletedId ? { ...m, type: 'delete' as const } : m
+                );
+              }
+            }
+
+            // ✅ Ordenar mensagens por createdAt
+            updatedMessages.sort((a, b) => {
+              const timeA = new Date(a.createdAt || 0).getTime();
+              const timeB = new Date(b.createdAt || 0).getTime();
+              return timeA - timeB;
             });
-          } else {
-            console.log('⚠️ [REALTIME] Message belongs to different workspace, ignoring');
-          }
+
+            // Calcular unreadCount
+            const unreadCount = updatedMessages.filter(
+              m => m.type === 'received' && !m.read
+            ).length;
+
+            // ✅ Mover conversa para o topo da lista
+            const filtered = prev.filter((c) => c.id !== conversationId);
+            const updatedConv = {
+              ...existingConv,
+              messages: updatedMessages,
+              lastMessage: lastMessageText,
+              lastUpdate: 'Agora',
+              unreadCount,
+            };
+
+            return [updatedConv, ...filtered];
+          });
         }
       )
       .subscribe((status, err) => {
@@ -843,15 +832,30 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
         throw new Error('Workspace ID is required');
       }
 
-      try {
-        console.log(`[useChatData] Deleting message: ${messageId}`);
+      console.log(`[useChatData] Deleting message: ${messageId}`);
 
-        // ✅ Obter token do usuário autenticado
+      // ✅ FEEDBACK IMEDIATO: Update otimista + toast ANTES da API
+      setConversations((prev) =>
+        prev.map((conv) => ({
+          ...conv,
+          messages: conv.messages.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, type: 'delete' as const }
+              : msg
+          ),
+          ...(conv.messages[conv.messages.length - 1]?.id === messageId && {
+            lastMessage: conv.messages[conv.messages.length - 2]?.text || '',
+          }),
+        }))
+      );
+      toast.success('Mensagem deletada');
+
+      try {
         const { data: { session } } = await supabase.auth.getSession();
         const accessToken = session?.access_token;
 
         if (!accessToken) {
-          throw new Error('No active session. Please login again.');
+          throw new Error('Sessão expirada');
         }
 
         const response = await fetch(
@@ -869,28 +873,20 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           throw new Error(errorData.error || 'Failed to delete message');
         }
 
-        // ✅ Atualizar mensagem no estado local como deletada (manter o conteúdo)
+        console.log(`[useChatData] Message deleted successfully`);
+      } catch (err: any) {
+        console.error('[useChatData] Error deleting message:', err);
+        // ✅ Reverter update otimista em caso de erro
         setConversations((prev) =>
           prev.map((conv) => ({
             ...conv,
             messages: conv.messages.map((msg) =>
               msg.id === messageId
-                ? { ...msg, type: 'delete' } // ✅ Apenas mudar o tipo, manter texto/mídia
+                ? { ...msg, type: 'sent' as const }
                 : msg
             ),
-            // Atualizar lastMessage se a mensagem deletada era a última
-            ...(conv.messages[conv.messages.length - 1]?.id === messageId && {
-              lastMessage: conv.messages[conv.messages.length - 2]?.text || '',
-            }),
           }))
         );
-
-        console.log(`[useChatData] Message deleted successfully`);
-
-        // ✅ Notificação de sucesso
-        toast.success('Mensagem deletada');
-      } catch (err: any) {
-        console.error('[useChatData] Error deleting message:', err);
         toast.error('Erro ao deletar mensagem', {
           description: err.message || 'Tente novamente'
         });

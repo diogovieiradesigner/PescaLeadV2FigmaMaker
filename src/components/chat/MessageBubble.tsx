@@ -374,6 +374,17 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
       </div>
     </div>
   );
+}, (prevProps, nextProps) => {
+  // ✅ Comparador customizado para garantir re-render quando message.type muda
+  // Retorna true se props são iguais (não re-renderizar), false se diferentes (re-renderizar)
+  return (
+    prevProps.message.id === nextProps.message.id &&
+    prevProps.message.type === nextProps.message.type &&
+    prevProps.message.transcriptionStatus === nextProps.message.transcriptionStatus &&
+    prevProps.message.transcription === nextProps.message.transcription &&
+    prevProps.isDark === nextProps.isDark &&
+    prevProps.showPipeline === nextProps.showPipeline
+  );
 });
 
 MessageBubble.displayName = 'MessageBubble';

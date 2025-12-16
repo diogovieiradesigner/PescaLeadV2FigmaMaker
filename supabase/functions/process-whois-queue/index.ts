@@ -1,7 +1,14 @@
 // =============================================================================
-// EDGE FUNCTION: process-whois-queue V6 (CLOUDFLARE PROXY ENDPOINT)
+// EDGE FUNCTION: process-whois-queue V7 (CLOUDFLARE PROXY + PARALELO)
 // =============================================================================
-// V6: 
+// V7 (Otimização de Performance):
+// - Batch size aumentado para 50 (antes: 10)
+// - Processamento em paralelo com Promise.allSettled (antes: sequencial)
+// - Concorrência máxima de 10 requests simultâneos
+// - Delay removido (Cloudflare proxy não tem rate limit)
+// - Performance estimada: ~500 leads/minuto (antes: ~10 leads/minuto)
+// =============================================================================
+// V6:
 // - USA O ENDPOINT CLOUDFLARE WORKERS CORRETO
 // - Endpoint: https://dominio.diogo-vieira-pb-f91.workers.dev/?domain=XXX
 // - Dados já vêm formatados e prontos para uso
@@ -155,11 +162,11 @@ serve(async (req) => {
     
     const supabase = createSupabaseClient();
     
-    // Ler mensagens da fila
+    // V7: Batch size aumentado de 10 para 50
     const { data: rawMessages, error: readError } = await supabase.rpc('pgmq_read_batch', {
       queue_name: 'whois_queue',
-      visibility_timeout: 120,
-      qty: 10
+      visibility_timeout: 180, // V7: Aumentado para 3 minutos (processamento paralelo)
+      qty: 50 // V7: Aumentado de 10 para 50
     });
     
     if (readError) {
@@ -173,7 +180,7 @@ serve(async (req) => {
     if (messages.length === 0) {
       return new Response(JSON.stringify({
         success: true,
-        version: 'V6_CLOUDFLARE_PROXY',
+        version: 'V7_PARALLEL',
         message: 'Nenhuma mensagem',
         total_messages: 0,
         processed: 0,
@@ -185,182 +192,201 @@ serve(async (req) => {
     }
     
     let processed = 0, skipped = 0, failed = 0, notFound = 0;
-    
-    for (const msg of messages) {
+
+    // V7: Função para processar um único lead (usada em paralelo)
+    async function processLead(msg: any): Promise<{ status: 'processed' | 'skipped' | 'notFound' | 'failed', msgId: number }> {
       const msgId = msg.msg_id;
       const { lead_id, domain } = msg.message;
-      
-      console.log(`\n🚀 [WHOIS] Processando msg ${msgId} (domain: ${domain})`);
-      
-      if (!domain) {
-        await supabase.from('lead_extraction_staging').update({
-          whois_enriched: false,
+
+      try {
+        if (!domain) {
+          await supabase.from('lead_extraction_staging').update({
+            whois_enriched: false,
+            whois_checked_at: new Date().toISOString()
+          }).eq('id', lead_id);
+
+          await supabase.rpc('pgmq_delete_msg', {
+            queue_name: 'whois_queue',
+            msg_id: msgId
+          });
+
+          return { status: 'skipped', msgId };
+        }
+
+        const normalizedDomain = normalizeDomain(domain);
+        const whoisResult = await fetchWhoisData(normalizedDomain);
+
+        if (whoisResult.skipped) {
+          await supabase.from('lead_extraction_staging').update({
+            whois_enriched: false,
+            whois_checked_at: new Date().toISOString()
+          }).eq('id', lead_id);
+
+          await supabase.rpc('pgmq_delete_msg', {
+            queue_name: 'whois_queue',
+            msg_id: msgId
+          });
+
+          return { status: 'skipped', msgId };
+        }
+
+        if (whoisResult.notFound) {
+          await supabase.from('lead_extraction_staging').update({
+            whois_enriched: false,
+            whois_checked_at: new Date().toISOString()
+          }).eq('id', lead_id);
+
+          await supabase.rpc('pgmq_delete_msg', {
+            queue_name: 'whois_queue',
+            msg_id: msgId
+          });
+
+          return { status: 'notFound', msgId };
+        }
+
+        if (!whoisResult.success || !whoisResult.data) {
+          await supabase.from('lead_extraction_staging').update({
+            whois_enriched: false,
+            whois_checked_at: new Date().toISOString()
+          }).eq('id', lead_id);
+
+          await supabase.rpc('pgmq_delete_msg', {
+            queue_name: 'whois_queue',
+            msg_id: msgId
+          });
+
+          return { status: 'failed', msgId };
+        }
+
+        // Dados já vêm formatados do endpoint Cloudflare
+        const apiData = whoisResult.data;
+
+        // Preparar whois_data com emails no formato esperado pelo trigger
+        const whoisEmails: any[] = [];
+        if (apiData.emails && Array.isArray(apiData.emails)) {
+          apiData.emails.forEach((email: string) => {
+            if (email && typeof email === 'string' && email.includes('@')) {
+              whoisEmails.push({
+                address: email.toLowerCase().trim(),
+                source: 'whois',
+                type: 'main',
+                verified: false
+              });
+            }
+          });
+        }
+
+        // Construir whois_data com estrutura completa + emails formatados
+        const whoisDataToSave: any = {
+          ...(apiData.dados_completos || apiData),
+          emails: whoisEmails.length > 0 ? whoisEmails : undefined,
+          dominio: apiData.dominio,
+          cnpj: apiData.cnpj,
+          razao_social: apiData.razao_social,
+          representante_legal: apiData.representante_legal,
+          responsaveis: apiData.responsaveis,
+          nameservers: apiData.nameservers,
+          datas: apiData.datas,
+          status: apiData.status
+        };
+
+        const updateData: any = {
+          whois_data: whoisDataToSave,
+          whois_enriched: true,
           whois_checked_at: new Date().toISOString()
-        }).eq('id', lead_id);
-        
+        };
+
+        // Extrair dados do formato do Cloudflare Workers
+        const extractedData: any = {
+          cnpj: apiData.cnpj?.replace(/[^\d]/g, '') || null,
+          company_name: apiData.razao_social || null,
+          legal_representative: apiData.representante_legal || null,
+          admin_email: apiData.emails?.[0] || null,
+          admin_name: apiData.responsaveis?.find((r: any) => r.tipo === 'Administrativo')?.nome || null,
+          tech_name: apiData.responsaveis?.find((r: any) => r.tipo === 'Técnico')?.nome || null,
+          registration_date: apiData.datas?.criacao || null,
+          expiration_date: apiData.datas?.expiracao || null,
+          status: apiData.status?.[0] || null,
+          nameservers: apiData.nameservers || []
+        };
+
+        // Atualizar CNPJ se encontrado
+        if (extractedData.cnpj) {
+          updateData.cnpj_normalized = extractedData.cnpj;
+        }
+
+        // Salvar dados extraídos
+        updateData.whois_extracted_data = extractedData;
+
+        const { error: updateError } = await supabase
+          .from('lead_extraction_staging')
+          .update(updateData)
+          .eq('id', lead_id);
+
+        if (updateError) {
+          console.error(`❌ [WHOIS] Erro ao salvar msg ${msgId}:`, updateError);
+          return { status: 'failed', msgId };
+        }
+
         await supabase.rpc('pgmq_delete_msg', {
           queue_name: 'whois_queue',
           msg_id: msgId
         });
-        
-        skipped++;
-        continue;
+
+        return { status: 'processed', msgId };
+
+      } catch (error: any) {
+        console.error(`❌ [WHOIS] Erro msg ${msgId}:`, error.message);
+        return { status: 'failed', msgId };
       }
-      
-      const normalizedDomain = normalizeDomain(domain);
-      const whoisResult = await fetchWhoisData(normalizedDomain);
-      
-      if (whoisResult.skipped) {
-        await supabase.from('lead_extraction_staging').update({
-          whois_enriched: false,
-          whois_checked_at: new Date().toISOString()
-        }).eq('id', lead_id);
-        
-        await supabase.rpc('pgmq_delete_msg', {
-          queue_name: 'whois_queue',
-          msg_id: msgId
-        });
-        
-        skipped++;
-        continue;
-      }
-      
-      if (whoisResult.notFound) {
-        await supabase.from('lead_extraction_staging').update({
-          whois_enriched: false,
-          whois_checked_at: new Date().toISOString()
-        }).eq('id', lead_id);
-        
-        await supabase.rpc('pgmq_delete_msg', {
-          queue_name: 'whois_queue',
-          msg_id: msgId
-        });
-        
-        notFound++;
-        continue;
-      }
-      
-      if (!whoisResult.success || !whoisResult.data) {
-        await supabase.from('lead_extraction_staging').update({
-          whois_enriched: false,
-          whois_checked_at: new Date().toISOString()
-        }).eq('id', lead_id);
-        
-        await supabase.rpc('pgmq_delete_msg', {
-          queue_name: 'whois_queue',
-          msg_id: msgId
-        });
-        
-        failed++;
-        continue;
-      }
-      
-      // V6: Dados já vêm formatados do endpoint Cloudflare
-      const apiData = whoisResult.data;
-      
-      // V6: Preparar whois_data com emails no formato esperado pelo trigger
-      // O trigger espera whois_data->emails como array JSONB de objetos
-      const whoisEmails: any[] = [];
-      if (apiData.emails && Array.isArray(apiData.emails)) {
-        apiData.emails.forEach((email: string) => {
-          if (email && typeof email === 'string' && email.includes('@')) {
-            whoisEmails.push({
-              address: email.toLowerCase().trim(),
-              source: 'whois',
-              type: 'main',
-              verified: false
-            });
+    }
+
+    // V7: Processar em paralelo com concorrência limitada
+    const CONCURRENCY = 10; // Máximo 10 requests simultâneos
+    const chunks: any[][] = [];
+
+    for (let i = 0; i < messages.length; i += CONCURRENCY) {
+      chunks.push(messages.slice(i, i + CONCURRENCY));
+    }
+
+    console.log(`⚡ [V7] Processando ${messages.length} mensagens em ${chunks.length} batches (${CONCURRENCY} paralelos)`);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      console.log(`\n🔄 [V7] Batch ${i + 1}/${chunks.length} (${chunk.length} leads)`);
+
+      const results = await Promise.allSettled(chunk.map(msg => processLead(msg)));
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          switch (result.value.status) {
+            case 'processed': processed++; break;
+            case 'skipped': skipped++; break;
+            case 'notFound': notFound++; break;
+            case 'failed': failed++; break;
           }
-        });
+        } else {
+          failed++;
+        }
       }
-      
-      // Construir whois_data com estrutura completa + emails formatados
-      const whoisDataToSave: any = {
-        ...(apiData.dados_completos || apiData),
-        emails: whoisEmails.length > 0 ? whoisEmails : undefined,
-        dominio: apiData.dominio,
-        cnpj: apiData.cnpj,
-        razao_social: apiData.razao_social,
-        representante_legal: apiData.representante_legal,
-        responsaveis: apiData.responsaveis,
-        nameservers: apiData.nameservers,
-        datas: apiData.datas,
-        status: apiData.status
-      };
-      
-      const updateData: any = {
-        whois_data: whoisDataToSave,
-        whois_enriched: true,
-        whois_checked_at: new Date().toISOString()
-      };
-      
-      // V6: Extrair dados do formato do Cloudflare Workers
-      const extractedData: any = {
-        cnpj: apiData.cnpj?.replace(/[^\d]/g, '') || null,
-        company_name: apiData.razao_social || null,
-        legal_representative: apiData.representante_legal || null,
-        admin_email: apiData.emails?.[0] || null,
-        admin_name: apiData.responsaveis?.find((r: any) => r.tipo === 'Administrativo')?.nome || null,
-        tech_name: apiData.responsaveis?.find((r: any) => r.tipo === 'Técnico')?.nome || null,
-        registration_date: apiData.datas?.criacao || null,
-        expiration_date: apiData.datas?.expiracao || null,
-        status: apiData.status?.[0] || null,
-        nameservers: apiData.nameservers || []
-      };
-      
-      // Atualizar CNPJ se encontrado
-      if (extractedData.cnpj) {
-        updateData.cnpj_normalized = extractedData.cnpj;
-        console.log(`🎯 [WHOIS] CNPJ encontrado: ${apiData.cnpj}`);
-      }
-      
-      // Salvar dados extraídos
-      updateData.whois_extracted_data = extractedData;
-      
-      console.log(`📧 [WHOIS] Emails formatados: ${whoisEmails.length} emails encontrados`);
-      
-      console.log(`📊 [WHOIS] Dados extraídos:`, {
-        cnpj: apiData.cnpj,
-        razao_social: extractedData.company_name,
-        representante: extractedData.legal_representative,
-        email: extractedData.admin_email
-      });
-      
-      const { error: updateError } = await supabase
-        .from('lead_extraction_staging')
-        .update(updateData)
-        .eq('id', lead_id);
-      
-      if (updateError) {
-        console.error(`❌ [WHOIS] Erro ao salvar:`, updateError);
-        failed++;
-        continue;
-      }
-      
-      console.log(`✅ [WHOIS] Dados salvos com sucesso!`);
-      
-      await supabase.rpc('pgmq_delete_msg', {
-        queue_name: 'whois_queue',
-        msg_id: msgId
-      });
-      
-      processed++;
-      
-      // Delay entre requisições para não sobrecarregar
-      await new Promise(r => setTimeout(r, 500));
     }
     
     console.log(`\n🎉 [COMPLETE] ${processed} processados, ${skipped} ignorados, ${notFound} não encontrados, ${failed} falharam`);
     
     return new Response(JSON.stringify({
       success: true,
-      version: 'V6_CLOUDFLARE_PROXY',
+      version: 'V7_PARALLEL',
       total_messages: messages.length,
       processed,
       skipped,
       not_found: notFound,
       failed,
-      duration_ms: Date.now() - startTime
+      duration_ms: Date.now() - startTime,
+      performance: {
+        batch_size: 50,
+        concurrency: 10,
+        leads_per_minute_estimate: Math.round((processed / (Date.now() - startTime)) * 60000)
+      }
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

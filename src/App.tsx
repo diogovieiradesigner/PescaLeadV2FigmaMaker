@@ -66,6 +66,11 @@ function AppContent() {
     funnelId: string;
     funnelName: string;
     leadCount: number;
+    filters?: {
+      hasEmail?: boolean;
+      hasWhatsapp?: boolean;
+      searchQuery?: string;
+    };
   } | null>(null);
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -397,15 +402,26 @@ function AppContent() {
   }, [refetchFunnel, selectedLead]);
 
   const handleMoveColumnLeads = useCallback((columnId: string, columnTitle: string, funnelId: string, funnelName: string, leadCount: number) => {
+    // Capturar os filtros ativos no momento da chamada
+    const activeFilters = {
+      hasEmail: leadFilters.hasEmail || undefined,
+      hasWhatsapp: leadFilters.hasWhatsapp || undefined,
+      searchQuery: debouncedSearchQuery.trim() || undefined,
+    };
+
+    // Verificar se há algum filtro ativo
+    const hasActiveFilters = activeFilters.hasEmail || activeFilters.hasWhatsapp || activeFilters.searchQuery;
+
     setMoveColumnLeadsData({
       columnId,
       columnTitle,
       funnelId,
       funnelName,
       leadCount,
+      filters: hasActiveFilters ? activeFilters : undefined,
     });
     setIsMoveColumnLeadsModalOpen(true);
-  }, []);
+  }, [leadFilters, debouncedSearchQuery]);
 
   const handleDeleteAllLeads = useCallback(async (columnId: string) => {
     try {
@@ -1292,6 +1308,7 @@ function AppContent() {
           sourceFunnelId={moveColumnLeadsData.funnelId}
           sourceFunnelName={moveColumnLeadsData.funnelName}
           leadCount={moveColumnLeadsData.leadCount}
+          filters={moveColumnLeadsData.filters}
           onSuccess={() => {
             // Recarregar dados após movimentação
             refetchFunnel();

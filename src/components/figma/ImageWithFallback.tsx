@@ -1,30 +1,30 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, memo } from 'react'
 import { AlertCircle } from 'lucide-react'
 
-// ✅ Cache global de imagens carregadas para evitar flash de loading ao navegar entre telas
+// ✅ Cache global de imagens já carregadas (evita flash de loading)
 const loadedImagesCache = new Set<string>();
 
-export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
+// ✅ Extrair URL base sem query params para caching consistente
+function getBaseUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return `${urlObj.origin}${urlObj.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+function ImageWithFallbackInner(props: React.ImgHTMLAttributes<HTMLImageElement>) {
   const { src, alt, style, className, ...rest } = props
-  
-  // Inicializa o estado verificando o cache global
+
+  const baseUrl = src ? getBaseUrl(src) : '';
+
+  // ✅ Inicializa como 'loaded' se já está no cache (evita flash)
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(() => {
     if (!src) return 'error';
-    return loadedImagesCache.has(src) ? 'loaded' : 'loading';
+    if (loadedImagesCache.has(baseUrl)) return 'loaded';
+    return 'loading';
   })
-
-  useEffect(() => {
-    if (!src) return;
-    
-    // Se a URL mudou:
-    // 1. Se já estiver no cache, marca como loaded imediatamente
-    // 2. Se não, marca como loading
-    if (loadedImagesCache.has(src)) {
-      setStatus('loaded');
-    } else {
-      setStatus('loading');
-    }
-  }, [src])
 
   const handleError = () => {
     setStatus('error')
@@ -32,7 +32,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
 
   const handleLoad = () => {
     if (src) {
-      loadedImagesCache.add(src);
+      loadedImagesCache.add(getBaseUrl(src));
     }
     setStatus('loaded')
   }
@@ -49,7 +49,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
         style={style}
       >
          <AlertCircle className="w-6 h-6 mb-1" />
-         <span className="text-[10px]">Erro</span>
+         <span className="text-[10px]">Erro ao carregar</span>
       </div>
     )
   }
@@ -57,16 +57,14 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
   return (
     <div className={`relative inline-block overflow-hidden rounded-2xl ${className}`} style={style}>
         {status === 'loading' && (
-             <div className="absolute inset-0 flex items-center justify-center bg-gray-200/20 dark:bg-gray-700/20 animate-pulse rounded-2xl z-10">
-                 {/* Skeleton loader visível apenas se não estiver no cache */}
-             </div>
+             <div className="absolute inset-0 flex items-center justify-center bg-gray-200/20 dark:bg-gray-700/20 animate-pulse rounded-2xl z-10" />
         )}
-        <img 
-            src={src} 
-            alt={alt} 
-            className={`block max-w-full h-auto rounded-2xl transition-opacity duration-300 ${status === 'loading' ? 'opacity-0' : 'opacity-100'}`}
-            style={style} 
-            {...rest} 
+        <img
+            src={src}
+            alt={alt}
+            className={`block max-w-full h-auto rounded-2xl transition-opacity duration-200 ${status === 'loading' ? 'opacity-0' : 'opacity-100'}`}
+            style={style}
+            {...rest}
             onError={handleError}
             onLoad={handleLoad}
             loading="lazy"
@@ -75,3 +73,6 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
     </div>
   )
 }
+
+// ✅ Exportar com memo para evitar re-renders desnecessários
+export const ImageWithFallback = memo(ImageWithFallbackInner);

@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { supabase } from '../utils/supabase/client';
 import { useAuth } from '../contexts/AuthContext';
-import { 
-  Loader2, 
-  CheckCircle, 
-  AlertCircle, 
-  XCircle, 
+import {
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
   ArrowLeft,
   Clock,
   Zap,
@@ -17,6 +17,9 @@ import {
   Play,
   Pause,
   X,
+  Info,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -1639,59 +1642,144 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
                 </div>
 
                 {/* Abas de Logs */}
-                <div className="flex gap-2 mb-3">
-                  {(['all', 'execution', 'queue'] as LogTabType[]).map((tab) => (
-                    <Button
-                      key={tab}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setLogTab(tab)}
-                      className={cn(
-                        "h-7 text-xs capitalize transition-colors border-0",
-                        logTab === tab
-                          ? "bg-white text-black hover:bg-white/90" 
-                          : isDark
-                            ? "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300"
-                            : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
-                      )}
-                    >
-                      {tab === 'all' ? 'Todos' : tab === 'execution' ? 'Execução' : 'Fila'}
-                    </Button>
-                  ))}
+                <div className={cn(
+                  "flex items-center gap-1 pb-3",
+                  isDark ? "bg-zinc-950/50" : "bg-zinc-50"
+                )}>
+                  <button
+                    onClick={() => setLogTab('all')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                      logTab === 'all'
+                        ? isDark
+                          ? "bg-zinc-800 text-white"
+                          : "bg-white text-zinc-900 shadow-sm border border-zinc-200"
+                        : isDark
+                          ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                          : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+                    )}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    onClick={() => setLogTab('execution')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                      logTab === 'execution'
+                        ? isDark
+                          ? "bg-zinc-800 text-white"
+                          : "bg-white text-zinc-900 shadow-sm border border-zinc-200"
+                        : isDark
+                          ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                          : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+                    )}
+                  >
+                    Execução
+                  </button>
+                  <button
+                    onClick={() => setLogTab('queue')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                      logTab === 'queue'
+                        ? isDark
+                          ? "bg-zinc-800 text-white"
+                          : "bg-white text-zinc-900 shadow-sm border border-zinc-200"
+                        : isDark
+                          ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                          : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+                    )}
+                  >
+                    Fila
+                  </button>
                 </div>
 
                 {/* Filtros de Nível (apenas para aba execution) */}
                 {(logTab === 'execution' || logTab === 'all') && (
-                  <div className="flex gap-2">
-                  {(['all', 'info', 'success', 'warning', 'error'] as LogLevelFilter[]).map((level) => (
-                    <Button
-                      key={level}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedLevel(level)}
+                  <div className={cn(
+                    "flex items-center gap-1 pt-3 border-t",
+                    isDark ? "border-zinc-900" : "border-zinc-200"
+                  )}>
+                    <Filter className={cn(
+                      "h-3.5 w-3.5 mr-1",
+                      isDark ? "text-zinc-600" : "text-zinc-400"
+                    )} />
+                    <button
+                      onClick={() => setSelectedLevel('all')}
                       className={cn(
-                        "h-7 text-xs capitalize transition-colors border-0",
-                        selectedLevel === level
-                          ? "bg-white text-black hover:bg-white/90" 
+                        "px-2.5 py-1 rounded text-[11px] font-medium transition-all",
+                        selectedLevel === 'all'
+                          ? isDark
+                            ? "bg-zinc-800 text-white"
+                            : "bg-zinc-200 text-zinc-900"
                           : isDark
-                            ? "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300"
-                            : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+                            ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                            : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
                       )}
                     >
-                      {level === 'all' ? (
-                        <>
-                          <Filter className="w-3 h-3 mr-1.5" />
-                          Todos
-                        </>
-                      ) : level === 'info' ? 'Info' : level === 'success' ? 'Success' : level === 'warning' ? 'Warning' : 'Error'}
-                    </Button>
-                  ))}
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => setSelectedLevel('info')}
+                      className={cn(
+                        "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1",
+                        selectedLevel === 'info'
+                          ? "bg-blue-500/20 text-blue-400"
+                          : isDark
+                            ? "text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10"
+                            : "text-zinc-600 hover:text-blue-600 hover:bg-blue-50"
+                      )}
+                    >
+                      <Info className="h-3 w-3" />
+                      Info
+                    </button>
+                    <button
+                      onClick={() => setSelectedLevel('success')}
+                      className={cn(
+                        "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1",
+                        selectedLevel === 'success'
+                          ? "bg-green-500/20 text-green-400"
+                          : isDark
+                            ? "text-zinc-500 hover:text-green-400 hover:bg-green-500/10"
+                            : "text-zinc-600 hover:text-green-600 hover:bg-green-50"
+                      )}
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Success
+                    </button>
+                    <button
+                      onClick={() => setSelectedLevel('warning')}
+                      className={cn(
+                        "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1",
+                        selectedLevel === 'warning'
+                          ? "bg-yellow-500/20 text-yellow-400"
+                          : isDark
+                            ? "text-zinc-500 hover:text-yellow-400 hover:bg-yellow-500/10"
+                            : "text-zinc-600 hover:text-yellow-600 hover:bg-yellow-50"
+                      )}
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Warning
+                    </button>
+                    <button
+                      onClick={() => setSelectedLevel('error')}
+                      className={cn(
+                        "px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1",
+                        selectedLevel === 'error'
+                          ? "bg-red-500/20 text-red-400"
+                          : isDark
+                            ? "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            : "text-zinc-600 hover:text-red-600 hover:bg-red-50"
+                      )}
+                    >
+                      <XCircle className="h-3 w-3" />
+                      Error
+                    </button>
                   </div>
                 )}
               </CardHeader>
 
               <div className="flex-1 overflow-y-auto scrollbar-thin">
-                <div className="p-6 space-y-6">
+                <div className="p-4 space-y-3">
                   {/* Renderizar baseado na aba selecionada */}
                   {logTab === 'execution' && (
                     <>
@@ -1718,50 +1806,92 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
                   ) : logs.length > 0 ? (
                     <>
                       {logs.map((log, index: number) => {
+                        const isError = log.level === 'error';
+                        const isSuccess = log.level === 'success';
+                        const isWarning = log.level === 'warning';
+
+                        // Cor do indicador lateral baseado no nível
+                        const levelColor = isError
+                          ? 'bg-red-500'
+                          : isWarning
+                            ? 'bg-yellow-500'
+                            : isSuccess
+                              ? 'bg-green-500'
+                              : 'bg-blue-500';
+
+                        // Cor do texto baseado no nível
+                        const textColor = isError
+                          ? (isDark ? 'text-red-400' : 'text-red-600')
+                          : isWarning
+                            ? (isDark ? 'text-yellow-400' : 'text-yellow-600')
+                            : isSuccess
+                              ? (isDark ? 'text-green-400' : 'text-green-600')
+                              : (isDark ? 'text-zinc-400' : 'text-zinc-700');
+
                         return (
-                          <div key={log.id} className="relative pl-6">
-                            {/* Line connecting dots */}
-                            {index !== logs.length - 1 && (
-                              <div className={cn(
-                                "absolute left-[5px] top-2 h-[calc(100%+1.5rem)] w-[1px]",
-                                isDark ? "bg-zinc-800" : "bg-zinc-300"
-                              )} />
+                          <div
+                            key={log.id}
+                            className={cn(
+                              "relative pl-3 py-2 rounded-lg transition-colors",
+                              isDark
+                                ? "hover:bg-zinc-900/50"
+                                : "hover:bg-zinc-50"
                             )}
-                            
-                            {/* Dot */}
-                            <div 
-                              className={cn(
-                                "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full border-2",
-                                isDark ? 'bg-black' : 'bg-white'
-                              )}
-                              style={{ borderColor: getLogLevelColor(log.level) }}
-                            />
-                            
-                            <div className="space-y-1.5">
+                          >
+                            {/* Indicador lateral colorido */}
+                            <div className={cn(
+                              "absolute left-0 top-2 bottom-2 w-1 rounded-full",
+                              levelColor
+                            )} />
+
+                            <div className="space-y-1">
                               <div className="flex items-center justify-between gap-2">
-                                <span className={cn(
-                                  "text-xs font-mono",
-                                  isDark ? "text-zinc-500" : "text-zinc-600"
-                                )}>
-                                  {log.timestamp}
-                                </span>
-                                <Badge 
-                                  variant="secondary" 
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(
+                                    "text-[11px] font-mono px-1.5 py-0.5 rounded",
+                                    isDark ? "text-zinc-500 bg-zinc-900" : "text-zinc-500 bg-zinc-100"
+                                  )}>
+                                    {log.timestamp}
+                                  </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                      "text-[10px] px-2 h-5 font-medium uppercase",
+                                      isError
+                                        ? "bg-red-500/10 text-red-400 border-red-500/20"
+                                        : isWarning
+                                          ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+                                          : isSuccess
+                                            ? "bg-green-500/10 text-green-400 border-green-500/20"
+                                            : isDark
+                                              ? "bg-zinc-900 text-zinc-500 border-zinc-800"
+                                              : "bg-zinc-100 text-zinc-600 border-zinc-300"
+                                    )}
+                                  >
+                                    {log.step_name}
+                                  </Badge>
+                                </div>
+                                <Badge
+                                  variant="outline"
                                   className={cn(
-                                    "text-[10px] px-2 h-5 font-medium tracking-wide uppercase",
-                                    isDark 
-                                      ? "bg-zinc-900 text-zinc-500 border-zinc-800" 
-                                      : "bg-zinc-100 text-zinc-600 border-zinc-300"
+                                    "text-[9px] px-1.5 h-4 font-medium uppercase",
+                                    isError
+                                      ? "bg-red-500/10 text-red-400 border-red-500/20"
+                                      : isWarning
+                                        ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+                                        : isSuccess
+                                          ? "bg-green-500/10 text-green-400 border-green-500/20"
+                                          : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                   )}
                                 >
-                                  {log.step_name}
+                                  {log.level || 'info'}
                                 </Badge>
                               </div>
-                              <div className="flex items-start gap-2">
+                              <div className="flex items-start gap-2 pl-0.5">
                                 <span className="text-sm">{log.icon}</span>
                                 <p className={cn(
                                   "text-sm leading-relaxed flex-1",
-                                  isDark ? 'text-zinc-400' : 'text-zinc-700'
+                                  textColor
                                 )}>
                                   {log.message}
                                 </p>

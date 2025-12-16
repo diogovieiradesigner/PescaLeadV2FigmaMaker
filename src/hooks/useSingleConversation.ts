@@ -133,20 +133,24 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           filter: `conversation_id=eq.${conversationId}`,
         },
         async (payload) => {
-          console.log('✅ [REALTIME] Message updated');
-          
+          console.log('✅ [REALTIME] Message updated:', payload.new.id, 'type:', payload.new.message_type);
+
           // ✅ OTIMIZAÇÃO: Atualizar mensagem específica sem re-fetch
           setConversation(prev => {
             if (!prev) return null;
-            
+
             return {
               ...prev,
-              messages: prev.messages.map(m => 
-                m.id === payload.new.id 
+              messages: prev.messages.map(m =>
+                m.id === payload.new.id
                   ? {
                       ...m,
                       read: payload.new.is_read,
-                      type: payload.new.message_type === 'delete' ? 'delete' : m.type,
+                      // ✅ CORREÇÃO: Sempre usar o type do payload, não condicional
+                      type: payload.new.message_type as 'sent' | 'received' | 'delete',
+                      // ✅ Atualizar transcrição se vier no payload
+                      transcription: payload.new.transcription || m.transcription,
+                      transcriptionStatus: payload.new.transcription_status || m.transcriptionStatus,
                     }
                   : m
               ),
@@ -299,15 +303,26 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
   }, [conversationId]);
 
   const deleteMessage = useCallback(async (messageId: string) => {
-      // Implement delete logic if needed
-       if (!workspaceId) return;
+      if (!workspaceId) return;
+
+      // ✅ FEEDBACK IMEDIATO: Update otimista + toast ANTES da API
+      setConversation(prev => {
+          if(!prev) return null;
+          return {
+              ...prev,
+              messages: prev.messages.map(m => m.id === messageId ? { ...m, type: 'delete' } : m)
+          }
+      });
+      toast.success('Mensagem deletada');
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const accessToken = session?.access_token;
-        if (!accessToken) return;
+        if (!accessToken) {
+          throw new Error('Sessão expirada');
+        }
 
-        const { projectId } = await import('../utils/supabase/info.tsx'); // Lazy import to avoid cycle if any
+        const { projectId } = await import('../utils/supabase/info.tsx');
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/messages/${messageId}/delete?workspaceId=${workspaceId}`,
           {
@@ -320,20 +335,16 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || 'Falha ao deletar mensagem');
         }
-
-        // ✅ OTIMIZAÇÃO: Update otimista imediato
-        setConversation(prev => {
-            if(!prev) return null;
-            return {
-                ...prev,
-                messages: prev.messages.map(m => m.id === messageId ? { ...m, type: 'delete' } : m)
-            }
-        });
-
-        // ✅ Notificação de sucesso
-        toast.success('Mensagem deletada');
       } catch(e: any) {
           console.error(e);
+          // ✅ Reverter update otimista em caso de erro
+          setConversation(prev => {
+              if(!prev) return null;
+              return {
+                  ...prev,
+                  messages: prev.messages.map(m => m.id === messageId ? { ...m, type: 'sent' } : m)
+              }
+          });
           toast.error('Erro ao deletar mensagem', {
             description: e.message || 'Tente novamente'
           });

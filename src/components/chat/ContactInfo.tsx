@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { TagSelector } from './TagSelector';
 import { DbUser } from '../../types/database-chat';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
+import { Avatar } from '../Avatar';
 import { getLeadById } from '../../services/leads-service';
 import { CRMLead } from '../../utils/supabase/converters';
 import { AddLeadToKanbanModal } from './AddLeadToKanbanModal';
@@ -414,11 +415,18 @@ export function ContactInfo({
               isDark ? 'bg-white/[0.05]' : 'bg-light-elevated'
             }`}
           >
-            <ImageWithFallback
-              src={conversation.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(conversation.contactName)}&background=random`}
-              alt={conversation.contactName}
-              className="w-full h-full rounded-full object-cover"
-            />
+            {conversation.avatar ? (
+              <ImageWithFallback
+                src={conversation.avatar}
+                alt={conversation.contactName}
+                className="w-full h-full rounded-full object-cover"
+              />
+            ) : (
+              <Avatar
+                name={conversation.contactName}
+                className="w-full h-full text-2xl"
+              />
+            )}
           </div>
           <h3
             className={`mb-1 ${

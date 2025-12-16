@@ -627,3 +627,34 @@ export async function getExtractionDashboard(workspaceId: string, limit: number 
 
   return data;
 }
+
+/**
+ * Buscar status de enriquecimento dos leads de uma extração
+ * Retorna contagens de cada etapa do enriquecimento
+ */
+export async function getEnrichmentStatus(runId: string): Promise<{
+  total: number;
+  whatsapp: { total_com_telefone: number; verificados: number; validos: number; invalidos: number; pending: number; sem_telefone: number };
+  whois: { total_br: number; enriched: number; pending: number; internacional: number; sem_dominio: number };
+  cnpj: { total_com_cnpj: number; enriched: number; pending: number; sem_cnpj: number };
+  scraping: { total_com_site: number; pending: number; processing: number; completed: number; failed: number; sem_site: number };
+  status_enrichment: { pending: number; enriching: number; completed: number };
+}> {
+  // Usar RPC para buscar dados de TODOS os leads no staging
+  const { data, error } = await supabase.rpc('get_enrichment_status', { run_id: runId });
+
+  if (error) {
+    console.error('Error fetching enrichment status:', error);
+    throw error;
+  }
+
+  // A RPC retorna o objeto já formatado
+  return data || {
+    total: 0,
+    whatsapp: { total_com_telefone: 0, verificados: 0, validos: 0, invalidos: 0, pending: 0, sem_telefone: 0 },
+    whois: { total_br: 0, enriched: 0, pending: 0, internacional: 0, sem_dominio: 0 },
+    cnpj: { total_com_cnpj: 0, enriched: 0, pending: 0, sem_cnpj: 0 },
+    scraping: { total_com_site: 0, pending: 0, processing: 0, completed: 0, failed: 0, sem_site: 0 },
+    status_enrichment: { pending: 0, enriching: 0, completed: 0 }
+  };
+}

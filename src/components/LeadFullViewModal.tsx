@@ -825,7 +825,13 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     try {
       // Gerar nome único para o arquivo
       const fileExt = file.name.split('.').pop();
-      const fileName = `${lead.id}/${Date.now()}_${file.name}`;
+      // Sanitizar nome do arquivo para remover caracteres especiais
+      const sanitizedFileName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+        .replace(/[^a-zA-Z0-9._-]/g, '_') // Substitui caracteres especiais por underscore
+        .replace(/_+/g, '_'); // Remove underscores duplicados
+      const fileName = `${lead.id}/${Date.now()}_${sanitizedFileName}`;
 
       // Upload para o storage
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -894,7 +900,13 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
     setUploadingFile(true);
     try {
-      const fileName = `${lead.id}/${Date.now()}_${file.name}`;
+      // Sanitizar nome do arquivo para remover caracteres especiais
+      const sanitizedFileName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+        .replace(/[^a-zA-Z0-9._-]/g, '_') // Substitui caracteres especiais por underscore
+        .replace(/_+/g, '_'); // Remove underscores duplicados
+      const fileName = `${lead.id}/${Date.now()}_${sanitizedFileName}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('lead-files')

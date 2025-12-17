@@ -15,6 +15,19 @@ const corsHeaders = {
 };
 
 const CNPJ_APIS = [
+  // Banco local (Hetzner) - PRIMEIRA OPÇÃO, mais rápido e sem rate limit
+  {
+    name: 'banco_local',
+    url: (cnpj: string) => `${Deno.env.get('SUPABASE_URL')}/functions/v1/cnpj-api?cnpj=${cnpj}`,
+    timeout: 15000,
+    // NOTA: Usando 'apikey' header para chamadas internas do Supabase
+    // Isso é mais seguro que passar service_role_key no Authorization header
+    headers: {
+      'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+    }
+  },
+  // APIs externas - fallback
   { name: 'brasilapi', url: (cnpj: string) => `https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, timeout: 10000 },
   { name: 'receitaws', url: (cnpj: string) => `https://www.receitaws.com.br/v1/cnpj/${cnpj}`, timeout: 15000 },
   { name: 'publica', url: (cnpj: string) => `https://publica.cnpj.ws/cnpj/${cnpj}`, timeout: 10000 }
@@ -42,18 +55,36 @@ function normalizeCNPJ(cnpj: string): string {
 async function fetchCNPJFromAPI(cnpj: string, api: any) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), api.timeout);
-  
+
   try {
     console.log(`🔍 [CNPJ] Consultando ${api.name} para CNPJ: ${cnpj}`);
+
+    // Montar headers (incluindo customizados se existirem)
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'User-Agent': 'PescaLead/1.0',
+      ...(api.headers || {})
+    };
+
     const response = await fetch(api.url(cnpj), {
       method: 'GET',
-      headers: { 'Accept': 'application/json', 'User-Agent': 'PescaLead/1.0' },
+      headers,
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) return { success: false, error: `HTTP ${response.status}` };
     const data = await response.json();
+
+    // Para banco_local, extrair data do wrapper
+    if (api.name === 'banco_local') {
+      if (data.success && data.data) {
+        console.log(`✅ [CNPJ] ${api.name} respondeu com sucesso (${data.response_time_ms}ms)`);
+        return { success: true, data: data.data };
+      }
+      return { success: false, error: data.error || 'CNPJ não encontrado' };
+    }
+
     console.log(`✅ [CNPJ] ${api.name} respondeu com sucesso`);
     return { success: true, data };
   } catch (error: any) {
@@ -173,8 +204,91 @@ serve(async (req) => {
       let normalizedData: any = {};
       let cnpjEmails: any[] = [];
       let cnpjPhones: any[] = [];
-      
-      if (provider === 'brasilapi') {
+
+      if (provider === 'banco_local') {
+        // Banco Local (Hetzner) - dados já normalizados pela cnpj-api
+        normalizedData = {
+          cnpj: normalizedCNPJ,
+          razao_social: apiData.razao_social,
+          nome_fantasia: apiData.nome_fantasia,
+          porte: apiData.porte,
+          natureza_juridica: apiData.natureza_juridica,
+          situacao_cadastral: apiData.situacao_cadastral,
+          data_situacao_cadastral: apiData.data_situacao_cadastral,
+          data_inicio_atividade: apiData.data_inicio_atividade,
+          tipo: apiData.tipo,
+          capital_social: apiData.capital_social,
+          // Endereço
+          logradouro: apiData.endereco?.logradouro ?
+            `${apiData.endereco.tipo_logradouro || ''} ${apiData.endereco.logradouro}`.trim() : null,
+          numero: apiData.endereco?.numero,
+          complemento: apiData.endereco?.complemento,
+          bairro: apiData.endereco?.bairro,
+          municipio: apiData.endereco?.municipio,
+          uf: apiData.endereco?.uf,
+          cep: apiData.endereco?.cep,
+          // Atividade
+          cnae_fiscal: apiData.atividade?.cnae_principal,
+          cnae_fiscal_descricao: apiData.atividade?.cnae_descricao,
+          // Simples
+          opcao_pelo_simples: apiData.simples?.opcao_simples,
+          data_opcao_pelo_simples: apiData.simples?.data_opcao_simples,
+          opcao_mei: apiData.simples?.opcao_mei,
+          data_opcao_mei: apiData.simples?.data_opcao_mei,
+          // Sócios (QSA)
+          qsa: apiData.socios?.map((s: any) => ({
+            nome: s.nome,
+            qual: s.qualificacao,
+            pais_origem: s.pais,
+            faixa_etaria: s.faixa_etaria
+          }))
+        };
+
+        // Email do banco local
+        if (apiData.contato?.email && apiData.contato.email.includes('@')) {
+          cnpjEmails.push({
+            address: apiData.contato.email.toLowerCase().trim(),
+            source: 'cnpj',
+            type: 'main',
+            verified: true
+          });
+        }
+
+        // Telefone 1 do banco local
+        if (apiData.contato?.telefone_1) {
+          const phoneStr = apiData.contato.telefone_1.replace(/\D/g, '');
+          if (phoneStr.length >= 10) {
+            const ddd = phoneStr.substring(0, 2);
+            const number = phoneStr.substring(2);
+            cnpjPhones.push({
+              number: phoneStr,
+              source: 'cnpj',
+              type: number.length === 8 ? 'landline' : 'mobile',
+              verified: true,
+              formatted: apiData.contato.telefone_1_formatted,
+              with_country: `+55 ${apiData.contato.telefone_1_formatted}`
+            });
+          }
+        }
+
+        // Telefone 2 do banco local
+        if (apiData.contato?.telefone_2) {
+          const phoneStr = apiData.contato.telefone_2.replace(/\D/g, '');
+          if (phoneStr.length >= 10) {
+            const ddd = phoneStr.substring(0, 2);
+            const number = phoneStr.substring(2);
+            cnpjPhones.push({
+              number: phoneStr,
+              source: 'cnpj',
+              type: number.length === 8 ? 'landline' : 'mobile',
+              verified: true,
+              formatted: apiData.contato.telefone_2_formatted,
+              with_country: `+55 ${apiData.contato.telefone_2_formatted}`
+            });
+          }
+        }
+
+      } else if (provider === 'brasilapi') {
         // BrasilAPI: https://brasilapi.com.br/api/cnpj/v1/{cnpj}
         normalizedData = {
           cnpj: normalizedCNPJ,

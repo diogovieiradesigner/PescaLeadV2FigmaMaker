@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -21,6 +21,7 @@ import {
   Filter,
   X,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { ProfileMenu } from './ProfileMenu';
@@ -36,6 +37,10 @@ import { EventModal } from './calendar/EventModal';
 import { CalendarSettingsModal } from './calendar/CalendarSettingsModal';
 import { ConfirmDialog } from './ui/confirm-dialog';
 import { cn } from './ui/utils';
+import { GoogleCalendarModal } from './GoogleCalendarModal';
+import { GoogleSyncBadge } from './CalendarSyncStatus';
+import { GOOGLE_EVENT_DEFAULT_COLOR } from '../types/google-calendar.types';
+import { isGoogleEvent } from '../services/google-calendar-service';
 
 interface CalendarViewProps {
   theme: Theme;
@@ -77,6 +82,20 @@ function getAssigneeColor(assigneeId: string, colorMap: Map<string, string>): st
   return colorMap.get(assigneeId)!;
 }
 
+// Função para obter cor do evento (considerando Google)
+function getEventColor(event: any, assigneeColorMap: Map<string, string>): string {
+  // Eventos do Google usam cor cinza
+  if (isGoogleEvent(event)) {
+    return GOOGLE_EVENT_DEFAULT_COLOR;
+  }
+  // Se tem responsável, usar cor do responsável
+  if (event.assigned_to) {
+    return getAssigneeColor(event.assigned_to, assigneeColorMap);
+  }
+  // Senão usar cor do tipo de evento
+  return EVENT_TYPE_CONFIG[event.event_type as EventType]?.color || '#3b82f6';
+}
+
 export function CalendarView({
   theme,
   onThemeToggle,
@@ -86,6 +105,7 @@ export function CalendarView({
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [draggedEvent, setDraggedEvent] = useState<InternalEventWithRelations | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -94,6 +114,14 @@ export function CalendarView({
     event: null,
     isLoading: false,
   });
+
+  // Check for Google Calendar callback params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google_connected') === 'true' || params.get('google_error')) {
+      setIsGoogleModalOpen(true);
+    }
+  }, []);
 
   const {
     currentDate,
@@ -120,6 +148,7 @@ export function CalendarView({
     cancelEvent,
     resumeEvent,
     deleteEvent,
+    refetchEvents,
   } = useCalendar({
     workspaceId: currentWorkspace?.id || '',
   });
@@ -460,7 +489,20 @@ export function CalendarView({
             </button>
           )}
 
-          {/* Calendar Settings */}
+          {/* Title and Description - First */}
+          <div>
+            <h1 className={cn('text-lg font-semibold', isDark ? 'text-white' : 'text-zinc-900')}>
+              Calendário
+            </h1>
+            <p className={cn('text-xs mt-0.5 hidden sm:block', isDark ? 'text-zinc-400' : 'text-zinc-600')}>
+              Gerencie seus eventos e compromissos
+            </p>
+          </div>
+
+          {/* Separator */}
+          <div className={cn('hidden sm:block h-6 w-px mx-1', isDark ? 'bg-white/10' : 'bg-zinc-200')} />
+
+          {/* Calendar Settings Button */}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className={cn(
@@ -474,15 +516,31 @@ export function CalendarView({
             <Settings className="w-4 h-4" />
           </button>
 
-          {/* Title */}
-          <div>
-            <h1 className={cn('text-lg font-semibold', isDark ? 'text-white' : 'text-zinc-900')}>
-              Calendário
-            </h1>
-            <p className={cn('text-xs mt-0.5 hidden sm:block', isDark ? 'text-zinc-400' : 'text-zinc-600')}>
-              Gerencie seus eventos e compromissos
-            </p>
-          </div>
+          {/* Google Calendar Sync Button */}
+          {currentWorkspace && (
+            <button
+              onClick={() => setIsGoogleModalOpen(true)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                isDark
+                  ? 'bg-white/[0.05] hover:bg-white/[0.08] text-white/70 hover:text-white'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900'
+              )}
+              title="Sincronizar com Google Calendar"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span className="hidden sm:inline">Sincronizar calendários</span>
+            </button>
+          )}
+
+          {/* Google Calendar Status Badge - Last */}
+          {currentWorkspace && (
+            <GoogleSyncBadge
+              workspaceId={currentWorkspace.id}
+              theme={theme}
+              onConnect={() => setIsGoogleModalOpen(true)}
+            />
+          )}
         </div>
 
         {/* Right Section */}
@@ -983,6 +1041,18 @@ export function CalendarView({
         variant="danger"
         isDark={isDark}
         isLoading={deleteConfirm.isLoading}
+      />
+
+      {/* Google Calendar Modal */}
+      <GoogleCalendarModal
+        isOpen={isGoogleModalOpen}
+        onClose={() => setIsGoogleModalOpen(false)}
+        theme={theme}
+        workspaceId={currentWorkspace?.id || ''}
+        onSyncComplete={() => {
+          // Re-fetch events after sync (sem reload da página)
+          refetchEvents();
+        }}
       />
     </div>
   );

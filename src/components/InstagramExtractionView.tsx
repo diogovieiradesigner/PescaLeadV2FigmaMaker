@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase/client';
@@ -8,7 +8,6 @@ import {
   Search,
   MapPin,
   Target,
-  Play,
   Loader2,
   Users,
   Mail,
@@ -32,6 +31,12 @@ interface InstagramExtractionViewProps {
   onNavigateToProgress?: (runId: string) => void;
 }
 
+export interface InstagramExtractionViewRef {
+  execute: () => Promise<void>;
+  canExecute: () => boolean;
+  isExecuting: () => boolean;
+}
+
 interface Funnel {
   id: string;
   name: string;
@@ -43,7 +48,8 @@ interface FunnelColumn {
   funnel_id: string;
 }
 
-export function InstagramExtractionView({ theme, onNavigateToProgress }: InstagramExtractionViewProps) {
+export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, InstagramExtractionViewProps>(
+  function InstagramExtractionView({ theme, onNavigateToProgress }, ref) {
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
 
@@ -64,6 +70,16 @@ export function InstagramExtractionView({ theme, onNavigateToProgress }: Instagr
   // Recent runs
   const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
+
+  // Validação
+  const canExecute = Boolean(niche && location && funnelId && columnId);
+
+  // Expor métodos via ref
+  useImperativeHandle(ref, () => ({
+    execute: handleExecute,
+    canExecute: () => canExecute && !executing,
+    isExecuting: () => executing,
+  }));
 
   // Fetch funnels
   useEffect(() => {
@@ -435,33 +451,6 @@ export function InstagramExtractionView({ theme, onNavigateToProgress }: Instagr
         </div>
       </div>
 
-      {/* Execute Button */}
-      <div className="flex items-center gap-4 pt-4 border-t border-white/[0.05]">
-        <button
-          onClick={handleExecute}
-          disabled={executing || !niche || !location || !funnelId || !columnId}
-          className="px-6 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {executing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{executionPhase || 'Executando...'}</span>
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4" />
-              <span>Iniciar Extração</span>
-            </>
-          )}
-        </button>
-
-        {executing && (
-          <p className={`text-sm ${isDark ? 'text-white/60' : 'text-gray-500'}`}>
-            Este processo pode levar alguns minutos...
-          </p>
-        )}
-      </div>
-
       {/* Recent Runs */}
       {recentRuns.length > 0 && (
         <div className={`mt-6 p-4 rounded-lg ${isDark ? 'bg-white/[0.03]' : 'bg-gray-50'}`}>
@@ -501,4 +490,4 @@ export function InstagramExtractionView({ theme, onNavigateToProgress }: Instagr
       )}
     </div>
   );
-}
+});

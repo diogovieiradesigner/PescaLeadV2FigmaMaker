@@ -3,7 +3,7 @@
 // UI principal para extração de leads via banco CNPJ
 // =============================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { useCNPJFilters, useCNPJExtraction } from '../hooks/useCNPJFilters';
@@ -12,7 +12,6 @@ import { supabase } from '../utils/supabase/client';
 import { SUPABASE_URL } from '../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import {
-  Play,
   Save,
   Loader2,
   RefreshCw,
@@ -31,6 +30,12 @@ interface CNPJExtractionViewProps {
   onNavigateToProgress?: (runId: string) => void;
 }
 
+export interface CNPJExtractionViewRef {
+  execute: () => Promise<void>;
+  canExecute: () => boolean;
+  isExecuting: () => boolean;
+}
+
 interface Funnel {
   id: string;
   name: string;
@@ -42,7 +47,8 @@ interface FunnelColumn {
   funnel_id: string;
 }
 
-export function CNPJExtractionView({ theme, onNavigateToProgress }: CNPJExtractionViewProps) {
+export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtractionViewProps>(
+  function CNPJExtractionView({ theme, onNavigateToProgress }, ref) {
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
 
@@ -67,6 +73,13 @@ export function CNPJExtractionView({ theme, onNavigateToProgress }: CNPJExtracti
   const [executing, setExecuting] = useState(false);
   const [stats, setStats] = useState<StatsPreview | null>(null);
   const [showValidation, setShowValidation] = useState(false);
+
+  // Expor métodos via ref
+  useImperativeHandle(ref, () => ({
+    execute: handleExecute,
+    canExecute: () => isValid && !executing,
+    isExecuting: () => executing,
+  }));
 
   // Carregar funis
   useEffect(() => {
@@ -504,26 +517,8 @@ export function CNPJExtractionView({ theme, onNavigateToProgress }: CNPJExtracti
             )}
           </button>
 
-          {/* Botão Executar - verde igual ao Google Maps */}
-          <button
-            onClick={handleExecute}
-            disabled={executing || !isValid}
-            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {executing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Executando...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                <span>Executar Agora</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
     </div>
   );
-}
+});

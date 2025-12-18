@@ -16,8 +16,8 @@ import { supabase } from '../utils/supabase/client';
 import { normalizeLocation } from '../utils/location';
 import { LocationSearchInput } from './LocationSearchInput';
 import { SearchTermInput, SearchTermInputRef } from './SearchTermInput';
-import { CNPJExtractionView } from './CNPJExtractionView';
-import { InstagramExtractionView } from './InstagramExtractionView';
+import { CNPJExtractionView, CNPJExtractionViewRef } from './CNPJExtractionView';
+import { InstagramExtractionView, InstagramExtractionViewRef } from './InstagramExtractionView';
 
 interface ExtractionViewProps {
   theme: Theme;
@@ -91,6 +91,14 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
 
   // Ref para o SearchTermInput
   const searchTermInputRef = useRef<SearchTermInputRef>(null);
+
+  // Refs para componentes de extração
+  const cnpjExtractionRef = useRef<CNPJExtractionViewRef>(null);
+  const instagramExtractionRef = useRef<InstagramExtractionViewRef>(null);
+
+  // Estados para controle de execução dos componentes filhos
+  const [cnpjExecuting, setCnpjExecuting] = useState(false);
+  const [instagramExecuting, setInstagramExecuting] = useState(false);
 
   // Tab ativa (google_maps, cnpj ou instagram)
   const [activeTab, setActiveTab] = useState<'google_maps' | 'cnpj' | 'instagram'>('google_maps');
@@ -453,6 +461,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
+          {/* Botão Google Maps */}
           {activeTab === 'google_maps' && selectedExtractionId && (
             <button
               onClick={handleExecute}
@@ -467,7 +476,67 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  <span>Executar Agora</span>
+                  <span>Executar Google Maps</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Botão CNPJ */}
+          {activeTab === 'cnpj' && (
+            <button
+              onClick={async () => {
+                if (cnpjExtractionRef.current?.canExecute()) {
+                  setCnpjExecuting(true);
+                  try {
+                    await cnpjExtractionRef.current.execute();
+                  } finally {
+                    setCnpjExecuting(false);
+                  }
+                }
+              }}
+              disabled={cnpjExecuting}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {cnpjExecuting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Executando...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  <span>Executar CNPJ</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Botão Instagram */}
+          {activeTab === 'instagram' && (
+            <button
+              onClick={async () => {
+                if (instagramExtractionRef.current?.canExecute()) {
+                  setInstagramExecuting(true);
+                  try {
+                    await instagramExtractionRef.current.execute();
+                  } finally {
+                    setInstagramExecuting(false);
+                  }
+                }
+              }}
+              disabled={instagramExecuting}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {instagramExecuting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Executando...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  <span>Executar Instagram</span>
                 </>
               )}
             </button>
@@ -566,6 +635,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               </div>
               <div className="p-6 bg-black">
                 <CNPJExtractionView
+                  ref={cnpjExtractionRef}
                   theme={theme}
                   onNavigateToProgress={onNavigateToProgress}
                 />
@@ -587,6 +657,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               </div>
               <div className="p-6 bg-black">
                 <InstagramExtractionView
+                  ref={instagramExtractionRef}
                   theme={theme}
                   onNavigateToProgress={onNavigateToProgress}
                 />

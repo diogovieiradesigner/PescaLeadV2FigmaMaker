@@ -77,31 +77,7 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
   // Validação
   const canExecute = Boolean(niche && location && funnelId && columnId);
 
-  // Expor métodos via ref
-  useImperativeHandle(ref, () => ({
-    execute: handleExecute,
-    canExecute: () => canExecute && !executing,
-    isExecuting: () => executing,
-  }));
-
-  // Fetch funnels e histórico
-  useEffect(() => {
-    if (currentWorkspace?.id) {
-      fetchFunnels();
-      fetchRecentRuns();
-    }
-  }, [currentWorkspace?.id]);
-
-  // Fetch columns when funnel changes
-  useEffect(() => {
-    if (funnelId) {
-      fetchColumns(funnelId);
-    } else {
-      setColumns([]);
-      setColumnId('');
-    }
-  }, [funnelId]);
-
+  // Funções de fetch - definidas antes dos useEffect que as usam
   const fetchFunnels = async () => {
     if (!currentWorkspace?.id) return;
 
@@ -153,6 +129,31 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
       setLoadingRuns(false);
     }
   };
+
+  // Expor métodos via ref
+  useImperativeHandle(ref, () => ({
+    execute: handleExecute,
+    canExecute: () => canExecute && !executing,
+    isExecuting: () => executing,
+  }));
+
+  // Fetch funnels e histórico
+  useEffect(() => {
+    if (currentWorkspace?.id) {
+      fetchFunnels();
+      fetchRecentRuns();
+    }
+  }, [currentWorkspace?.id]);
+
+  // Fetch columns when funnel changes
+  useEffect(() => {
+    if (funnelId) {
+      fetchColumns(funnelId);
+    } else {
+      setColumns([]);
+      setColumnId('');
+    }
+  }, [funnelId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {

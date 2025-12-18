@@ -81,6 +81,51 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
 
+  // Funções de fetch - definidas antes dos useEffect que as usam
+  const fetchFunnels = async () => {
+    if (!currentWorkspace?.id) return;
+
+    try {
+      setLoadingFunnels(true);
+      const { data, error } = await supabase
+        .from('funnels')
+        .select('id, name')
+        .eq('workspace_id', currentWorkspace.id)
+        .eq('is_active', true)
+        .order('position');
+
+      if (error) throw error;
+      setFunnels(data || []);
+    } catch (error) {
+      console.error('Error fetching funnels:', error);
+      toast.error('Erro ao carregar funis');
+    } finally {
+      setLoadingFunnels(false);
+    }
+  };
+
+  const fetchRecentRuns = async () => {
+    if (!currentWorkspace?.id) return;
+
+    try {
+      setLoadingRuns(true);
+      const { data, error } = await supabase
+        .from('lead_extraction_runs')
+        .select('*')
+        .eq('workspace_id', currentWorkspace.id)
+        .eq('source', 'cnpj')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setRecentRuns(data || []);
+    } catch (error) {
+      console.error('Error fetching recent CNPJ runs:', error);
+    } finally {
+      setLoadingRuns(false);
+    }
+  };
+
   // Expor métodos via ref
   useImperativeHandle(ref, () => ({
     execute: handleExecute,
@@ -116,28 +161,6 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     }
   }, [state.filters]);
 
-  const fetchFunnels = async () => {
-    if (!currentWorkspace?.id) return;
-
-    try {
-      setLoadingFunnels(true);
-      const { data, error } = await supabase
-        .from('funnels')
-        .select('id, name')
-        .eq('workspace_id', currentWorkspace.id)
-        .eq('is_active', true)
-        .order('position');
-
-      if (error) throw error;
-      setFunnels(data || []);
-    } catch (error) {
-      console.error('Error fetching funnels:', error);
-      toast.error('Erro ao carregar funis');
-    } finally {
-      setLoadingFunnels(false);
-    }
-  };
-
   const fetchColumns = async (funnelId: string) => {
     try {
       const { data, error } = await supabase
@@ -157,28 +180,6 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     const preview = await getStats(state.filters);
     if (preview) {
       setStats(preview);
-    }
-  };
-
-  const fetchRecentRuns = async () => {
-    if (!currentWorkspace?.id) return;
-
-    try {
-      setLoadingRuns(true);
-      const { data, error } = await supabase
-        .from('lead_extraction_runs')
-        .select('*')
-        .eq('workspace_id', currentWorkspace.id)
-        .eq('source', 'cnpj')
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) throw error;
-      setRecentRuns(data || []);
-    } catch (error) {
-      console.error('Error fetching recent CNPJ runs:', error);
-    } finally {
-      setLoadingRuns(false);
     }
   };
 

@@ -3,12 +3,12 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
-import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { useExtractionData } from '../hooks/useExtractionData';
-import { CheckCircle, AlertCircle, XCircle, History, Clock, Play, Trash2, Save, Loader2, Sun, Moon, Bell, Eye, ArrowRight } from 'lucide-react';
+import { CheckCircle, AlertCircle, XCircle, History, Clock, Play, Trash2, Save, Loader2, Sun, Moon, Bell, Eye, ArrowRight, MapPin, Building2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { ProfileMenu } from './ProfileMenu';
 import { MoveLeadsModal } from './MoveLeadsModal';
@@ -16,6 +16,7 @@ import { supabase } from '../utils/supabase/client';
 import { normalizeLocation } from '../utils/location';
 import { LocationSearchInput } from './LocationSearchInput';
 import { SearchTermInput, SearchTermInputRef } from './SearchTermInput';
+import { CNPJExtractionView } from './CNPJExtractionView';
 
 interface ExtractionViewProps {
   theme: Theme;
@@ -89,6 +90,9 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
 
   // Ref para o SearchTermInput
   const searchTermInputRef = useRef<SearchTermInputRef>(null);
+
+  // Tab ativa (google_maps ou cnpj)
+  const [activeTab, setActiveTab] = useState<'google_maps' | 'cnpj'>('google_maps');
 
   const itemsPerPage = 10;
 
@@ -434,17 +438,17 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
         <div className="flex items-center gap-4">
           <div>
             <h1 className={isDark ? 'text-white' : 'text-text-primary-light'}>
-              Extração Automática
+              Extração de Leads
             </h1>
             <p className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-              Configure a extração diária baseada em ICP
+              {activeTab === 'google_maps' ? 'Extraia leads do Google Maps' : 'Extraia leads do banco CNPJ'}
             </p>
           </div>
         </div>
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
-          {selectedExtractionId && (
+          {activeTab === 'google_maps' && selectedExtractionId && (
             <button
               onClick={handleExecute}
               disabled={executing !== null}
@@ -501,6 +505,59 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
       {/* Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
         <div className="max-w-6xl mx-auto space-y-6">
+          {/* Tabs de Fonte de Extração */}
+          <div className={`flex gap-2 p-1 rounded-lg ${isDark ? 'bg-white/[0.05]' : 'bg-gray-100'}`}>
+            <button
+              onClick={() => setActiveTab('google_maps')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                activeTab === 'google_maps'
+                  ? 'bg-[#0169D9] text-white shadow-sm'
+                  : isDark
+                    ? 'text-white/60 hover:text-white hover:bg-white/[0.05]'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              <MapPin className="w-4 h-4" />
+              <span>Google Maps</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('cnpj')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                activeTab === 'cnpj'
+                  ? 'bg-[#0169D9] text-white shadow-sm'
+                  : isDark
+                    ? 'text-white/60 hover:text-white hover:bg-white/[0.05]'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Banco CNPJ</span>
+            </button>
+          </div>
+
+          {/* Conteúdo da Tab CNPJ */}
+          {activeTab === 'cnpj' && (
+            <div className={`overflow-hidden rounded-lg ${isDark ? 'bg-elevated' : 'bg-white'}`}>
+              <div className={`px-6 py-3.5 border-b bg-black ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
+                <h2 className={isDark ? 'text-white' : 'text-text-primary-light'}>
+                  Extração via Banco CNPJ
+                </h2>
+                <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                  Busque empresas por UF, CNAE, porte e outros filtros
+                </p>
+              </div>
+              <div className="p-6 bg-black">
+                <CNPJExtractionView
+                  theme={theme}
+                  onNavigateToProgress={onNavigateToProgress}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Conteúdo da Tab Google Maps (existente) */}
+          {activeTab === 'google_maps' && (
+          <>
           {/* Configuration Card */}
           <div className={`overflow-hidden ${
             isDark ? 'bg-elevated' : 'bg-white'
@@ -511,7 +568,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               <h2 className={isDark ? 'text-white' : 'text-text-primary-light'}>
                 Configuração da Extração
               </h2>
-              
+
               <div className="flex items-center gap-2">
                 <span className={`text-sm ${isDark ? 'text-white/60' : 'text-text-secondary-light'}`}>
                   {isActive ? 'Ativo' : 'Inativo'}
@@ -1029,6 +1086,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       </div>
 

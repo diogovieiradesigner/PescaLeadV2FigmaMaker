@@ -21,7 +21,10 @@ import {
   Mail,
   Phone,
   MapPin,
-  TrendingUp
+  TrendingUp,
+  XCircle,
+  Eye,
+  Clock
 } from 'lucide-react';
 import type { StatsPreview } from '../types/cnpj-extraction';
 
@@ -74,6 +77,10 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   const [stats, setStats] = useState<StatsPreview | null>(null);
   const [showValidation, setShowValidation] = useState(false);
 
+  // Histórico state
+  const [recentRuns, setRecentRuns] = useState<any[]>([]);
+  const [loadingRuns, setLoadingRuns] = useState(false);
+
   // Expor métodos via ref
   useImperativeHandle(ref, () => ({
     execute: handleExecute,
@@ -81,10 +88,11 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     isExecuting: () => executing,
   }));
 
-  // Carregar funis
+  // Carregar funis e histórico
   useEffect(() => {
     if (currentWorkspace?.id) {
       fetchFunnels();
+      fetchRecentRuns();
     }
   }, [currentWorkspace?.id]);
 
@@ -150,6 +158,68 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     if (preview) {
       setStats(preview);
     }
+  };
+
+  const fetchRecentRuns = async () => {
+    if (!currentWorkspace?.id) return;
+
+    try {
+      setLoadingRuns(true);
+      const { data, error } = await supabase
+        .from('lead_extraction_runs')
+        .select('*')
+        .eq('workspace_id', currentWorkspace.id)
+        .eq('source', 'cnpj')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setRecentRuns(data || []);
+    } catch (error) {
+      console.error('Error fetching recent CNPJ runs:', error);
+    } finally {
+      setLoadingRuns(false);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'partial':
+        return <AlertCircle className="w-4 h-4 text-yellow-500" />;
+      case 'failed':
+      case 'cancelled':
+        return <XCircle className="w-4 h-4 text-red-500" />;
+      case 'running':
+      case 'processing':
+        return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      default:
+        return <Clock className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'completed': return 'Concluído';
+      case 'partial': return 'Parcial';
+      case 'failed': return 'Falhou';
+      case 'cancelled': return 'Cancelado';
+      case 'pending': return 'Pendente';
+      case 'running': return 'Executando';
+      case 'processing': return 'Processando';
+      default: return status;
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR');
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
   // Salvar configuração
@@ -246,6 +316,9 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
       if (result.success) {
         toast.success(`${result.found_quantity} empresas encontradas!`);
 
+        // Atualizar histórico
+        await fetchRecentRuns();
+
         // Navegar para progresso
         if (onNavigateToProgress && result.run_id) {
           onNavigateToProgress(result.run_id);
@@ -258,6 +331,8 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
       toast.error(error instanceof Error ? error.message : 'Erro ao executar extração');
     } finally {
       setExecuting(false);
+      // Refresh runs mesmo em caso de erro
+      fetchRecentRuns();
     }
   };
 
@@ -517,6 +592,122 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
             )}
           </button>
 
+        </div>
+      </div>
+
+      {/* Histórico de Extrações */}
+      <div className={`mt-6 rounded-lg border overflow-hidden ${isDark ? 'bg-elevated border-white/[0.08]' : 'bg-white border-border-light'}`}>
+        <div className={`px-6 py-3.5 border-b ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
+          <h3 className={`font-medium ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+            Histórico de Extrações CNPJ
+          </h3>
+          <p className={`text-xs mt-0.5 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+            Últimas 10 extrações realizadas
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className={`text-xs uppercase ${isDark ? 'text-white/50 bg-white/[0.02]' : 'text-text-secondary-light bg-light-elevated'}`}>
+              <tr>
+                <th className="px-6 py-3 text-left font-medium">Data/Hora</th>
+                <th className="px-6 py-3 text-left font-medium">Busca</th>
+                <th className="px-6 py-3 text-left font-medium">Encontrados</th>
+                <th className="px-6 py-3 text-left font-medium">Leads</th>
+                <th className="px-6 py-3 text-left font-medium">Status</th>
+                <th className="px-6 py-3 text-center font-medium">Ações</th>
+              </tr>
+            </thead>
+            <tbody className={`text-sm ${isDark ? 'divide-y divide-white/[0.05]' : 'divide-y divide-border-light'}`}>
+              {loadingRuns ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center">
+                    <Loader2 className={`w-6 h-6 animate-spin mx-auto ${isDark ? 'text-white/50' : 'text-gray-400'}`} />
+                  </td>
+                </tr>
+              ) : recentRuns.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center">
+                    <p className={isDark ? 'text-white/50' : 'text-text-secondary-light'}>
+                      Nenhuma extração CNPJ realizada ainda
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                recentRuns.map((run) => (
+                  <tr key={run.id} className={`transition-all ${isDark ? 'bg-white/[0.02] hover:bg-white/[0.04]' : 'hover:bg-light-elevated/50'}`}>
+                    <td className={`px-6 py-4 ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                      <div>
+                        <div className="font-medium">{formatDate(run.created_at)}</div>
+                        <div className={`text-xs ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
+                          {formatTime(run.created_at)}
+                        </div>
+                      </div>
+                    </td>
+                    <td className={`px-6 py-4 ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                      <div>
+                        <div className="font-medium">{run.niche || run.search_term || '-'}</div>
+                        <div className={`text-xs ${isDark ? 'text-white/40' : 'text-text-secondary-light'}`}>
+                          {run.location || '-'}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 rounded text-sm font-medium ${
+                          (run.found_quantity || 0) > 0
+                            ? 'bg-blue-500/10 text-blue-500'
+                            : 'bg-gray-500/10 text-gray-500'
+                        }`}>
+                          {formatNumber(run.found_quantity || 0)}
+                        </span>
+                        <span className={isDark ? 'text-white/30' : 'text-text-secondary-light'}>/</span>
+                        <span className={isDark ? 'text-white/50' : 'text-text-secondary-light'}>
+                          {formatNumber(run.target_quantity || 0)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded text-sm font-medium ${
+                        (run.leads_created || 0) > 0
+                          ? 'bg-green-500/10 text-green-500'
+                          : 'bg-gray-500/10 text-gray-500'
+                      }`}>
+                        {formatNumber(run.leads_created || 0)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-medium ${
+                        run.status === 'completed'
+                          ? 'bg-green-500/10 text-green-500'
+                          : run.status === 'partial'
+                            ? 'bg-yellow-500/10 text-yellow-500'
+                            : ['running', 'processing'].includes(run.status)
+                              ? 'bg-blue-500/10 text-blue-500'
+                              : run.status === 'failed' || run.status === 'cancelled'
+                                ? 'bg-red-500/10 text-red-500'
+                                : 'bg-gray-500/10 text-gray-500'
+                      }`}>
+                        {getStatusIcon(run.status)}
+                        <span>{getStatusText(run.status)}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 justify-center">
+                        <button
+                          onClick={() => onNavigateToProgress && onNavigateToProgress(run.id)}
+                          className="px-3 py-1.5 text-sm rounded-lg bg-[#0169D9] hover:bg-[#0159c9] text-white flex items-center gap-1.5"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>Detalhes</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

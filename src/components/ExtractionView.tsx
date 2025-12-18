@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { useExtractionData } from '../hooks/useExtractionData';
-import { CheckCircle, AlertCircle, XCircle, History, Clock, Play, Trash2, Save, Loader2, Sun, Moon, Bell, Eye, ArrowRight, MapPin, Building2 } from 'lucide-react';
+import { CheckCircle, AlertCircle, XCircle, History, Clock, Play, Trash2, Save, Loader2, Sun, Moon, Bell, Eye, ArrowRight, MapPin, Building2, Instagram } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { ProfileMenu } from './ProfileMenu';
 import { MoveLeadsModal } from './MoveLeadsModal';
@@ -17,6 +17,7 @@ import { normalizeLocation } from '../utils/location';
 import { LocationSearchInput } from './LocationSearchInput';
 import { SearchTermInput, SearchTermInputRef } from './SearchTermInput';
 import { CNPJExtractionView } from './CNPJExtractionView';
+import { InstagramExtractionView } from './InstagramExtractionView';
 
 interface ExtractionViewProps {
   theme: Theme;
@@ -91,8 +92,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   // Ref para o SearchTermInput
   const searchTermInputRef = useRef<SearchTermInputRef>(null);
 
-  // Tab ativa (google_maps ou cnpj)
-  const [activeTab, setActiveTab] = useState<'google_maps' | 'cnpj'>('google_maps');
+  // Tab ativa (google_maps, cnpj ou instagram)
+  const [activeTab, setActiveTab] = useState<'google_maps' | 'cnpj' | 'instagram'>('google_maps');
 
   const itemsPerPage = 10;
 
@@ -441,7 +442,11 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               Extração de Leads
             </h1>
             <p className={`text-xs ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-              {activeTab === 'google_maps' ? 'Extraia leads do Google Maps' : 'Extraia leads do banco CNPJ'}
+              {activeTab === 'google_maps'
+                ? 'Extraia leads do Google Maps'
+                : activeTab === 'cnpj'
+                  ? 'Extraia leads do banco CNPJ'
+                  : 'Extraia leads do Instagram'}
             </p>
           </div>
         </div>
@@ -533,6 +538,19 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               <Building2 className="w-4 h-4" />
               <span>Banco CNPJ</span>
             </button>
+            <button
+              onClick={() => setActiveTab('instagram')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
+                activeTab === 'instagram'
+                  ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-sm'
+                  : isDark
+                    ? 'text-white/60 hover:text-white hover:bg-white/[0.05]'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+              }`}
+            >
+              <Instagram className="w-4 h-4" />
+              <span>Instagram</span>
+            </button>
           </div>
 
           {/* Conteúdo da Tab CNPJ */}
@@ -548,6 +566,27 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               </div>
               <div className="p-6 bg-black">
                 <CNPJExtractionView
+                  theme={theme}
+                  onNavigateToProgress={onNavigateToProgress}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Conteúdo da Tab Instagram */}
+          {activeTab === 'instagram' && (
+            <div className={`overflow-hidden rounded-lg ${isDark ? 'bg-elevated' : 'bg-white'}`}>
+              <div className={`px-6 py-3.5 border-b bg-black ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
+                <h2 className={`flex items-center gap-2 ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                  <Instagram className="w-5 h-5 text-pink-500" />
+                  Extração via Instagram
+                </h2>
+                <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                  Encontre perfis comerciais por nicho e localização
+                </p>
+              </div>
+              <div className="p-6 bg-black">
+                <InstagramExtractionView
                   theme={theme}
                   onNavigateToProgress={onNavigateToProgress}
                 />

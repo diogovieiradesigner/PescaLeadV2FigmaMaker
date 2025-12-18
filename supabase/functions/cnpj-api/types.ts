@@ -147,9 +147,13 @@ export interface SearchFilters {
   // Busca por texto
   termo?: string;                    // Busca em nome_fantasia OU razao_social
 
-  // Localização
+  // Localização (texto livre - será parseado para extrair UF/município)
+  localizacao?: string;              // Ex: "Joao Pessoa, Paraiba, Brasil"
+
+  // Localização específica
   uf?: string[];                     // Estados (array)
   municipio?: string[];              // Códigos IBGE
+  municipio_nome?: string;           // Nome do município (busca LIKE)
   cep_prefixo?: string;              // Prefixo CEP (região)
   ddd?: string[];                    // DDDs (array)
 

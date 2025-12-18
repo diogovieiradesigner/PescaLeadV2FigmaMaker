@@ -24,6 +24,76 @@ import {
 const MAX_LIMIT = 10000;
 const DEFAULT_LIMIT = 100;
 
+// Mapeamento de nomes de estados para siglas UF
+const ESTADO_PARA_UF: Record<string, string> = {
+  'acre': 'AC', 'alagoas': 'AL', 'amapa': 'AP', 'amazonas': 'AM',
+  'bahia': 'BA', 'ceara': 'CE', 'distrito federal': 'DF', 'espirito santo': 'ES',
+  'goias': 'GO', 'maranhao': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS',
+  'minas gerais': 'MG', 'para': 'PA', 'paraiba': 'PB', 'parana': 'PR',
+  'pernambuco': 'PE', 'piaui': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN',
+  'rio grande do sul': 'RS', 'rondonia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC',
+  'sao paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO'
+};
+
+// Lista de UFs válidas
+const UFS_VALIDAS = new Set(Object.values(ESTADO_PARA_UF));
+
+/**
+ * Parseia localização textual para extrair UF e nome do município
+ * Ex: "Joao Pessoa, Paraiba, Brasil" -> { uf: 'PB', municipio_nome: 'Joao Pessoa' }
+ */
+function parseLocalizacao(localizacao: string): { uf?: string; municipio_nome?: string } {
+  if (!localizacao) return {};
+
+  // Normalizar: remover acentos e lowercase
+  const normalizado = localizacao
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  // Dividir por vírgula
+  const partes = normalizado.split(',').map(p => p.trim()).filter(p => p && p !== 'brasil');
+
+  if (partes.length === 0) return {};
+
+  let uf: string | undefined;
+  let municipio_nome: string | undefined;
+
+  // Tentar identificar UF e município
+  for (let i = partes.length - 1; i >= 0; i--) {
+    const parte = partes[i];
+
+    // Verificar se é uma sigla de UF
+    if (parte.length === 2 && UFS_VALIDAS.has(parte.toUpperCase())) {
+      uf = parte.toUpperCase();
+      continue;
+    }
+
+    // Verificar se é nome de estado
+    if (ESTADO_PARA_UF[parte]) {
+      uf = ESTADO_PARA_UF[parte];
+      continue;
+    }
+
+    // Se ainda não temos município, assumir que é o nome da cidade
+    if (!municipio_nome && parte.length > 2) {
+      // Capitalizar para busca
+      municipio_nome = parte
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+  }
+
+  // Se só temos uma parte e é nome de estado, não é município
+  if (partes.length === 1 && uf && !municipio_nome) {
+    return { uf };
+  }
+
+  return { uf, municipio_nome };
+}
+
 // Campos válidos para ordenação (com e sem JOIN)
 const VALID_ORDER_FIELDS: Record<string, { field: string; requiresJoin?: string }> = {
   'razao_social': { field: 'emp.razao_social', requiresJoin: 'empresa' },
@@ -53,15 +123,9 @@ function determineRequiredJoins(filters: SearchFilters, orderBy: string): {
   const orderConfig = VALID_ORDER_FIELDS[orderBy];
 
   return {
-    // JOIN empresa: filtros de porte, capital, natureza, termo (razão social), ou ordenação
-    needsEmpresa: !!(
-      filters.termo ||
-      filters.porte?.length ||
-      filters.capital_social_min !== undefined ||
-      filters.capital_social_max !== undefined ||
-      filters.natureza_juridica?.length ||
-      orderConfig?.requiresJoin === 'empresa'
-    ),
+    // JOIN empresa: SEMPRE - precisamos da razão social e porte para exibição
+    // Antes era condicional, mas isso fazia com que razao_social viesse NULL
+    needsEmpresa: true,
     // JOIN simples: filtros de simples ou mei
     needsSimples: !!(
       filters.simples !== undefined ||
@@ -113,16 +177,42 @@ export function buildSearchQuery(
   // ==========================================================================
   // FILTROS DE LOCALIZAÇÃO
   // ==========================================================================
+
+  // Processar localização textual (ex: "Joao Pessoa, Paraiba, Brasil")
+  if (filters.localizacao) {
+    const { uf: parsedUf, municipio_nome: parsedMunicipio } = parseLocalizacao(filters.localizacao);
+    console.log(`📍 [LOCALIZACAO] Parsed: "${filters.localizacao}" -> UF: ${parsedUf}, Município: ${parsedMunicipio}`);
+
+    if (parsedUf) {
+      conditions.push(`est.uf = $${paramIndex++}`);
+      params.push(parsedUf);
+    }
+
+    if (parsedMunicipio) {
+      // Busca no nome do município (tabela munic) - precisa do JOIN
+      conditions.push(`mun.descricao ILIKE $${paramIndex++}`);
+      params.push(`%${parsedMunicipio}%`);
+    }
+  }
+
+  // Filtros específicos de UF (array)
   if (filters.uf && filters.uf.length > 0) {
     const placeholders = filters.uf.map(() => `$${paramIndex++}`).join(', ');
     conditions.push(`est.uf IN (${placeholders})`);
     params.push(...filters.uf);
   }
 
+  // Filtros específicos de município por código
   if (filters.municipio && filters.municipio.length > 0) {
     const placeholders = filters.municipio.map(() => `$${paramIndex++}`).join(', ');
     conditions.push(`est.municipio IN (${placeholders})`);
     params.push(...filters.municipio);
+  }
+
+  // Filtro de município por nome (busca LIKE)
+  if (filters.municipio_nome) {
+    conditions.push(`mun.descricao ILIKE $${paramIndex++}`);
+    params.push(`%${filters.municipio_nome}%`);
   }
 
   if (filters.cep_prefixo) {
@@ -366,10 +456,14 @@ export async function handleSearch(
 
   console.log(`🔍 [SEARCH] Query: ${params.length} params, limit: ${limit}, offset: ${offset}`);
 
+  // Parâmetros para a query de contagem (sem LIMIT e OFFSET)
+  // Os últimos 2 parâmetros são LIMIT e OFFSET, que não existem no countSql
+  const countParams = params.slice(0, -2);
+
   // Executar queries em paralelo
   const [dataResult, countResult] = await Promise.all([
     db.unsafe(sql, params),
-    db.unsafe(countSql, params)
+    db.unsafe(countSql, countParams)
   ]);
 
   const total = parseInt(countResult[0]?.total || '0', 10);
@@ -425,6 +519,23 @@ export async function handleStats(
   const conditions: string[] = [];
   const params: unknown[] = [];
   let paramIndex = 1;
+
+  // Processar localização textual (igual ao buildSearchQuery)
+  let needsMunicJoin = false;
+  if (filters.localizacao) {
+    const { uf: parsedUf, municipio_nome: parsedMunicipio } = parseLocalizacao(filters.localizacao);
+
+    if (parsedUf) {
+      conditions.push(`est.uf = $${paramIndex++}`);
+      params.push(parsedUf);
+    }
+
+    if (parsedMunicipio) {
+      conditions.push(`mun.descricao ILIKE $${paramIndex++}`);
+      params.push(`%${parsedMunicipio}%`);
+      needsMunicJoin = true;
+    }
+  }
 
   // Aplicar mesma lógica de filtros do buildSearchQuery (simplificado)
   if (filters.uf?.length) {
@@ -497,6 +608,9 @@ export async function handleStats(
   if (joins.needsSimples) {
     joinClauses.push('LEFT JOIN simples sim ON est.cnpj_basico = sim.cnpj_basico');
   }
+  if (needsMunicJoin) {
+    joinClauses.push('LEFT JOIN munic mun ON est.municipio = mun.codigo');
+  }
 
   // Query de estatísticas otimizada
   const statsSql = `
@@ -510,7 +624,7 @@ ${joinClauses.join('\n')}
 ${whereClause};
 `;
 
-  console.log(`📊 [STATS] Query: ${params.length} params, JOINs: empresa=${joins.needsEmpresa}, simples=${joins.needsSimples}`);
+  console.log(`📊 [STATS] Query: ${params.length} params, JOINs: empresa=${joins.needsEmpresa}, simples=${joins.needsSimples}, munic=${needsMunicJoin}`);
 
   const result = await db.unsafe(statsSql, params);
   const row = result[0];

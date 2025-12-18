@@ -47,9 +47,11 @@ const ALLOWED_ORIGINS = [
   // Desenvolvimento local
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:3001',
   'http://localhost:4200',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
 ];
 
 /**
@@ -157,9 +159,13 @@ function getConnection() {
 
 /**
  * Verifica se a requisição é uma chamada interna do Supabase (Edge Function para Edge Function).
- * Chamadas internas são identificadas pelo header x-supabase-* e confiáveis.
- * NOTA: Não aceita mais service_role_key diretamente no Authorization header
- * para prevenir bypass de autenticação por clientes externos.
+ * Chamadas internas são identificadas pelo header x-supabase-* ou service_role_key.
+ *
+ * SEGURANÇA: Aceita service_role via:
+ * 1. Header 'apikey' (padrão do Supabase)
+ * 2. Authorization Bearer (para chamadas entre Edge Functions)
+ *
+ * Isso é seguro porque service_role_key só existe no servidor.
  */
 function isInternalSupabaseCall(req: Request): boolean {
   // Headers que indicam chamada interna do Supabase
@@ -171,18 +177,32 @@ function isInternalSupabaseCall(req: Request): boolean {
   // Se qualquer header interno do Supabase existir, é chamada interna
   for (const header of supabaseHeaders) {
     if (req.headers.get(header)) {
+      console.log(`🔐 [AUTH] Internal call detected via header: ${header}`);
       return true;
     }
   }
 
-  // Verificar se é uma chamada com apikey do Supabase (usado internamente)
-  const apikey = req.headers.get('apikey');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!serviceRoleKey) {
+    console.warn('🔐 [AUTH] SUPABASE_SERVICE_ROLE_KEY not available');
+    return false;
+  }
 
-  // IMPORTANTE: Só aceita service_role via header 'apikey' (padrão do Supabase interno)
-  // NÃO aceita via Authorization header (vulnerável a bypass externo)
-  if (apikey && serviceRoleKey && apikey === serviceRoleKey) {
+  // Verificar via header 'apikey' (padrão do Supabase interno)
+  const apikey = req.headers.get('apikey');
+  if (apikey && apikey === serviceRoleKey) {
+    console.log('🔐 [AUTH] Internal call detected via apikey header');
     return true;
+  }
+
+  // Verificar via Authorization Bearer (para chamadas Edge → Edge)
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.replace('Bearer ', '');
+    if (token === serviceRoleKey) {
+      console.log('🔐 [AUTH] Internal call detected via Authorization Bearer');
+      return true;
+    }
   }
 
   return false;
@@ -277,6 +297,80 @@ Deno.serve(async (req) => {
       });
     }
 
+    // CNAEs - busca CNAEs do banco (publico)
+    // OTIMIZADO: Usa apenas tabela cnae para ser rápido (sem COUNT que demora 45s+)
+    if (endpoint === 'cnaes' && req.method === 'GET') {
+      const db = getConnection();
+      const searchTerm = url.searchParams.get('q') || '';
+      const divisao = url.searchParams.get('divisao') || '';
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
+
+      try {
+        // Query rápida usando apenas tabela cnae
+        let query = `
+          SELECT codigo, descricao
+          FROM cnae
+          WHERE codigo IS NOT NULL
+            AND codigo != ''
+        `;
+
+        const conditions: string[] = [];
+        const params: (string | number)[] = [];
+
+        // Filtro por divisão (2 primeiros dígitos)
+        if (divisao) {
+          conditions.push(`codigo LIKE $${params.length + 1}`);
+          params.push(`${divisao}%`);
+        }
+
+        // Filtro por termo de busca (na descrição ou código)
+        if (searchTerm) {
+          conditions.push(`(descricao ILIKE $${params.length + 1} OR codigo LIKE $${params.length + 2})`);
+          params.push(`%${searchTerm}%`);
+          params.push(`%${searchTerm}%`);
+        }
+
+        if (conditions.length > 0) {
+          query += ` AND ${conditions.join(' AND ')}`;
+        }
+
+        query += `
+          ORDER BY codigo
+          LIMIT $${params.length + 1}
+        `;
+        params.push(limit);
+
+        const result = await db.unsafe(query, params);
+
+        const cnaes = result.map((row: { codigo: string; descricao: string }) => ({
+          value: row.codigo,
+          label: `${row.codigo} - ${row.descricao?.trim() || 'Sem descrição'}`
+        }));
+
+        return new Response(JSON.stringify({
+          success: true,
+          cnaes,
+          total: cnaes.length,
+          response_time_ms: Date.now() - startTime
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      } catch (error) {
+        console.error('[CNAES] Error:', error);
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Failed to fetch CNAEs',
+          details: error instanceof Error ? error.message : 'Unknown error',
+          response_time_ms: Date.now() - startTime
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     // ==========================================================================
     // ENDPOINTS QUE REQUEREM AUTENTICACAO
     // ==========================================================================
@@ -341,23 +435,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Stats - estatisticas/preview (requer auth)
-    if (endpoint === 'stats' && req.method === 'GET') {
-      const auth = await verifyAuth(req);
-
-      if (!auth.authenticated) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'Unauthorized',
-          message: auth.error
-        }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+    // Stats - estatisticas/preview (público - apenas contagem, sem dados sensíveis)
+    // Aceita GET ou POST
+    if (endpoint === 'stats' && (req.method === 'GET' || req.method === 'POST')) {
+      // Parse filtros do query string (GET) ou body (POST)
+      let filters: SearchFilters;
+      if (req.method === 'POST') {
+        try {
+          const body = await req.json();
+          filters = body.filters || {};
+        } catch {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Invalid JSON body'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      } else {
+        filters = parseQueryFilters(url.searchParams);
       }
-
-      // Parse filtros do query string
-      const filters = parseQueryFilters(url.searchParams);
 
       const db = getConnection();
       const response = await handleStats(db, filters);

@@ -327,8 +327,35 @@ export async function confirmEvent(
 
 /**
  * Deleta um evento permanentemente
+ * Se o evento estiver sincronizado com Google Calendar, também deleta no Google
  */
-export async function deleteEvent(eventId: string): Promise<void> {
+export async function deleteEvent(eventId: string, workspaceId?: string): Promise<void> {
+  // Primeiro, buscar o evento para verificar se tem google_event_id
+  const { data: event, error: fetchError } = await supabase
+    .from('internal_events')
+    .select('id, google_event_id, google_calendar_sync_id, workspace_id')
+    .eq('id', eventId)
+    .single();
+
+  if (fetchError) {
+    console.error('[calendar-service] Error fetching event for delete:', fetchError);
+    throw fetchError;
+  }
+
+  // Se o evento está sincronizado com Google, tentar deletar lá também
+  if (event?.google_event_id && event?.workspace_id) {
+    try {
+      // Importar dinamicamente para evitar dependência circular
+      const { deleteGoogleEvent } = await import('./google-calendar-service');
+      await deleteGoogleEvent(eventId, event.workspace_id);
+      console.log('[calendar-service] Event deleted from Google Calendar:', event.google_event_id);
+    } catch (googleError: any) {
+      // Log mas não falhar - o evento pode já ter sido deletado no Google
+      console.warn('[calendar-service] Failed to delete from Google (continuing with local delete):', googleError.message);
+    }
+  }
+
+  // Deletar evento local
   const { error } = await supabase
     .from('internal_events')
     .delete()

@@ -529,14 +529,14 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
               onClick={() => setActiveTab('cnpj')}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all ${
                 activeTab === 'cnpj'
-                  ? 'bg-[#0169D9] text-white shadow-sm'
+                  ? 'bg-gradient-to-r from-green-600 to-yellow-500 text-white shadow-sm'
                   : isDark
                     ? 'text-white/60 hover:text-white hover:bg-white/[0.05]'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>Banco CNPJ</span>
+              <span>CNPJ</span>
             </button>
             <button
               onClick={() => setActiveTab('instagram')}

@@ -11,10 +11,7 @@ import {
   Loader2,
   Users,
   Mail,
-  Phone,
-  CheckCircle,
-  AlertCircle,
-  Clock
+  Phone
 } from 'lucide-react';
 import {
   createInstagramExtraction,
@@ -22,7 +19,6 @@ import {
   startEnrichment,
   checkEnrichment,
   startMigration,
-  listInstagramExtractions,
 } from '../services/instagram-extraction-service';
 import { SUGGESTED_NICHES, SUGGESTED_LOCATIONS } from '../types/instagram.types';
 
@@ -67,10 +63,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
   const [executing, setExecuting] = useState(false);
   const [executionPhase, setExecutionPhase] = useState<string | null>(null);
 
-  // Recent runs
-  const [recentRuns, setRecentRuns] = useState<any[]>([]);
-  const [loadingRuns, setLoadingRuns] = useState(false);
-
   // Validação
   const canExecute = Boolean(niche && location && funnelId && columnId);
 
@@ -85,7 +77,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
   useEffect(() => {
     if (currentWorkspace?.id) {
       fetchFunnels();
-      fetchRecentRuns();
     }
   }, [currentWorkspace?.id]);
 
@@ -134,20 +125,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
     } catch (error) {
       console.error('Error fetching columns:', error);
       toast.error('Erro ao carregar colunas');
-    }
-  };
-
-  const fetchRecentRuns = async () => {
-    if (!currentWorkspace?.id) return;
-
-    try {
-      setLoadingRuns(true);
-      const { runs } = await listInstagramExtractions(currentWorkspace.id, 5, 0);
-      setRecentRuns(runs);
-    } catch (error) {
-      console.error('Error fetching runs:', error);
-    } finally {
-      setLoadingRuns(false);
     }
   };
 
@@ -231,9 +208,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
 
       toast.success(`Extração concluída! ${totalCreated} leads criados`);
 
-      // Refresh runs list
-      await fetchRecentRuns();
-
       // Navigate to progress if available
       if (onNavigateToProgress) {
         onNavigateToProgress(run.id);
@@ -245,30 +219,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
     } finally {
       setExecuting(false);
       setExecutionPhase(null);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'text-green-500 bg-green-500/10';
-      case 'running':
-      case 'discovering':
-      case 'enriching':
-      case 'migrating': return 'text-blue-500 bg-blue-500/10';
-      case 'failed': return 'text-red-500 bg-red-500/10';
-      default: return 'text-yellow-500 bg-yellow-500/10';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return <CheckCircle className="w-4 h-4" />;
-      case 'running':
-      case 'discovering':
-      case 'enriching':
-      case 'migrating': return <Loader2 className="w-4 h-4 animate-spin" />;
-      case 'failed': return <AlertCircle className="w-4 h-4" />;
-      default: return <Clock className="w-4 h-4" />;
     }
   };
 
@@ -451,43 +401,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
         </div>
       </div>
 
-      {/* Recent Runs */}
-      {recentRuns.length > 0 && (
-        <div className={`mt-6 p-4 rounded-lg ${isDark ? 'bg-white/[0.03]' : 'bg-gray-50'}`}>
-          <h4 className={`font-medium mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            Extrações Recentes
-          </h4>
-          <div className="space-y-2">
-            {recentRuns.map(run => (
-              <div
-                key={run.id}
-                onClick={() => onNavigateToProgress?.(run.id)}
-                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                  isDark
-                    ? 'bg-white/[0.03] hover:bg-white/[0.05]'
-                    : 'bg-white hover:bg-gray-100'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Instagram className={`w-4 h-4 ${isDark ? 'text-pink-400' : 'text-pink-500'}`} />
-                  <div>
-                    <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                      {run.niche} - {run.location}
-                    </p>
-                    <p className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                      {new Date(run.created_at).toLocaleDateString('pt-BR')} • {run.leads_created || 0} leads
-                    </p>
-                  </div>
-                </div>
-                <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${getStatusColor(run.status)}`}>
-                  {getStatusIcon(run.status)}
-                  <span>{run.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 });

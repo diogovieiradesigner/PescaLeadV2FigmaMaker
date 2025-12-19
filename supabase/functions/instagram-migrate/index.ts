@@ -14,6 +14,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 import { calculateLeadScore, type EnrichedProfile } from '../_shared/instagram-utils.ts';
+import {
+  deduplicateEmails,
+  deduplicatePhones,
+  deduplicateWhatsApp,
+  type ContactWithSource,
+  type UniqueContact,
+} from '../_shared/contact-deduplication.ts';
 
 // Lista de origens permitidas
 const ALLOWED_ORIGINS = [
@@ -277,13 +284,22 @@ serve(async (req) => {
         );
       }
 
+      // ⚠️ ATUALIZADO: Aguardar scraping SE website válido
       // Buscar perfis enriquecidos não migrados da tabela instagram_enriched_profiles
+      // Regra: (sem website) OU (website processado: completed/skipped/blocked/failed)
       const { data: profiles, error: profilesError } = await supabase
         .from('instagram_enriched_profiles')
         .select('*')
         .eq('run_id', run_id)
         .eq('migrated_to_leads', false)
         .eq('processing_status', 'pending')
+        .or(
+          'external_url.is.null,' +
+          'website_scraping_status.eq.completed,' +
+          'website_scraping_status.eq.skipped,' +
+          'website_scraping_status.eq.blocked,' +
+          'website_scraping_status.eq.failed'
+        )
         .limit(limit);
 
       if (profilesError) {

@@ -1,28 +1,38 @@
 // ===========================================================================
-// EDGE FUNCTION: process-scraping-queue (V6 - TODAS CORREÇÕES)
+// EDGE FUNCTION: process-scraping-queue (V7 - SUPORTE INSTAGRAM)
 // ===========================================================================
 // Processa fila PGMQ de scraping web com controle de concorrência
+// SUPORTA: Google Maps (lead_extraction_staging) E Instagram (instagram_enriched_profiles)
 // IMPORTANTE: verify_jwt DEVE estar FALSE no config.toml
 // ===========================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { validateCNPJ } from '../_shared/website-validator.ts';
 
 // ===========================
 // CONFIGURAÇÕES
 // ===========================
 const SCRAPER_API_URL = Deno.env.get('SCRAPER_API_URL') || 'https://proxy-scraper-api.diogo-vieira-pb-f91.workers.dev';
 const MAX_CONCURRENT = 60;
-const VT_SECONDS = 180; // 3 minutos
+const VT_SECONDS = 240; // ⚠️ AUMENTADO: 4 min (180s request + 60s margem) - previne reprocessamento
 const REQUEST_TIMEOUT_MS = 180000; // 3 minutos
+const MAX_RETRY_ATTEMPTS = 3; // NOVO: máximo de retries com backoff exponencial
 
 // ===========================
 // TIPOS
 // ===========================
 interface ScrapingQueueMessage {
-  staging_id: string;
+  // Google Maps fields
+  staging_id?: string;
+  // Instagram fields
+  profile_id?: string;
+  run_id?: string;
+  // Shared fields
   website_url: string;
   workspace_id: string;
+  source?: 'google_maps' | 'instagram';
   queued_at: string;
+  retry_attempt?: number;
 }
 
 interface PGMQMessage {
@@ -246,23 +256,30 @@ async function processSingleMessage(
 ): Promise<void> {
   const msgId = pgmqMessage.msg_id;
   const message = pgmqMessage.message;
-  const stagingId = message.staging_id;
+
+  // ⚠️ NOVO: Detectar source e usar tabela/campos corretos
+  const source = message.source || 'google_maps';
+  const isInstagram = source === 'instagram';
+  const tableName = isInstagram ? 'instagram_enriched_profiles' : 'lead_extraction_staging';
+  const recordId = isInstagram ? message.profile_id : message.staging_id;
+  const statusField = isInstagram ? 'website_scraping_status' : 'scraping_status';
+  const startedField = isInstagram ? 'website_scraping_started_at' : 'scraping_started_at';
   const websiteUrl = message.website_url;
 
-  console.log(`🔍 [START] Processing msg_id=${msgId} staging_id=${stagingId} url=${websiteUrl}`);
+  console.log(`🔍 [START] Processing msg_id=${msgId} source=${source} id=${recordId} url=${websiteUrl}`);
 
   try {
     // 1️⃣ MARCAR COMO PROCESSING
-    console.log(`  ⏳ [UPDATE] Setting status to 'processing'`);
-    
+    console.log(`  ⏳ [UPDATE] Setting ${statusField}='processing' in ${tableName}`);
+
     const { error: updateError } = await supabase
-      .from('lead_extraction_staging')
+      .from(tableName)
       .update({
-        scraping_status: 'processing',
-        scraping_started_at: new Date().toISOString(),
+        [statusField]: 'processing',
+        [startedField]: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', stagingId);
+      .eq('id', recordId);
 
     if (updateError) {
       console.error(`  ❌ [ERROR] Failed to update status:`, updateError);
@@ -307,31 +324,109 @@ async function processSingleMessage(
 
       if (!scrapingResponse.ok) {
         const errorText = await scrapingResponse.text().catch(() => 'Unable to read error body');
+
+        // ⚠️ NOVO: Detectar CAPTCHA (403) e marcar como blocked
+        if (scrapingResponse.status === 403) {
+          console.log(`  🚫 [CAPTCHA] Site com proteção anti-bot detectada`);
+
+          if (isInstagram) {
+            await supabase
+              .from('instagram_enriched_profiles')
+              .update({
+                website_scraping_status: 'blocked',
+                website_scraping_enriched: true,
+                website_category: 'blocked',
+                website_scraping_error: 'Site com proteção anti-bot (captcha/403)',
+                website_scraping_completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', recordId);
+          } else {
+            await supabase
+              .from('lead_extraction_staging')
+              .update({
+                scraping_status: 'blocked',
+                scraping_enriched: true,
+                scraping_error: 'Site com proteção anti-bot (captcha/403)',
+                scraping_completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', recordId);
+          }
+
+          // Delete da fila - não retry captcha
+          await supabase.rpc('pgmq_delete', { queue_name: 'scraping_queue', msg_id: msgId });
+          console.log(`  🗑️ [DELETED] Captcha message removed from queue (no retry)`);
+          return;
+        }
+
         throw new Error(`Scraper API returned ${scrapingResponse.status}: ${errorText}`);
       }
 
       const scrapingData: ScrapingApiResponse = await scrapingResponse.json();
-      
-      console.log(`  📊 [DATA] Scraping completed with status: ${scrapingData.status}`);
-      console.log(`  📧 [EMAILS] Found ${scrapingData.emails?.length || 0} emails`);
-      console.log(`  📱 [PHONES] Found ${scrapingData.phones?.length || 0} phones`);
-      console.log(`  🌐 [SOCIAL] FB:${scrapingData.social_media?.facebook?.length || 0} IG:${scrapingData.social_media?.instagram?.length || 0}`);
 
-      // 3️⃣ PROCESSAR RESULTADO VIA FUNÇÃO SQL
-      console.log(`  💾 [PROCESS] Calling process_scraping_result function`);
-      
-      const { data: processResult, error: processError } = await supabase.rpc(
-        'process_scraping_result',
-        {
-          p_staging_id: stagingId,
-          p_scraping_data: scrapingData,
-          p_status: scrapingData.status
+      // ⚠️ NOVO: Sanitizar dados para prevenir JSONB injection
+      const sanitizedData = sanitizeScrapingData(scrapingData);
+
+      console.log(`  📊 [DATA] Scraping completed with status: ${sanitizedData.status}`);
+      console.log(`  📧 [EMAILS] Found ${sanitizedData.emails?.length || 0} emails`);
+      console.log(`  📱 [PHONES] Found ${sanitizedData.phones?.length || 0} phones`);
+      console.log(`  🌐 [SOCIAL] FB:${sanitizedData.social_media?.facebook?.length || 0} IG:${sanitizedData.social_media?.instagram?.length || 0}`);
+
+      // 3️⃣ PROCESSAR RESULTADO VIA FUNÇÃO SQL (específica por source)
+      if (isInstagram) {
+        console.log(`  💾 [PROCESS] Calling process_instagram_scraping_result function`);
+
+        const { data: processResult, error: processError } = await supabase.rpc(
+          'process_instagram_scraping_result',
+          {
+            p_profile_id: recordId,
+            p_scraping_data: sanitizedData,
+            p_status: sanitizedData.status
+          }
+        );
+
+        if (processError) {
+          console.error(`  ❌ [ERROR] process_instagram_scraping_result failed:`, processError);
+          throw new Error(`Failed to process result: ${processError.message}`);
         }
-      );
 
-      if (processError) {
-        console.error(`  ❌ [ERROR] process_scraping_result failed:`, processError);
-        throw new Error(`Failed to process result: ${processError.message}`);
+        // NOVO: Criar log de scraping completado
+        if (message.run_id) {
+          await supabase.rpc('create_extraction_log_v2', {
+            p_run_id: message.run_id,
+            p_step_number: 13,
+            p_step_name: 'Website Scraped',
+            p_level: 'success',
+            p_message: `Website scraped: ${sanitizedData.emails?.length || 0} emails, ${sanitizedData.phones?.length || 0} phones`,
+            p_source: 'instagram',
+            p_phase: 'scraping',
+            p_details: {
+              website_url: websiteUrl,
+              emails_found: sanitizedData.emails?.length || 0,
+              phones_found: sanitizedData.phones?.length || 0,
+              cnpj_found: sanitizedData.cnpj?.length || 0,
+              whatsapp_found: sanitizedData.whatsapp?.length || 0
+            }
+          }).catch((e) => console.error('[LOG ERROR]', e));
+        }
+      } else {
+        // Google Maps (lógica original)
+        console.log(`  💾 [PROCESS] Calling process_scraping_result function`);
+
+        const { data: processResult, error: processError } = await supabase.rpc(
+          'process_scraping_result',
+          {
+            p_staging_id: recordId,
+            p_scraping_data: sanitizedData,
+            p_status: sanitizedData.status
+          }
+        );
+
+        if (processError) {
+          console.error(`  ❌ [ERROR] process_scraping_result failed:`, processError);
+          throw new Error(`Failed to process result: ${processError.message}`);
+        }
       }
 
       console.log(`  ✅ [SAVED] Result saved to database`);
@@ -366,45 +461,159 @@ async function processSingleMessage(
   } catch (error) {
     console.error(`❌ [FAILED] msg_id=${msgId} error:`, error.message);
 
-    // Marcar como failed no banco
-    try {
-      // Primeiro pegar o número atual de tentativas
-      const { data: currentData } = await supabase
-        .from('lead_extraction_staging')
-        .select('scraping_attempts')
-        .eq('id', stagingId)
-        .single();
-      
-      const newAttempts = (currentData?.scraping_attempts || 0) + 1;
-      
-      await supabase
-        .from('lead_extraction_staging')
-        .update({
-          scraping_status: 'failed',
-          scraping_error: error.message,
-          scraping_completed_at: new Date().toISOString(),
-          scraping_attempts: newAttempts,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', stagingId);
+    // ⚠️ NOVO: Implementar RETRY com backoff exponencial
+    const retryAttempt = message.retry_attempt || 0;
 
-      console.log(`  📝 [UPDATED] Status set to 'failed' in database (attempts: ${newAttempts})`);
-    } catch (updateError) {
-      console.error(`  ⚠️ [WARNING] Failed to update error status:`, updateError);
-    }
+    if (retryAttempt < MAX_RETRY_ATTEMPTS) {
+      // Calcular delay com backoff exponencial: 1min, 2min, 4min
+      const delayMinutes = Math.pow(2, retryAttempt);
 
-    // Deletar mensagem da fila (não retry - API já tem retry interno)
-    try {
+      console.log(`  🔄 [RETRY] Attempt ${retryAttempt + 1}/${MAX_RETRY_ATTEMPTS}, next retry in ${delayMinutes}min`);
+
+      // Atualizar next_retry_at e attempts count
+      try {
+        if (isInstagram) {
+          await supabase
+            .from('instagram_enriched_profiles')
+            .update({
+              website_scraping_attempts: retryAttempt + 1,
+              website_scraping_status: 'pending',
+              website_scraping_error: `Retry ${retryAttempt + 1}/${MAX_RETRY_ATTEMPTS}: ${error.message}`,
+              next_retry_at: new Date(Date.now() + delayMinutes * 60000).toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', recordId);
+        } else {
+          await supabase
+            .from('lead_extraction_staging')
+            .update({
+              scraping_attempts: retryAttempt + 1,
+              scraping_status: 'pending',
+              scraping_error: `Retry ${retryAttempt + 1}/${MAX_RETRY_ATTEMPTS}: ${error.message}`,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', recordId);
+        }
+
+        console.log(`  📝 [UPDATED] Retry scheduled for ${delayMinutes}min from now`);
+      } catch (updateError) {
+        console.error(`  ⚠️ [WARNING] Failed to update retry status:`, updateError);
+      }
+
+      // Delete mensagem da fila (será re-enfileirada pelo cron quando next_retry_at chegar)
       await supabase.rpc('pgmq_delete', {
         queue_name: 'scraping_queue',
         msg_id: msgId
       });
-      
+
+    } else {
+      // Máximo de retries atingido - marcar como failed permanente
+      console.error(`  ❌ [MAX_RETRY] Giving up after ${MAX_RETRY_ATTEMPTS} attempts`);
+
+      try {
+        if (isInstagram) {
+          await supabase
+            .from('instagram_enriched_profiles')
+            .update({
+              website_scraping_status: 'failed',
+              website_scraping_enriched: true,
+              website_scraping_error: `Failed after ${MAX_RETRY_ATTEMPTS} attempts: ${error.message}`,
+              website_scraping_attempts: MAX_RETRY_ATTEMPTS,
+              website_scraping_completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', recordId);
+        } else {
+          await supabase
+            .from('lead_extraction_staging')
+            .update({
+              scraping_status: 'failed',
+              scraping_enriched: true,
+              scraping_error: `Failed after ${MAX_RETRY_ATTEMPTS} attempts: ${error.message}`,
+              scraping_attempts: MAX_RETRY_ATTEMPTS,
+              scraping_completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', recordId);
+        }
+
+        console.log(`  📝 [UPDATED] Status set to 'failed' permanently`);
+      } catch (updateError) {
+        console.error(`  ⚠️ [WARNING] Failed to update error status:`, updateError);
+      }
+
+      // Delete mensagem da fila
+      await supabase.rpc('pgmq_delete', {
+        queue_name: 'scraping_queue',
+        msg_id: msgId
+      });
+
       console.log(`  🗑️ [DELETED] Failed message removed from queue`);
-    } catch (deleteError) {
-      console.error(`  ⚠️ [WARNING] Failed to delete failed message:`, deleteError);
     }
 
     throw error; // Re-throw para Promise.all contar como failed
   }
+}
+
+// ===========================
+// SANITIZAÇÃO DE DADOS
+// ===========================
+function sanitizeScrapingData(data: any): ScrapingApiResponse {
+  const MAX_ARRAY_LENGTH = 100;
+  const MAX_STRING_LENGTH = 50000;
+
+  return {
+    status: String(data.status || 'unknown').substring(0, 20),
+    url: String(data.url || '').substring(0, 1000),
+    method: String(data.method || '').substring(0, 20),
+    emails: (data.emails || [])
+      .slice(0, MAX_ARRAY_LENGTH)
+      .map((e: any) => String(e).substring(0, 500))
+      .filter((e: string) => e && e.includes('@')),
+    phones: (data.phones || [])
+      .slice(0, MAX_ARRAY_LENGTH)
+      .map((p: any) => String(p).replace(/[^0-9+() -]/g, '').substring(0, 30))
+      .filter((p: string) => p && p.length >= 8),
+    cnpj: (data.cnpj || [])
+      .slice(0, 10)
+      .map((c: any) => validateCNPJ(String(c)))
+      .filter(Boolean),
+    whatsapp: (data.whatsapp || [])
+      .slice(0, MAX_ARRAY_LENGTH)
+      .map((w: any) => String(w).substring(0, 1000)),
+    social_media: {
+      linkedin: ((data.social_media?.linkedin || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
+      facebook: ((data.social_media?.facebook || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
+      instagram: ((data.social_media?.instagram || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
+      youtube: ((data.social_media?.youtube || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
+      twitter: ((data.social_media?.twitter || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
+    },
+    metadata: {
+      title: String(data.metadata?.title || '').substring(0, 500),
+      description: String(data.metadata?.description || '').substring(0, 2000),
+      og_image: String(data.metadata?.og_image || '').substring(0, 1000),
+    },
+    images: {
+      logos: ((data.images?.logos || []) as any[]).slice(0, 10).map(i => String(i).substring(0, 1000)),
+      favicon: String(data.images?.favicon || '').substring(0, 1000),
+      other_images: ((data.images?.other_images || []) as any[]).slice(0, 20).map(i => String(i).substring(0, 1000)),
+    },
+    button_links: ((data.button_links || []) as any[]).slice(0, 50).map(l => String(l).substring(0, 1000)),
+    checkouts: {
+      have_checkouts: Boolean(data.checkouts?.have_checkouts),
+      platforms: ((data.checkouts?.platforms || []) as any[]).slice(0, 10).map(p => String(p).substring(0, 100)),
+    },
+    pixels: {
+      have_pixels: Boolean(data.pixels?.have_pixels),
+      pixels: data.pixels?.pixels || {},
+    },
+    screenshot: {
+      base64: '', // Não armazenar screenshot (muito grande)
+      timestamp: String(data.screenshot?.timestamp || ''),
+    },
+    markdown: String(data.markdown || '').substring(0, MAX_STRING_LENGTH),
+    performance: {
+      total_time: String(data.performance?.total_time || '0s'),
+    },
+  };
 }

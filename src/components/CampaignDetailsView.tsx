@@ -15,7 +15,6 @@ import {
   Filter,
   ChevronDown,
   Play,
-  Pause,
   X,
   Info,
   CheckCircle2,
@@ -713,103 +712,7 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
     }
   };
 
-  const pauseCampaign = async () => {
-    if (!analytics?.run.id) return;
-
-    // Validação de status
-    if (analytics.run.status !== 'running') {
-      toast.error(`Apenas campanhas em execução podem ser pausadas. Status atual: ${analytics.run.status}`);
-      return;
-    }
-
-    setIsActionLoading(true);
-
-    try {
-      const { data, error } = await supabase.rpc('pause_campaign_run', {
-        p_run_id: analytics.run.id,
-        p_reason: 'Pausado manualmente pelo usuário'
-      });
-
-      if (error) {
-        toast.error('Erro ao pausar campanha');
-        console.error('Erro ao pausar campanha:', error);
-        return;
-      }
-
-      // Verificar se retornou erro do SQL
-      if (data?.error) {
-        toast.error(data.error);
-        console.error('Erro SQL:', data);
-        return;
-      }
-
-      toast.success(`Campanha pausada! ${data?.messages_skipped || 0} mensagens canceladas`);
-      
-      // Recarregar dados locais
-      await loadRunDetails();
-      await loadQueueData(); // Atualizar fila também
-      
-      if (onRefresh) {
-        onRefresh();
-      }
-    } catch (err) {
-      console.error('Erro ao pausar campanha:', err);
-      toast.error('Erro ao pausar campanha');
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  const resumeCampaign = async () => {
-    if (!analytics?.run.id) return;
-
-    // Validação de status
-    if (analytics.run.status !== 'paused') {
-      toast.error(`Apenas campanhas pausadas podem ser retomadas. Status atual: ${analytics.run.status}`);
-      return;
-    }
-
-    setIsActionLoading(true);
-
-    try {
-      const { data, error } = await supabase.rpc('resume_campaign_run', {
-        p_run_id: analytics.run.id
-      });
-
-      if (error) {
-        toast.error('Erro ao retomar campanha');
-        console.error('Erro ao retomar campanha:', error);
-        return;
-      }
-
-      // Verificar se retornou erro do SQL
-      if (data?.error) {
-        // Erros específicos
-        if (data.error === 'Instância desconectada') {
-          toast.error(`Instância ${data.instance_name || 'WhatsApp'} está desconectada. Conecte antes de retomar.`);
-        } else {
-          toast.error(data.error);
-        }
-        console.error('Erro SQL:', data);
-        return;
-      }
-
-      toast.success(`Campanha retomada! ${data?.messages_resumed || 0} mensagens reagendadas`);
-      
-      // Recarregar dados locais
-      await loadRunDetails();
-      await loadQueueData(); // Atualizar fila também
-      
-      if (onRefresh) {
-        onRefresh();
-      }
-    } catch (err) {
-      console.error('Erro ao retomar campanha:', err);
-      toast.error('Erro ao retomar campanha');
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
+  // Funções de pausar/resumir removidas - funcionalidade descontinuada
 
   const cancelCampaign = async () => {
     if (!analytics?.run.id) return;
@@ -1032,43 +935,8 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
-          {/* Botões de controle de campanha */}
+          {/* Botão de cancelar campanha */}
           {analytics.run.status === 'running' && (
-            <Button 
-              onClick={pauseCampaign}
-              disabled={isActionLoading}
-              size="sm"
-              className={cn(
-                "gap-2 border-0",
-                isDark 
-                  ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" 
-                  : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300"
-              )}
-            >
-              {isActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5" />}
-              Pausar
-            </Button>
-          )}
-
-          {analytics.run.status === 'paused' && (
-            <Button 
-              onClick={resumeCampaign}
-              disabled={isActionLoading}
-              variant="outline"
-              size="sm"
-              className={cn(
-                "gap-2",
-                isDark 
-                  ? "border-green-500/50 text-green-500 hover:bg-green-500/10" 
-                  : "border-green-500 text-green-600 hover:bg-green-50"
-              )}
-            >
-              {isActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-              Retomar
-            </Button>
-          )}
-
-          {['running', 'paused'].includes(analytics.run.status) && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button 

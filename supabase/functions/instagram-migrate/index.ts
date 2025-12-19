@@ -658,8 +658,12 @@ serve(async (req) => {
 
       const hasMore = (remainingCount || 0) > 0;
 
+      const totalLeadsCreated = (runData.created_quantity || 0) + leadsCreated;
+
       if (!hasMore) {
         // Migração completa - usar tabela compartilhada
+        console.log(`✅ Migração completa! Total: ${totalLeadsCreated} leads`);
+
         await supabase
           .from('lead_extraction_runs')
           .update({
@@ -668,16 +672,28 @@ serve(async (req) => {
           })
           .eq('id', run_id);
 
-        await createLog(
-          supabase, run_id, 10, 'Conclusão', 'migration', 'success',
-          `Migração concluída: ${(runData.created_quantity || 0) + leadsCreated} leads criados no total`,
-          {
+        // Log de conclusão - garantir que seja criado
+        const logResult = await supabase.from('extraction_logs').insert({
+          run_id: run_id,
+          step_number: 10,
+          step_name: 'Conclusão',
+          phase: 'migration',
+          level: 'success',
+          message: `Migração concluída: ${totalLeadsCreated} leads criados no total`,
+          details: {
             leads_created: leadsCreated,
             duplicates_skipped: duplicatesSkipped,
             errors,
-            total_leads: (runData.created_quantity || 0) + leadsCreated,
-          }
-        );
+            total_leads: totalLeadsCreated,
+          },
+          source: 'instagram',
+        });
+
+        if (logResult.error) {
+          console.error('❌ Erro ao criar log de conclusão:', logResult.error);
+        } else {
+          console.log('✅ Log de conclusão criado com sucesso');
+        }
       } else {
         await createLog(
           supabase, run_id, 9, 'Batch', 'migration', 'info',

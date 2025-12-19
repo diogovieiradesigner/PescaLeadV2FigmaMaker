@@ -420,6 +420,12 @@ export function ContactInfo({
                 src={conversation.avatar}
                 alt={conversation.contactName}
                 className="w-full h-full rounded-full object-cover"
+                fallback={
+                  <Avatar
+                    name={conversation.contactName}
+                    className="w-full h-full text-2xl"
+                  />
+                }
               />
             ) : (
               <Avatar

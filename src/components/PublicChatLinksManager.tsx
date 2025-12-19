@@ -146,7 +146,8 @@ export function PublicChatLinksManager({ agentId, workspaceId, isDark = true }: 
   };
 
   const copyToClipboard = async (link: PublicChatLink, type: 'url' | 'code' | 'full') => {
-    const baseUrl = window.location.origin + '/#/chat/' + link.public_slug;
+    // ✅ URL limpa sem hash - usa rota pública /chat/:slug
+    const baseUrl = window.location.origin + '/chat/' + link.public_slug;
     let textToCopy = '';
 
     if (type === 'url') {
@@ -168,7 +169,8 @@ export function PublicChatLinksManager({ agentId, workspaceId, isDark = true }: 
   };
 
   const openChat = (link: PublicChatLink) => {
-    window.open(`/#/chat/${link.public_slug}`, '_blank');
+    // ✅ URL limpa sem hash - usa rota pública /chat/:slug
+    window.open(`/chat/${link.public_slug}`, '_blank');
   };
 
   if (loading) {

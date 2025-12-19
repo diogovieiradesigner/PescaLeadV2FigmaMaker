@@ -35,6 +35,7 @@ import { useKanbanData } from './hooks/useKanbanData';
 import { useKanbanRealtime } from './hooks/useKanbanRealtime';
 import { useSettingsData } from './hooks/useSettingsData';
 import { useDebounce } from './hooks/useDebounce';
+import { useNavigation, AppView } from './hooks/useNavigation';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 
@@ -51,7 +52,10 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
-  const [currentView, setCurrentView] = useState<'pipeline' | 'chat' | 'dashboard' | 'settings' | 'account-settings' | 'extraction' | 'campaign' | 'ai-service' | 'extraction-progress' | 'agent-logs' | 'calendar'>('dashboard');
+
+  // ✅ Navegação baseada em URL (sem hash #)
+  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab } = useNavigation('dashboard');
+
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
   const [isAddFunnelModalOpen, setIsAddFunnelModalOpen] = useState(false);
@@ -80,7 +84,6 @@ function AppContent() {
   const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
   const [selectedLeadColumnId, setSelectedLeadColumnId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('edit');
-  const [extractionRunId, setExtractionRunId] = useState<string | null>(null);
   const [leadFilters, setLeadFilters] = useState<LeadFilters>({
     hasEmail: false,
     hasWhatsapp: false,
@@ -254,6 +257,40 @@ function AppContent() {
       window.removeEventListener('navigate-to-settings', handleNavigateToSettings);
     };
   }, []);
+
+  // ✅ Abrir lead automaticamente quando há leadId na URL (/pipeline/lead/:leadId)
+  useEffect(() => {
+    if (leadId && currentView === 'pipeline' && !isEditLeadModalOpen) {
+      console.log('[APP] 🔗 Lead ID na URL detectado:', leadId);
+
+      // Buscar lead do banco e abrir modal
+      const openLeadFromUrl = async () => {
+        try {
+          const { getLeadById } = await import('./services/leads-service');
+          const { lead, error } = await getLeadById(leadId);
+
+          if (error || !lead) {
+            console.error('[APP] ❌ Lead não encontrado:', leadId, error);
+            toast.error('Lead não encontrado');
+            clearLeadId(); // Limpa a URL se o lead não existir
+            return;
+          }
+
+          console.log('[APP] ✅ Lead carregado da URL:', lead.name || lead.clientName);
+          setSelectedLead(lead);
+          setSelectedLeadColumnId(lead.columnId || lead.status);
+          setModalMode('edit');
+          setIsEditLeadModalOpen(true);
+        } catch (error) {
+          console.error('[APP] ❌ Erro ao buscar lead da URL:', error);
+          toast.error('Erro ao carregar lead');
+          clearLeadId();
+        }
+      };
+
+      openLeadFromUrl();
+    }
+  }, [leadId, currentView, isEditLeadModalOpen, clearLeadId]);
 
   // ✅ Recarregar dados APENAS quando voltar para Pipeline de outra view
   // ⚠️ NÃO recarrega quando currentFunnelId muda (isso é feito pelo useKanbanData)
@@ -578,47 +615,62 @@ function AppContent() {
     }
   }, [modalMode, selectedColumnId, columns, createLeadBackend, updateLeadBackend]);
 
+  // ✅ Fechar modal de lead e limpar URL
+  const handleCloseLeadModal = useCallback(() => {
+    setIsEditLeadModalOpen(false);
+    setSelectedLead(null);
+    // Limpa o leadId da URL (volta para /pipeline)
+    clearLeadId();
+  }, [clearLeadId]);
+
   const handleLeadClick = useCallback((lead: CRMLead) => {
     console.log('[APP] handleLeadClick chamado:', { leadId: lead.id, leadName: lead.name, status: lead.status, columnId: lead.columnId });
     setSelectedLead(lead);
     setIsEditLeadModalOpen(true);
     setModalMode('edit');
     // ✅ Priorizar columnId se existir, senão usar status (mas provavelmente columnId é o correto para navegação)
-    setSelectedLeadColumnId(lead.columnId || lead.status); 
-  }, []);
+    setSelectedLeadColumnId(lead.columnId || lead.status);
 
-  // ✅ Navegação entre leads tipo \"stories\"
+    // ✅ Atualiza URL para /pipeline/lead/:leadId
+    navigate('pipeline', { leadId: lead.id });
+  }, [navigate]);
+
+  // ✅ Navegação entre leads tipo "stories"
   const handleNavigateToNextLead = useCallback(() => {
     if (!selectedLead || !selectedLeadColumnId) return;
-    
+
     const currentColumn = columns.find(col => col.id === selectedLeadColumnId);
     if (!currentColumn) return;
-    
+
     // ✅ FIX: Usar leads da coluna (array) em vez do objeto de estado
     const leads = currentColumn.leads || [];
     const currentIndex = leads.findIndex(l => l.id === selectedLead.id);
-    
+
     if (currentIndex >= 0 && currentIndex < leads.length - 1) {
       const nextLead = leads[currentIndex + 1];
       setSelectedLead(nextLead);
+      // ✅ Atualiza URL com novo lead
+      navigate('pipeline', { leadId: nextLead.id });
     }
-  }, [selectedLead, selectedLeadColumnId, columns]);
+  }, [selectedLead, selectedLeadColumnId, columns, navigate]);
 
   const handleNavigateToPrevLead = useCallback(() => {
     if (!selectedLead || !selectedLeadColumnId) return;
-    
+
     const currentColumn = columns.find(col => col.id === selectedLeadColumnId);
     if (!currentColumn) return;
-    
+
     // ✅ FIX: Usar leads da coluna (array) em vez do objeto de estado
     const leads = currentColumn.leads || [];
     const currentIndex = leads.findIndex(l => l.id === selectedLead.id);
-    
+
     if (currentIndex > 0) {
       const prevLead = leads[currentIndex - 1];
       setSelectedLead(prevLead);
+      // ✅ Atualiza URL com novo lead
+      navigate('pipeline', { leadId: prevLead.id });
     }
-  }, [selectedLead, selectedLeadColumnId, columns]);
+  }, [selectedLead, selectedLeadColumnId, columns, navigate]);
 
   // ✅ Calcular se há leads anterior/próximo
   const leadNavigationState = useMemo(() => {
@@ -1028,14 +1080,22 @@ function AppContent() {
             onManageMembersClick={() => setIsWorkspaceMembersOpen(true)}
           />
         ) : currentView === 'chat' ? (
-          <ChatView 
-            theme={theme} 
+          <ChatView
+            theme={theme}
             onThemeToggle={toggleTheme}
             onNavigateToPipeline={handleLeadClickFromChat}
             onNavigateToSettings={() => setCurrentView('settings')}
             onKanbanRefresh={reloadCurrentFunnel} // ✅ Passar callback para refresh do kanban
             instances={settingsData.instances}
             inboxes={settingsData.inboxes}
+            urlConversationId={conversationId}
+            onConversationChange={(convId) => {
+              if (convId) {
+                navigate('chat', { conversationId: convId });
+              } else {
+                clearConversationId();
+              }
+            }}
           />
         ) : currentView === 'settings' ? (
           <SettingsView
@@ -1068,30 +1128,42 @@ function AppContent() {
             stats={stats}
           />
         ) : currentView === 'extraction' ? (
-          <ExtractionView 
-            theme={theme} 
+          <ExtractionView
+            theme={theme}
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
             onNavigateToProgress={(runId) => {
-              setExtractionRunId(runId);
-              setCurrentView('extraction-progress');
+              // ✅ Usa navigate com parâmetro runId para atualizar URL
+              navigate('extraction-progress', { runId });
             }}
             onNavigateToDashboard={() => setCurrentView('pipeline')}
+            urlTab={extractionTab}
+            onTabChange={(tab) => {
+              navigate('extraction', { extractionTab: tab });
+            }}
           />
         ) : currentView === 'extraction-progress' ? (
-          <ExtractionProgress 
-            theme={theme} 
+          <ExtractionProgress
+            theme={theme}
             onThemeToggle={toggleTheme}
             runId={extractionRunId}
             onBack={() => setCurrentView('extraction')}
             onNavigateToSettings={() => setCurrentView('account-settings')}
           />
         ) : currentView === 'campaign' ? (
-          <CampaignView 
+          <CampaignView
             theme={theme}
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
             onNavigateToPipeline={() => setCurrentView('pipeline')}
+            urlRunId={campaignRunId}
+            onRunChange={(runId) => {
+              if (runId) {
+                navigate('campaign', { campaignRunId: runId });
+              } else {
+                clearCampaignRunId();
+              }
+            }}
           />
         ) : currentView === 'ai-service' ? (
           <AIServiceView 
@@ -1113,6 +1185,14 @@ function AppContent() {
             onThemeToggle={toggleTheme}
             onNavigateToSettings={() => setCurrentView('account-settings')}
             onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
+            urlEventId={eventId}
+            onEventChange={(evtId) => {
+              if (evtId) {
+                navigate('calendar', { eventId: evtId });
+              } else {
+                clearEventId();
+              }
+            }}
           />
         ) : (
           <>
@@ -1214,7 +1294,7 @@ function AppContent() {
         return modalMode === 'create' ? (
           <EditLeadModal
             isOpen={isEditLeadModalOpen}
-            onClose={() => setIsEditLeadModalOpen(false)}
+            onClose={handleCloseLeadModal}
             lead={selectedLead}
             onSave={handleSaveLead}
             theme={theme}
@@ -1224,14 +1304,14 @@ function AppContent() {
         ) : (
           <LeadFullViewModal
             isOpen={isEditLeadModalOpen}
-            onClose={() => setIsEditLeadModalOpen(false)}
+            onClose={handleCloseLeadModal}
             lead={selectedLead}
             onSave={handleSaveLead}
             theme={theme}
             onNavigateNext={leadNavigationState.hasNext ? handleNavigateToNextLead : undefined}
             onNavigatePrev={leadNavigationState.hasPrev ? handleNavigateToPrevLead : undefined}
             onNavigateToInstances={() => {
-              setIsEditLeadModalOpen(false);
+              handleCloseLeadModal();
               setCurrentView('settings');
             }}
             navigationState={leadNavigationState}

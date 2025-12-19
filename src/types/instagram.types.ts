@@ -84,6 +84,7 @@ export interface InstagramExtractionRun {
 
   // Resultado final
   leads_created: number;
+  created_quantity?: number; // Campo real da tabela (alias para leads_created)
   leads_duplicates_skipped: number;
 
   // Timing

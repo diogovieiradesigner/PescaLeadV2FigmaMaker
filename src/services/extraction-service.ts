@@ -534,9 +534,9 @@ export async function getExtractedLeads(runId: string, limit: number = 100): Pro
 
 /**
  * ✅ NOVA FUNÇÃO UNIFICADA - Buscar analytics completos de uma extração
- * Usa APENAS a RPC get_extraction_analytics do banco (sem fallback)
+ * Detecta automaticamente o tipo de fonte (google_maps, instagram, cnpj) e usa a RPC correta
  */
-export async function getExtractionAnalytics(params?: { 
+export async function getExtractionAnalytics(params?: {
   runId?: string;
   workspaceId?: string;
 }): Promise<any> {
@@ -571,21 +571,44 @@ export async function getExtractionAnalytics(params?: {
   }
 
   try {
-    // ✅ CHAMADA DIRETA RPC - SEM FALLBACK
-    console.log('🚀 [getExtractionAnalytics] Calling RPC get_extraction_analytics with runId:', runId);
-    const { data: rpcData, error: rpcError } = await supabase.rpc('get_extraction_analytics', { run_id: runId });
+    // 2. Detectar o tipo de fonte (source) do run
+    const { data: runData, error: runError } = await supabase
+      .from('lead_extraction_runs')
+      .select('source')
+      .eq('id', runId)
+      .single();
+
+    if (runError) {
+      console.error('❌ [getExtractionAnalytics] Error fetching run source:', runError);
+      throw new Error(`Erro ao buscar run: ${runError.message}`);
+    }
+
+    const source = runData?.source || 'google_maps';
+    console.log(`🔍 [getExtractionAnalytics] Detected source: ${source}`);
+
+    // 3. Usar a RPC correta baseada na fonte
+    let rpcName: string;
+    if (source === 'instagram') {
+      rpcName = 'get_instagram_extraction_analytics';
+    } else {
+      // google_maps, cnpj, ou qualquer outro
+      rpcName = 'get_extraction_analytics';
+    }
+
+    console.log(`🚀 [getExtractionAnalytics] Calling RPC ${rpcName} with runId:`, runId);
+    const { data: rpcData, error: rpcError } = await supabase.rpc(rpcName, { run_id: runId });
 
     if (rpcError) {
-      console.error('❌ [getExtractionAnalytics] RPC Error:', rpcError);
+      console.error(`❌ [getExtractionAnalytics] RPC ${rpcName} Error:`, rpcError);
       throw new Error(`Erro ao buscar analytics: ${rpcError.message}`);
     }
 
     if (!rpcData) {
-      console.error('❌ [getExtractionAnalytics] RPC returned null/undefined');
+      console.error(`❌ [getExtractionAnalytics] RPC ${rpcName} returned null/undefined`);
       throw new Error('Analytics não encontrado para este run');
     }
 
-    console.log('✅ [getExtractionAnalytics] RPC data received successfully');
+    console.log(`✅ [getExtractionAnalytics] RPC ${rpcName} data received successfully`);
     return rpcData;
 
   } catch (error) {

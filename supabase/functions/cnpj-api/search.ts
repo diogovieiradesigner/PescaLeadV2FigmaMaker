@@ -49,11 +49,12 @@ function parseLocalizacao(localizacao: string): { uf?: string; municipio_nome?: 
   const normalizado = localizacao
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/state of /gi, '') // Remover "State of" que pode vir do frontend
     .toLowerCase()
     .trim();
 
-  // Dividir por vírgula
-  const partes = normalizado.split(',').map(p => p.trim()).filter(p => p && p !== 'brasil');
+  // Dividir por vírgula (ignorar país em português ou inglês)
+  const partes = normalizado.split(',').map(p => p.trim()).filter(p => p && p !== 'brasil' && p !== 'brazil');
 
   if (partes.length === 0) return {};
 
@@ -413,13 +414,17 @@ OFFSET $${offsetParamIndex};
   // ==========================================================================
   // QUERY DE CONTAGEM (também com JOINs condicionais)
   // ==========================================================================
-  // Para contagem, só precisamos dos JOINs que são usados no WHERE
+  // Para contagem, precisamos de TODOS os JOINs que são usados no WHERE
   const countJoins: string[] = [];
   if (joins.needsEmpresa) {
     countJoins.push('LEFT JOIN empresa emp ON est.cnpj_basico = emp.cnpj_basico');
   }
   if (joins.needsSimples) {
     countJoins.push('LEFT JOIN simples sim ON est.cnpj_basico = sim.cnpj_basico');
+  }
+  // IMPORTANTE: Se usamos mun.descricao no WHERE (localização com município), precisamos do JOIN
+  if (joins.needsMunic) {
+    countJoins.push('LEFT JOIN munic mun ON est.municipio = mun.codigo');
   }
 
   const countSql = `
@@ -512,6 +517,8 @@ export async function handleStats(
   db: ReturnType<typeof import('https://deno.land/x/postgresjs@v3.4.4/mod.js').default>,
   filters: SearchFilters
 ): Promise<StatsResponse> {
+  console.log('📊 [STATS] Received filters:', JSON.stringify(filters, null, 2));
+
   // Determinar quais JOINs são necessários para os filtros
   const joins = determineRequiredJoins(filters, 'data_abertura');
 
@@ -625,6 +632,8 @@ ${whereClause};
 `;
 
   console.log(`📊 [STATS] Query: ${params.length} params, JOINs: empresa=${joins.needsEmpresa}, simples=${joins.needsSimples}, munic=${needsMunicJoin}`);
+  console.log('📊 [STATS] SQL:', statsSql);
+  console.log('📊 [STATS] Params:', params);
 
   const result = await db.unsafe(statsSql, params);
   const row = result[0];

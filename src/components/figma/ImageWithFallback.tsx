@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react'
+import React, { useState, memo, ReactNode } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 // ✅ Cache global de imagens já carregadas (evita flash de loading)
@@ -14,8 +14,13 @@ function getBaseUrl(url: string): string {
   }
 }
 
-function ImageWithFallbackInner(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const { src, alt, style, className, ...rest } = props
+interface ImageWithFallbackProps extends React.ImgHTMLAttributes<HTMLImageElement> {
+  /** Componente a ser exibido quando a imagem falha (ex: Avatar com iniciais) */
+  fallback?: ReactNode;
+}
+
+function ImageWithFallbackInner(props: ImageWithFallbackProps) {
+  const { src, alt, style, className, fallback, ...rest } = props
 
   const baseUrl = src ? getBaseUrl(src) : '';
 
@@ -43,6 +48,12 @@ function ImageWithFallbackInner(props: React.ImgHTMLAttributes<HTMLImageElement>
   }
 
   if (status === 'error') {
+    // Se tiver fallback customizado, usa ele (ex: Avatar com iniciais)
+    if (fallback) {
+      return <>{fallback}</>;
+    }
+
+    // Fallback padrão: mensagem de erro
     return (
       <div
         className={`flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-400 p-4 rounded-2xl ${className ?? ''}`}

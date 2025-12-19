@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
-import { ChevronDown, X, Search, Info } from 'lucide-react';
+import { ChevronDown, X, Search, Info, Loader2 } from 'lucide-react';
 import type { CNPJFilters, FilterOption } from '../types/cnpj-extraction';
 import { PORTE_OPTIONS, SITUACAO_OPTIONS, TIPO_OPTIONS } from '../types/cnpj-extraction';
 import { LocationSearchInput } from './LocationSearchInput';
@@ -18,6 +18,7 @@ interface CNPJFiltersFormProps {
   cnaeOptions?: FilterOption[];
   loading?: boolean;
   onCNAESearch?: (query: string) => void;
+  cnaesSearching?: boolean;
 }
 
 // Componente MultiSelect reutilizável
@@ -32,6 +33,7 @@ interface MultiSelectProps {
   disabled?: boolean;
   onSearchChange?: (query: string) => void;
   showCount?: boolean;
+  isSearching?: boolean;
 }
 
 function MultiSelect({
@@ -44,7 +46,8 @@ function MultiSelect({
   searchable = false,
   disabled = false,
   onSearchChange,
-  showCount = false
+  showCount = false,
+  isSearching = false
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -161,9 +164,14 @@ function MultiSelect({
           )}
 
           <div className="overflow-y-auto max-h-48">
-            {filteredOptions.length === 0 ? (
+            {isSearching ? (
+              <div className={`px-4 py-6 text-sm flex flex-col items-center gap-2 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Buscando CNAEs...</span>
+              </div>
+            ) : filteredOptions.length === 0 ? (
               <div className={`px-4 py-3 text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                Nenhum resultado encontrado
+                {search ? 'Nenhum resultado encontrado' : 'Digite para buscar...'}
               </div>
             ) : (
               filteredOptions.map((option) => (
@@ -209,13 +217,190 @@ function MultiSelect({
   );
 }
 
+// Componente Select com opção "Todos" integrada
+interface SelectWithAllProps {
+  label: string;
+  options: FilterOption[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+  allLabel?: string;
+  isDark: boolean;
+  disabled?: boolean;
+}
+
+function SelectWithAll({
+  label,
+  options,
+  selected,
+  onChange,
+  allLabel = 'Todos',
+  isDark,
+  disabled = false
+}: SelectWithAllProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  // "Todos" está selecionado quando nenhum filtro específico está ativo (array vazio)
+  // Isso significa que TODAS as opções estão incluídas
+  const isAllSelected = selected.length === 0;
+
+  // Texto exibido no botão
+  const displayText = isAllSelected
+    ? allLabel
+    : selected.length <= 2
+      ? selected.map(val => options.find(opt => opt.value === val)?.label || val).join(', ')
+      : `${selected.slice(0, 2).map(val => options.find(opt => opt.value === val)?.label || val).join(', ')} +${selected.length - 2}`;
+
+  const handleSelectAll = () => {
+    onChange([]); // Array vazio = todos selecionados
+    setIsOpen(false);
+  };
+
+  const toggleOption = (value: string) => {
+    if (isAllSelected) {
+      // Se "Todos" estava selecionado, desmarcar significa selecionar apenas os outros
+      const allExceptThis = options.filter(opt => opt.value !== value).map(opt => opt.value);
+      onChange(allExceptThis);
+    } else if (selected.includes(value)) {
+      // Se já estava selecionado, remover
+      const newSelected = selected.filter(v => v !== value);
+      // Se não sobrar nenhum, volta para "Todos"
+      onChange(newSelected);
+    } else {
+      // Adicionar à seleção
+      const newSelected = [...selected, value];
+      // Se selecionou todas as opções individualmente, converter para "Todos" (array vazio)
+      if (newSelected.length === options.length) {
+        onChange([]);
+      } else {
+        onChange(newSelected);
+      }
+    }
+  };
+
+  // Verificar se uma opção específica está marcada
+  // Quando "Todos" está ativo (array vazio), todas as opções estão marcadas
+  const isOptionSelected = (value: string) => {
+    return isAllSelected || selected.includes(value);
+  };
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+        {label}
+      </label>
+
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full px-4 py-2 text-left border-b transition-all flex items-center justify-between ${
+          isDark
+            ? 'bg-black border-white/[0.2] text-white hover:bg-white/[0.05]'
+            : 'bg-white border border-border-light text-text-primary-light hover:bg-gray-50'
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <span>{displayText}</span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''} ${isDark ? 'text-white/50' : 'text-gray-500'}`} />
+      </button>
+
+      {isOpen && (
+        <div className={`absolute z-50 w-full mt-1 rounded-lg shadow-lg border max-h-60 overflow-hidden ${
+          isDark
+            ? 'bg-[#1a1a1a] border-white/[0.1]'
+            : 'bg-white border-border-light'
+        }`}>
+          <div className="overflow-y-auto max-h-48">
+            {/* Opção "Todos" */}
+            <button
+              type="button"
+              onClick={handleSelectAll}
+              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-3 transition-colors ${
+                isAllSelected
+                  ? isDark
+                    ? 'bg-[#0169D9]/20 text-[#0169D9]'
+                    : 'bg-blue-50 text-[#0169D9]'
+                  : isDark
+                    ? 'text-white hover:bg-white/[0.05]'
+                    : 'text-text-primary-light hover:bg-gray-50'
+              }`}
+            >
+              <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                isAllSelected
+                  ? 'bg-[#0169D9] border-[#0169D9]'
+                  : isDark ? 'border-white/30' : 'border-gray-300'
+              }`}>
+                {isAllSelected && (
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+              <span className="flex-1 font-medium">{allLabel}</span>
+            </button>
+
+            {/* Separador */}
+            <div className={`border-t ${isDark ? 'border-white/[0.1]' : 'border-gray-100'}`} />
+
+            {/* Opções específicas - todas marcadas quando "Todos" está ativo */}
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => toggleOption(option.value)}
+                className={`w-full px-4 py-2 text-left text-sm flex items-center gap-3 transition-colors ${
+                  isOptionSelected(option.value)
+                    ? isDark
+                      ? 'bg-[#0169D9]/20 text-[#0169D9]'
+                      : 'bg-blue-50 text-[#0169D9]'
+                    : isDark
+                      ? 'text-white hover:bg-white/[0.05]'
+                      : 'text-text-primary-light hover:bg-gray-50'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                  isOptionSelected(option.value)
+                    ? 'bg-[#0169D9] border-[#0169D9]'
+                    : isDark ? 'border-white/30' : 'border-gray-300'
+                }`}>
+                  {isOptionSelected(option.value) && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <span className="flex-1">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CNPJFiltersForm({
   theme,
   filters,
   onFilterChange,
   cnaeOptions = [],
   loading = false,
-  onCNAESearch
+  onCNAESearch,
+  cnaesSearching = false
 }: CNPJFiltersFormProps) {
   const isDark = theme === 'dark';
   const [cnaeSearchTimeout, setCnaeSearchTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -281,12 +466,13 @@ export function CNPJFiltersForm({
           options={cnaeOptions}
           selected={filters.cnae || []}
           onChange={(values) => onFilterChange('cnae', values)}
-          placeholder={loading ? "Carregando CNAEs..." : "Busque atividades econômicas..."}
+          placeholder={cnaesSearching ? "Buscando CNAEs..." : "Busque atividades econômicas..."}
           isDark={isDark}
           searchable
           disabled={loading}
           onSearchChange={handleCNAESearch}
           showCount
+          isSearching={cnaesSearching}
         />
       </div>
 
@@ -297,32 +483,32 @@ export function CNPJFiltersForm({
         </h4>
 
         <div className="grid grid-cols-3 gap-4">
-          <MultiSelect
+          <SelectWithAll
             label="Porte"
             options={PORTE_OPTIONS}
             selected={filters.porte || []}
             onChange={(values) => onFilterChange('porte', values)}
-            placeholder="Todos os portes"
+            allLabel="Todos"
             isDark={isDark}
             disabled={loading}
           />
 
-          <MultiSelect
+          <SelectWithAll
             label="Situação"
             options={SITUACAO_OPTIONS}
-            selected={filters.situacao || ['02']}
+            selected={filters.situacao || []}
             onChange={(values) => onFilterChange('situacao', values)}
-            placeholder="Todas situações"
+            allLabel="Todas"
             isDark={isDark}
             disabled={loading}
           />
 
-          <MultiSelect
+          <SelectWithAll
             label="Tipo"
             options={TIPO_OPTIONS}
             selected={filters.tipo || []}
             onChange={(values) => onFilterChange('tipo', values)}
-            placeholder="Matriz e Filial"
+            allLabel="Todos"
             isDark={isDark}
             disabled={loading}
           />

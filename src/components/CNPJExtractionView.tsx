@@ -14,7 +14,6 @@ import { toast } from 'sonner@2.0.3';
 import {
   Save,
   Loader2,
-  RefreshCw,
   AlertCircle,
   CheckCircle,
   Building2,
@@ -37,6 +36,8 @@ export interface CNPJExtractionViewRef {
   execute: () => Promise<void>;
   canExecute: () => boolean;
   isExecuting: () => boolean;
+  save: () => Promise<void>;
+  isSaving: () => boolean;
 }
 
 interface Funnel {
@@ -59,7 +60,6 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   const { filters: apiFilters, loading: filtersLoading, getStats, statsLoading, cnaes, cnaesLoading, searchCNAEs } = useCNPJFilters();
   const {
     state,
-    setExtractionName,
     updateFilter,
     setTargetQuantity,
     setFunnelId,
@@ -67,6 +67,33 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     isValid,
     validationErrors,
   } = useCNPJExtraction();
+
+  // Função para gerar nome automático baseado nos filtros
+  const generateExtractionName = () => {
+    const parts: string[] = [];
+
+    // Adicionar localização
+    if (state.filters.uf?.length) {
+      parts.push(state.filters.uf.join(', '));
+    } else if (state.filters.localizacao?.trim()) {
+      parts.push(state.filters.localizacao.trim());
+    }
+
+    // Adicionar CNAE (apenas os primeiros 2 para não ficar muito longo)
+    if (state.filters.cnae?.length) {
+      const cnaeStr = state.filters.cnae.slice(0, 2).join(', ');
+      parts.push(cnaeStr + (state.filters.cnae.length > 2 ? '...' : ''));
+    }
+
+    // Adicionar data
+    const date = new Date().toLocaleDateString('pt-BR');
+
+    if (parts.length > 0) {
+      return `CNPJ - ${parts.join(' | ')} - ${date}`;
+    }
+
+    return `CNPJ - ${date}`;
+  };
 
   // Estado local
   const [funnels, setFunnels] = useState<Funnel[]>([]);
@@ -131,6 +158,8 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     execute: handleExecute,
     canExecute: () => isValid && !executing,
     isExecuting: () => executing,
+    save: handleSave,
+    isSaving: () => saving,
   }));
 
   // Carregar funis e histórico
@@ -177,7 +206,9 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   };
 
   const fetchStats = async () => {
+    console.log('[fetchStats] Calling with filters:', JSON.stringify(state.filters, null, 2));
     const preview = await getStats(state.filters);
+    console.log('[fetchStats] Result:', preview);
     if (preview) {
       setStats(preview);
     }
@@ -239,12 +270,15 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
     try {
       setSaving(true);
 
+      // Gerar nome automático
+      const autoName = generateExtractionName();
+
       // Salvar configuração no banco (insert simples, sem upsert)
       const { data, error } = await supabase
         .from('lead_extractions')
         .insert({
           workspace_id: currentWorkspace.id,
-          extraction_name: state.extractionName,
+          extraction_name: autoName,
           source: 'cnpj',
           search_term: state.filters.localizacao || '',
           location: state.filters.localizacao || '',
@@ -286,6 +320,9 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
       setExecuting(true);
       toast.info('Iniciando extração CNPJ...');
 
+      // Gerar nome automático
+      const autoName = generateExtractionName();
+
       const { data: { session } } = await supabase.auth.getSession();
 
       const response = await fetch(
@@ -298,7 +335,7 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
           },
           body: JSON.stringify({
             workspace_id: currentWorkspace.id,
-            extraction_name: state.extractionName,
+            extraction_name: autoName,
             filters: state.filters,
             target_quantity: state.targetQuantity,
             funnel_id: state.funnelId,
@@ -419,24 +456,6 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
         </div>
       )}
 
-      {/* Nome da Extração */}
-      <div>
-        <label className={`block mb-2 text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
-          Nome da Extração *
-        </label>
-        <input
-          type="text"
-          value={state.extractionName}
-          onChange={(e) => setExtractionName(e.target.value)}
-          placeholder="Ex: Restaurantes SP - Dezembro 2025"
-          className={`w-full px-4 py-2 border-b transition-all ${
-            isDark
-              ? 'bg-black border-white/[0.2] text-white focus:bg-black focus:border-[#0169D9]'
-              : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
-          } focus:outline-none ${showValidation && !state.extractionName ? 'border-red-500' : ''}`}
-        />
-      </div>
-
       {/* Filtros */}
       <div className={`p-6 rounded-lg border ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
         <h3 className={`text-lg font-medium mb-6 ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
@@ -448,8 +467,9 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
           filters={state.filters}
           onFilterChange={updateFilter}
           cnaeOptions={cnaes}
-          loading={filtersLoading || cnaesLoading}
+          loading={filtersLoading}
           onCNAESearch={searchCNAEs}
+          cnaesSearching={cnaesLoading}
         />
       </div>
 
@@ -516,8 +536,9 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
         <div className="flex items-center gap-4">
           <input
             type="number"
-            min="1"
+            min="0"
             max="10000"
+            step="10"
             value={state.targetQuantity}
             onChange={(e) => setTargetQuantity(Number(e.target.value))}
             className={`w-32 px-4 py-2 border-b transition-all ${
@@ -536,63 +557,6 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
               {formatNumber(Math.min(state.targetQuantity, stats.total_matches))} disponíveis
             </span>
           )}
-        </div>
-      </div>
-
-      {/* Validação Errors - Sempre visível quando há erros */}
-      {validationErrors.length > 0 && (
-        <div className={`p-4 rounded-lg ${isDark ? 'bg-yellow-500/10' : 'bg-yellow-50'} border ${isDark ? 'border-yellow-500/20' : 'border-yellow-200'}`}>
-          <div className="flex items-start gap-2">
-            <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isDark ? 'text-yellow-400' : 'text-yellow-600'}`} />
-            <div>
-              <p className={`font-medium ${isDark ? 'text-yellow-400' : 'text-yellow-700'}`}>
-                Campos obrigatórios:
-              </p>
-              <ul className={`mt-1 text-sm ${isDark ? 'text-yellow-400/80' : 'text-yellow-600'} list-disc list-inside`}>
-                {validationErrors.map((error, i) => (
-                  <li key={i}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Botões de Ação */}
-      <div className={`flex items-center justify-between pt-4 border-t ${isDark ? 'border-white/[0.08]' : 'border-border-light'}`}>
-        <button
-          onClick={fetchStats}
-          disabled={statsLoading || !(state.filters.localizacao?.trim() || state.filters.uf?.length || state.filters.cnae?.length)}
-          className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-            isDark
-              ? 'bg-white/[0.05] hover:bg-white/[0.1] text-white disabled:opacity-50'
-              : 'bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50'
-          }`}
-        >
-          <RefreshCw className={`w-4 h-4 ${statsLoading ? 'animate-spin' : ''}`} />
-          <span>Atualizar Preview</span>
-        </button>
-
-        <div className="flex items-center gap-3">
-          {/* Botão Salvar - igual ao Google Maps */}
-          <button
-            onClick={handleSave}
-            disabled={saving || !isValid}
-            className="px-6 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Salvando...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>Salvar Configuração</span>
-              </>
-            )}
-          </button>
-
         </div>
       </div>
 
@@ -670,11 +634,11 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded text-sm font-medium ${
-                        (run.leads_created || 0) > 0
+                        (run.created_quantity || run.leads_created || 0) > 0
                           ? 'bg-green-500/10 text-green-500'
                           : 'bg-gray-500/10 text-gray-500'
                       }`}>
-                        {formatNumber(run.leads_created || 0)}
+                        {formatNumber(run.created_quantity || run.leads_created || 0)}
                       </span>
                     </td>
                     <td className="px-6 py-4">

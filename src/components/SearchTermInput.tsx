@@ -16,6 +16,8 @@ interface SearchTermInputProps {
   extractionId?: string;
   isDark: boolean;
   placeholder?: string;
+  /** Fonte de extração para salvar histórico sem extractionId */
+  source?: 'google_maps' | 'instagram' | 'cnpj';
 }
 
 export interface SearchTermInputRef {
@@ -29,7 +31,8 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
   workspaceId,
   extractionId,
   isDark,
-  placeholder = "Ex: clínicas médicas"
+  placeholder = "Ex: clínicas médicas",
+  source
 }, ref) => {
   const [suggestions, setSuggestions] = useState<SearchTermHistory[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -39,12 +42,33 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Buscar histórico de termos de todas as extrações do workspace
+  // Chave do localStorage para histórico por source
+  const localStorageKey = source ? `search_terms_history_${workspaceId}_${source}` : null;
+
+  // Buscar histórico de termos (do banco ou localStorage)
   useEffect(() => {
     if (!workspaceId) return;
 
     const fetchHistory = async () => {
       try {
+        const allTerms = new Map<string, SearchTermHistory>();
+
+        // Se tem source, buscar do localStorage primeiro
+        if (localStorageKey) {
+          const localHistory = localStorage.getItem(localStorageKey);
+          if (localHistory) {
+            try {
+              const parsed = JSON.parse(localHistory) as SearchTermHistory[];
+              parsed.forEach(item => {
+                allTerms.set(item.term, { ...item });
+              });
+            } catch (e) {
+              console.error('Erro ao parsear histórico do localStorage:', e);
+            }
+          }
+        }
+
+        // Também buscar do banco (lead_extractions)
         const { data, error } = await supabase
           .from('lead_extractions')
           .select('search_terms_history')
@@ -52,9 +76,7 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
 
         if (error) throw error;
 
-        // Agregar todos os históricos
-        const allTerms = new Map<string, SearchTermHistory>();
-        
+        // Agregar todos os históricos do banco
         data?.forEach(extraction => {
           const history = extraction.search_terms_history as SearchTermHistory[] | null;
           if (history && Array.isArray(history)) {
@@ -84,15 +106,62 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
     };
 
     fetchHistory();
-  }, [workspaceId, refreshKey]);
+  }, [workspaceId, refreshKey, localStorageKey]);
+
+  // Helper para salvar no localStorage
+  const saveToLocalStorage = (termToSave: string) => {
+    if (!localStorageKey) return;
+
+    try {
+      const existing = localStorage.getItem(localStorageKey);
+      let history: SearchTermHistory[] = existing ? JSON.parse(existing) : [];
+
+      const existingIndex = history.findIndex(item => item.term.toLowerCase() === termToSave.toLowerCase());
+
+      if (existingIndex >= 0) {
+        history[existingIndex].count += 1;
+        history[existingIndex].last_used = new Date().toISOString();
+      } else {
+        history.push({
+          term: termToSave,
+          count: 1,
+          last_used: new Date().toISOString()
+        });
+      }
+
+      // Manter apenas os 20 termos mais recentes
+      history = history
+        .sort((a, b) => new Date(b.last_used).getTime() - new Date(a.last_used).getTime())
+        .slice(0, 20);
+
+      localStorage.setItem(localStorageKey, JSON.stringify(history));
+      return true;
+    } catch (e) {
+      console.error('Erro ao salvar termo no localStorage:', e);
+      return false;
+    }
+  };
 
   // Expor função de salvar para o componente pai
   useImperativeHandle(ref, () => ({
     saveToHistory: async () => {
-      if (!value || !workspaceId || !extractionId) return;
+      if (!value || !workspaceId) return;
 
       try {
         setSaving(true);
+
+        // Se tem source mas não tem extractionId, salvar no localStorage
+        if (source && !extractionId) {
+          if (saveToLocalStorage(value)) {
+            console.debug('Termo salvo no localStorage com sucesso!');
+            setRefreshKey(prev => prev + 1);
+          }
+          return;
+        }
+
+        // Se não tem extractionId nem source, não faz nada
+        if (!extractionId) return;
+
         // Buscar histórico atual da extração
         const { data: extraction, error: fetchError } = await supabase
           .from('lead_extractions')
@@ -101,14 +170,14 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
           .maybeSingle();
 
         if (fetchError) throw fetchError;
-        
+
         if (!extraction) return;
 
         let history = (extraction?.search_terms_history as SearchTermHistory[]) || [];
-        
+
         // Verificar se o termo já existe
         const existingIndex = history.findIndex(item => item.term.toLowerCase() === value.toLowerCase());
-        
+
         if (existingIndex >= 0) {
           // Atualizar contagem e data
           history[existingIndex].count += 1;
@@ -134,9 +203,9 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
           .eq('id', extractionId);
 
         if (updateError) throw updateError;
-        
+
         console.debug('Termo salvo no histórico com sucesso!');
-        
+
         // Atualizar lista de sugestões
         setRefreshKey(prev => prev + 1);
       } catch (error) {
@@ -206,11 +275,23 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
   };
 
   const handleSaveCurrentTerm = async () => {
-    if (!value || !workspaceId || !extractionId) return;
+    if (!value || !workspaceId) return;
 
     try {
       setSaving(true);
-      
+
+      // Se tem source mas não tem extractionId, salvar no localStorage
+      if (source && !extractionId) {
+        if (saveToLocalStorage(value)) {
+          setRefreshKey(prev => prev + 1);
+          setTimeout(() => setShowSuggestions(false), 500);
+        }
+        return;
+      }
+
+      // Se não tem extractionId nem source, não faz nada
+      if (!extractionId) return;
+
       const { data: extraction, error: fetchError } = await supabase
         .from('lead_extractions')
         .select('search_terms_history')
@@ -218,13 +299,13 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
         .maybeSingle();
 
       if (fetchError) throw fetchError;
-      
+
       if (!extraction) return;
 
       let history = (extraction?.search_terms_history as SearchTermHistory[]) || [];
-      
+
       const existingIndex = history.findIndex(item => item.term.toLowerCase() === value.toLowerCase());
-      
+
       if (existingIndex >= 0) {
         history[existingIndex].count += 1;
         history[existingIndex].last_used = new Date().toISOString();
@@ -246,10 +327,10 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
         .eq('id', extractionId);
 
       if (updateError) throw updateError;
-      
+
       // Atualizar lista de sugestões
       setRefreshKey(prev => prev + 1);
-      
+
       // Fechar dropdown após salvar
       setTimeout(() => setShowSuggestions(false), 500);
     } catch (error) {
@@ -261,10 +342,24 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
 
   const handleDeleteTerm = async (termToDelete: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Evitar selecionar o termo ao deletar
-    
+
     if (!workspaceId) return;
 
     try {
+      // Se tem source, deletar também do localStorage
+      if (localStorageKey) {
+        const existing = localStorage.getItem(localStorageKey);
+        if (existing) {
+          try {
+            let history: SearchTermHistory[] = JSON.parse(existing);
+            history = history.filter(item => item.term.toLowerCase() !== termToDelete.toLowerCase());
+            localStorage.setItem(localStorageKey, JSON.stringify(history));
+          } catch (e) {
+            console.error('Erro ao deletar termo do localStorage:', e);
+          }
+        }
+      }
+
       // Buscar todas as extrações do workspace
       const { data: extractions, error: fetchError } = await supabase
         .from('lead_extractions')
@@ -276,7 +371,7 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
       // Atualizar cada extração removendo o termo
       for (const extraction of extractions || []) {
         let history = (extraction.search_terms_history as SearchTermHistory[]) || [];
-        
+
         // Remover o termo
         history = history.filter(item => item.term.toLowerCase() !== termToDelete.toLowerCase());
 
@@ -285,7 +380,7 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
           .update({ search_terms_history: history })
           .eq('id', extraction.id);
       }
-      
+
       // Atualizar lista de sugestões
       setRefreshKey(prev => prev + 1);
     } catch (error) {
@@ -295,7 +390,8 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
 
   // Verificar se o termo atual é novo (não está nas sugestões)
   const isNewTerm = value && !suggestions.some(item => item.term.toLowerCase() === value.toLowerCase());
-  const canSave = value && extractionId && isNewTerm;
+  // Pode salvar se: tem valor, é novo, e (tem extractionId OU tem source)
+  const canSave = value && isNewTerm && (extractionId || source);
 
   return (
     <div className="relative">
@@ -421,7 +517,7 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
                 Nenhum termo salvo ainda
               </div>
               <div className="text-xs mt-1">
-                {extractionId ? 'Salve a extração primeiro para começar' : 'Digite um termo para começar'}
+                Digite um termo para começar
               </div>
             </div>
           )}

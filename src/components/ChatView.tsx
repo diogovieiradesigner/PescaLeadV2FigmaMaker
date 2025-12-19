@@ -24,21 +24,32 @@ interface ChatViewProps {
   onKanbanRefresh?: () => void; // ✅ Callback para refresh do kanban
   instances: Instance[];
   inboxes: Inbox[];
+  // ✅ Navegação por URL
+  urlConversationId?: string | null;
+  onConversationChange?: (conversationId: string | null) => void;
 }
 
-export function ChatView({ 
-  theme, 
-  onThemeToggle, 
-  onNavigateToPipeline, 
+export function ChatView({
+  theme,
+  onThemeToggle,
+  onNavigateToPipeline,
   onNavigateToSettings,
   onKanbanRefresh, // ✅ Callback para refresh do kanban
   instances,
-  inboxes
+  inboxes,
+  urlConversationId,
+  onConversationChange
 }: ChatViewProps) {
   const { currentWorkspace } = useAuth();
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationIdState] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [dbAgents, setDbAgents] = useState<DbUser[]>([]);
+
+  // ✅ Wrapper para atualizar estado local e notificar parent (URL)
+  const setSelectedConversationId = (conversationId: string | null) => {
+    setSelectedConversationIdState(conversationId);
+    onConversationChange?.(conversationId);
+  };
   const [dbExtractions, setDbExtractions] = useState<LeadExtractionForFilter[]>([]);
   const [dbCampaigns, setDbCampaigns] = useState<CampaignRunForFilter[]>([]);
   const [isNewConversationModalOpen, setIsNewConversationModalOpen] = useState(false);
@@ -99,12 +110,23 @@ export function ChatView({
     }
   }, [currentWorkspace?.id]);
 
-  // ✅ Selecionar primeira conversa APENAS na carga inicial (não durante busca/filtros)
+  // ✅ Sincronizar com conversationId da URL
   useEffect(() => {
-    if (conversations.length > 0 && !selectedConversationId && !loading) {
-      setSelectedConversationId(conversations[0].id);
+    if (urlConversationId && urlConversationId !== selectedConversationId) {
+      console.log('[ChatView] 🔗 Conversa na URL:', urlConversationId);
+      setSelectedConversationIdState(urlConversationId);
     }
-  }, [conversations.length, selectedConversationId, loading]); // ✅ Usar .length ao invés do array completo
+  }, [urlConversationId]);
+
+  // ✅ Selecionar primeira conversa APENAS na carga inicial (não durante busca/filtros)
+  // Se não houver conversa na URL
+  useEffect(() => {
+    if (conversations.length > 0 && !selectedConversationId && !urlConversationId && !loading) {
+      const firstConversation = conversations[0];
+      setSelectedConversationIdState(firstConversation.id);
+      onConversationChange?.(firstConversation.id);
+    }
+  }, [conversations.length, selectedConversationId, urlConversationId, loading]); // ✅ Usar .length ao invés do array completo
 
   // ✅ Buscar conversa selecionada na lista COMPLETA (não apenas na filtrada)
   // Isso permite manter o chat aberto mesmo se ele não aparecer nos filtros/busca

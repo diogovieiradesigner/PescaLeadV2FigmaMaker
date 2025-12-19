@@ -79,6 +79,8 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
 
       const { data: { session } } = await supabase.auth.getSession();
 
+      console.log('[useCNPJFilters] getStats - Sending filters:', JSON.stringify(filtersToCheck, null, 2));
+
       const response = await fetch(
         `${SUPABASE_URL}/functions/v1/cnpj-api/stats`,
         {
@@ -214,17 +216,60 @@ interface UseCNPJExtractionResult {
 }
 
 const DEFAULT_FILTERS: CNPJFilters = {
-  situacao: ['02'], // Ativas por padrão
+  // Sem filtros padrão - todos os campos começam vazios (= "Todos")
 };
 
+const CNPJ_EXTRACTION_STORAGE_KEY = 'cnpj_extraction_state';
+
+// Helper para carregar estado do localStorage
+function loadStateFromStorage(): CNPJExtractionState | null {
+  try {
+    const saved = localStorage.getItem(CNPJ_EXTRACTION_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Validar estrutura básica
+      if (parsed && typeof parsed === 'object' && parsed.filters) {
+        return {
+          extractionName: parsed.extractionName || '',
+          filters: parsed.filters || DEFAULT_FILTERS,
+          targetQuantity: parsed.targetQuantity || 100,
+          funnelId: parsed.funnelId || '',
+          columnId: parsed.columnId || '',
+        };
+      }
+    }
+  } catch (e) {
+    console.error('[useCNPJExtraction] Erro ao carregar estado do localStorage:', e);
+  }
+  return null;
+}
+
+// Helper para salvar estado no localStorage
+function saveStateToStorage(state: CNPJExtractionState) {
+  try {
+    localStorage.setItem(CNPJ_EXTRACTION_STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error('[useCNPJExtraction] Erro ao salvar estado no localStorage:', e);
+  }
+}
+
 export function useCNPJExtraction(): UseCNPJExtractionResult {
-  const [state, setState] = useState<CNPJExtractionState>({
-    extractionName: '',
-    filters: DEFAULT_FILTERS,
-    targetQuantity: 100,
-    funnelId: '',
-    columnId: '',
+  // Inicializar estado com dados do localStorage se disponível
+  const [state, setState] = useState<CNPJExtractionState>(() => {
+    const savedState = loadStateFromStorage();
+    return savedState || {
+      extractionName: '',
+      filters: DEFAULT_FILTERS,
+      targetQuantity: 100,
+      funnelId: '',
+      columnId: '',
+    };
   });
+
+  // Salvar estado no localStorage sempre que mudar
+  useEffect(() => {
+    saveStateToStorage(state);
+  }, [state]);
 
   const setExtractionName = useCallback((name: string) => {
     setState(prev => ({ ...prev, extractionName: name }));
@@ -260,10 +305,6 @@ export function useCNPJExtraction(): UseCNPJExtractionResult {
   // Validação
   const validationErrors: string[] = [];
 
-  if (!state.extractionName.trim()) {
-    validationErrors.push('Nome da extração é obrigatório');
-  }
-
   // Verificar se pelo menos um filtro está preenchido (qualquer filtro serve)
   const hasLocationFilter = state.filters.localizacao?.trim() || state.filters.uf?.length || state.filters.municipio?.length || state.filters.ddd?.length;
   const hasNicheFilter = state.filters.cnae?.length || state.filters.cnae_divisao?.length;
@@ -283,8 +324,8 @@ export function useCNPJExtraction(): UseCNPJExtractionResult {
     validationErrors.push('Selecione a coluna de destino');
   }
 
-  if (state.targetQuantity < 1 || state.targetQuantity > 10000) {
-    validationErrors.push('Quantidade deve ser entre 1 e 10.000');
+  if (state.targetQuantity < 10 || state.targetQuantity > 10000) {
+    validationErrors.push('Quantidade deve ser entre 10 e 10.000');
   }
 
   const isValid = validationErrors.length === 0;

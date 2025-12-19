@@ -642,8 +642,8 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
 
   // Copiar apenas o link para clipboard
   const copyLinkToClipboard = (link: any) => {
-    const baseUrl = window.location.origin + window.location.pathname;
-    const publicUrl = `${baseUrl}#/chat/${link.public_slug}`;
+    // ✅ URL limpa sem hash - usa rota pública /chat/:slug
+    const publicUrl = `${window.location.origin}/chat/${link.public_slug}`;
 
     navigator.clipboard.writeText(publicUrl);
     setCopiedLinkId(link.id);
@@ -652,8 +652,8 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
 
   // Copiar link + senha para compartilhar com cliente
   const copyLinkWithPassword = (link: any) => {
-    const baseUrl = window.location.origin + window.location.pathname;
-    const publicUrl = `${baseUrl}#/chat/${link.public_slug}`;
+    // ✅ URL limpa sem hash - usa rota pública /chat/:slug
+    const publicUrl = `${window.location.origin}/chat/${link.public_slug}`;
     const fullText = `🔗 Link do Chat: ${publicUrl}\n🔑 Senha de Acesso: ${link.access_code}`;
 
     navigator.clipboard.writeText(fullText);
@@ -1059,7 +1059,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
                                   🔗 Link Público
                                 </div>
                                 <div className={`text-xs truncate ${isDark ? 'text-white/60' : 'text-gray-600'}`}>
-                                  {window.location.origin}{window.location.pathname}#/chat/{link.public_slug}
+                                  {window.location.origin}/chat/{link.public_slug}
                                 </div>
                               </div>
 

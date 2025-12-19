@@ -1,14 +1,11 @@
-import { createHashRouter } from 'react-router';
+import { createBrowserRouter, useParams } from 'react-router';
 import App from '../App';
 import { PublicBooking } from '../pages/PublicBooking';
 import { PublicChat } from '../pages/PublicChat';
 
 // Wrapper para extrair o slug da URL de agendamento
 function BookingWrapper() {
-  // Pegar slug da URL hash: /#/agendar/slug-da-empresa
-  const hash = window.location.hash;
-  const match = hash.match(/\/agendar\/([^/?]+)/);
-  const slug = match ? match[1] : '';
+  const { slug } = useParams<{ slug: string }>();
 
   if (!slug) {
     return (
@@ -26,10 +23,7 @@ function BookingWrapper() {
 
 // Wrapper para extrair o slug da URL de chat público
 function ChatWrapper() {
-  // Pegar slug da URL hash: /#/chat/slug-do-agente
-  const hash = window.location.hash;
-  const match = hash.match(/\/chat\/([^/?]+)/);
-  const slug = match ? match[1] : '';
+  const { slug } = useParams<{ slug: string }>();
 
   if (!slug) {
     return (
@@ -45,11 +39,8 @@ function ChatWrapper() {
   return <PublicChat slug={slug} />;
 }
 
-export const router = createHashRouter([
-  {
-    path: '/',
-    element: <App />,
-  },
+export const router = createBrowserRouter([
+  // Rotas públicas
   {
     path: '/agendar/:slug',
     element: <BookingWrapper />,
@@ -57,5 +48,91 @@ export const router = createHashRouter([
   {
     path: '/chat/:slug',
     element: <ChatWrapper />,
+  },
+  // Todas as rotas internas vão para o App (navegação é gerenciada internamente)
+  {
+    path: '/',
+    element: <App />,
+  },
+  {
+    path: '/dashboard',
+    element: <App />,
+  },
+  {
+    path: '/pipeline',
+    element: <App />,
+  },
+  {
+    path: '/pipeline/lead/:leadId',
+    element: <App />,
+  },
+  {
+    path: '/chat',
+    element: <App />,
+  },
+  {
+    path: '/mensagens/:conversationId',
+    element: <App />,
+  },
+  {
+    path: '/calendario',
+    element: <App />,
+  },
+  {
+    path: '/calendario/evento/:eventId',
+    element: <App />,
+  },
+  {
+    path: '/extracao',
+    element: <App />,
+  },
+  {
+    path: '/extracao/google-maps',
+    element: <App />,
+  },
+  {
+    path: '/extracao/cnpj',
+    element: <App />,
+  },
+  {
+    path: '/extracao/instagram',
+    element: <App />,
+  },
+  {
+    path: '/extracao/progresso',
+    element: <App />,
+  },
+  {
+    path: '/extracao/progresso/:runId',
+    element: <App />,
+  },
+  {
+    path: '/campanhas',
+    element: <App />,
+  },
+  {
+    path: '/campanhas/:runId',
+    element: <App />,
+  },
+  {
+    path: '/ia',
+    element: <App />,
+  },
+  {
+    path: '/logs',
+    element: <App />,
+  },
+  {
+    path: '/configuracoes',
+    element: <App />,
+  },
+  {
+    path: '/conta',
+    element: <App />,
+  },
+  // Catch-all para rotas não encontradas - redireciona para dashboard
+  {
+    path: '*',
+    element: <App />,
   },
 ]);

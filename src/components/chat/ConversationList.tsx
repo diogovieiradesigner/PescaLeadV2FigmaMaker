@@ -221,6 +221,13 @@ export function ConversationList({
                     src={conversation.avatar}
                     alt={conversation.contactName}
                     className="w-12 h-12 rounded-full object-cover"
+                    fallback={
+                      <Avatar
+                        name={conversation.contactName}
+                        size="lg"
+                        className="w-12 h-12"
+                      />
+                    }
                   />
                 ) : (
                   <Avatar

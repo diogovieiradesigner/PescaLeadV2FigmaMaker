@@ -33,6 +33,9 @@ import {
   Info,
   CheckCircle2,
   AlertTriangle,
+  Users,
+  TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -565,6 +568,9 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
   const statusConfig = getStatusConfig();
   const StatusIcon = statusConfig?.icon || Clock;
 
+  // Detectar se é extração do Instagram (não tem filtros)
+  const isInstagram = runInfo?.source === 'instagram';
+
   const containerClass = isDark ? "bg-black text-white" : "bg-white text-zinc-950";
 
   return (
@@ -665,81 +671,83 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
         <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
           {/* Left Column - Main Stats */}
           <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-6 overflow-y-auto pr-2 scrollbar-thin">
-            {/* Progress Card */}
-            <Card 
-              className={cn(
-                "rounded-xl",
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}
-              style={{
-                borderRadius: '0.75rem',
-              }}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className={cn(
-                  "text-xs font-medium uppercase tracking-wider",
-                  isDark ? "text-zinc-500" : "text-zinc-600"
-                )}>
-                  Progresso Geral
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="flex items-end justify-between">
-                    <div className="space-y-1">
-                      <p className={cn(
-                        "text-5xl font-bold tracking-tight",
-                        isDark ? "text-white" : "text-zinc-900"
-                      )}>
-                        <AnimatedCounter value={runInfo.created_quantity || 0} />
-                      </p>
-                      <p className={cn(
-                        "text-sm",
-                        isDark ? "text-zinc-500" : "text-zinc-600"
-                      )}>
-                        de {runInfo.target_quantity || 0} leads capturados
-                      </p>
-                    </div>
-                    <div className="text-right mb-2">
-                      <p className={cn(
-                        "text-4xl font-bold",
-                        isDark ? "text-zinc-700" : "text-zinc-300"
-                      )}>
-                        <AnimatedCounter value={
-                          runInfo.created_quantity && runInfo.target_quantity && runInfo.target_quantity > 0
-                            ? Math.round((runInfo.created_quantity / runInfo.target_quantity) * 100)
-                            : 0
-                        } />%
-                      </p>
-                    </div>
-                  </div>
-                  <AnimatedProgressBar 
-                    percentage={
-                      runInfo.created_quantity && runInfo.target_quantity && runInfo.target_quantity > 0
-                        ? Math.min(Math.round((runInfo.created_quantity / runInfo.target_quantity) * 100), 100)
-                        : 0
-                    } 
-                    isDark={isDark} 
-                  />
-                  <div className={cn(
-                    "flex justify-between text-xs font-mono",
-                    isDark ? "text-zinc-600" : "text-zinc-500"
+            {/* Cards Principais - Progresso, Duplicados e Filtrados */}
+            <div className={cn(
+              "grid gap-4",
+              isInstagram
+                ? "grid-cols-1 md:grid-cols-2"
+                : "grid-cols-1 md:grid-cols-3"
+            )}>
+              {/* Progress Card */}
+              <Card
+                className={cn(
+                  "rounded-xl",
+                  isDark
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0"
+                    : "bg-white border border-zinc-200"
+                )}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className={cn(
+                    "text-xs font-medium uppercase tracking-wider",
+                    isDark ? "text-zinc-500" : "text-zinc-600"
                   )}>
-                    <span>Início: {new Date(runInfo.started_at || runInfo.created_at).toLocaleString('pt-BR')}</span>
-                    {runInfo.duration_formatted && <span>Duração: {runInfo.duration_formatted}</span>}
+                    Progresso Geral
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-end justify-between">
+                      <div className="space-y-1">
+                        <p className={cn(
+                          "text-4xl font-bold tracking-tight",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>
+                          <AnimatedCounter value={runInfo.created_quantity || 0} />
+                        </p>
+                        <p className={cn(
+                          "text-sm",
+                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        )}>
+                          de {runInfo.target_quantity || 0} leads capturados
+                        </p>
+                      </div>
+                      <div className="text-right mb-2">
+                        <p className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-zinc-700" : "text-zinc-300"
+                        )}>
+                          <AnimatedCounter value={
+                            runInfo.created_quantity && runInfo.target_quantity && runInfo.target_quantity > 0
+                              ? Math.round((runInfo.created_quantity / runInfo.target_quantity) * 100)
+                              : 0
+                          } />%
+                        </p>
+                      </div>
+                    </div>
+                    <AnimatedProgressBar
+                      percentage={
+                        runInfo.created_quantity && runInfo.target_quantity && runInfo.target_quantity > 0
+                          ? Math.min(Math.round((runInfo.created_quantity / runInfo.target_quantity) * 100), 100)
+                          : 0
+                      }
+                      isDark={isDark}
+                    />
+                    <div className={cn(
+                      "flex justify-between text-xs font-mono",
+                      isDark ? "text-zinc-600" : "text-zinc-500"
+                    )}>
+                      <span>Início: {new Date(runInfo.started_at || runInfo.created_at).toLocaleString('pt-BR')}</span>
+                      {runInfo.duration_formatted && <span>Duração: {runInfo.duration_formatted}</span>}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {/* Cards Principais - Duplicados e Filtrados */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Duplicados Removidos */}
               <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-orange-950/20 via-zinc-950 to-black border border-orange-900/30" 
+                isDark
+                  ? "bg-gradient-to-br from-orange-950/20 via-zinc-950 to-black border border-orange-900/30"
                   : "bg-white border border-zinc-200"
               )}>
                 <CardContent className="pt-6">
@@ -759,7 +767,7 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                   </div>
                   <div className="flex items-baseline gap-3 mb-4">
                     <span className={cn(
-                      "text-5xl font-bold",
+                      "text-4xl font-bold",
                       isDark ? "text-orange-500" : "text-orange-600"
                     )}>
                       <AnimatedCounter value={analytics.run?.duplicates_skipped || 0} />
@@ -770,8 +778,8 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                     )}>
                       <div>de {(analytics.run?.found_quantity || 0)} encontrados</div>
                       <div className="text-xs">
-                        {analytics.run?.found_quantity ? 
-                          `${Math.round((analytics.run.duplicates_skipped / analytics.run.found_quantity) * 100)}% duplicados` 
+                        {analytics.run?.found_quantity ?
+                          `${Math.round((analytics.run.duplicates_skipped / analytics.run.found_quantity) * 100)}% duplicados`
                           : '0%'}
                       </div>
                     </div>
@@ -780,11 +788,11 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                     "h-2 rounded-full overflow-hidden",
                     isDark ? "bg-zinc-900" : "bg-orange-200"
                   )}>
-                    <div 
+                    <div
                       className="h-full bg-orange-500 transition-all duration-1000"
-                      style={{ 
-                        width: analytics.run?.found_quantity ? 
-                          `${Math.round((analytics.run.duplicates_skipped / analytics.run.found_quantity) * 100)}%` 
+                      style={{
+                        width: analytics.run?.found_quantity ?
+                          `${Math.round((analytics.run.duplicates_skipped / analytics.run.found_quantity) * 100)}%`
                           : '0%'
                       }}
                     />
@@ -792,61 +800,63 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                 </CardContent>
               </Card>
 
-              {/* Filtrados */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-red-950/20 via-zinc-950 to-black border border-red-900/30" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={cn(
-                          "text-base font-semibold uppercase",
-                          isDark ? "text-red-400" : "text-red-600"
-                        )}>Rejeitados por Filtros</span>
+              {/* Filtrados - Oculto para Instagram (não tem filtros) */}
+              {!isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-red-950/20 via-zinc-950 to-black border border-red-900/30"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={cn(
+                            "text-base font-semibold uppercase",
+                            isDark ? "text-red-400" : "text-red-600"
+                          )}>Rejeitados por Filtros</span>
+                        </div>
+                        <p className={cn(
+                          "text-xs",
+                          isDark ? "text-zinc-500" : "text-zinc-600"
+                        )}>Leads que não passaram nos critérios</p>
                       </div>
-                      <p className={cn(
-                        "text-xs",
-                        isDark ? "text-zinc-500" : "text-zinc-600"
-                      )}>Leads que não passaram nos critérios</p>
                     </div>
-                  </div>
-                  <div className="flex items-baseline gap-3 mb-4">
-                    <span className={cn(
-                      "text-5xl font-bold",
-                      isDark ? "text-red-500" : "text-red-600"
-                    )}>
-                      <AnimatedCounter value={analytics.run?.filtered_out || 0} />
-                    </span>
+                    <div className="flex items-baseline gap-3 mb-4">
+                      <span className={cn(
+                        "text-5xl font-bold",
+                        isDark ? "text-red-500" : "text-red-600"
+                      )}>
+                        <AnimatedCounter value={analytics.run?.filtered_out || 0} />
+                      </span>
+                      <div className={cn(
+                        "text-sm",
+                        isDark ? "text-zinc-500" : "text-zinc-700"
+                      )}>
+                        <div>de {(analytics.run?.found_quantity || 0)} encontrados</div>
+                        <div className="text-xs">
+                          {analytics.run?.found_quantity ?
+                            `${Math.round((analytics.run.filtered_out / analytics.run.found_quantity) * 100)}% rejeitados`
+                            : '0%'}
+                        </div>
+                      </div>
+                    </div>
                     <div className={cn(
-                      "text-sm",
-                      isDark ? "text-zinc-500" : "text-zinc-700"
+                      "h-2 rounded-full overflow-hidden",
+                      isDark ? "bg-zinc-900" : "bg-red-200"
                     )}>
-                      <div>de {(analytics.run?.found_quantity || 0)} encontrados</div>
-                      <div className="text-xs">
-                        {analytics.run?.found_quantity ? 
-                          `${Math.round((analytics.run.filtered_out / analytics.run.found_quantity) * 100)}% rejeitados` 
-                          : '0%'}
-                      </div>
+                      <div
+                        className="h-full bg-red-500 transition-all duration-1000"
+                        style={{
+                          width: analytics.run?.found_quantity ?
+                            `${Math.round((analytics.run.filtered_out / analytics.run.found_quantity) * 100)}%`
+                            : '0%'
+                        }}
+                      />
                     </div>
-                  </div>
-                  <div className={cn(
-                    "h-2 rounded-full overflow-hidden",
-                    isDark ? "bg-zinc-900" : "bg-red-200"
-                  )}>
-                    <div 
-                      className="h-full bg-red-500 transition-all duration-1000"
-                      style={{ 
-                        width: analytics.run?.found_quantity ? 
-                          `${Math.round((analytics.run.filtered_out / analytics.run.found_quantity) * 100)}%` 
-                          : '0%'
-                      }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Seção: Dados de Contato */}
@@ -886,32 +896,34 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                 </CardContent>
               </Card>
 
-              {/* Telefone Fixo */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className={cn(
-                    "flex items-center gap-2 mb-3",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    <span className="text-xs font-medium uppercase">Telefone Fixo</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className={cn(
-                        "text-3xl font-bold",
-                        isDark ? "text-white" : "text-zinc-900"
-                      )}>
-                        <AnimatedCounter value={analytics.contatos?.tipo_telefone?.fixo || 0} />
-                      </span>
+              {/* Telefone Fixo - Oculto para Instagram */}
+              {!isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-zinc-500" : "text-zinc-600"
+                    )}>
+                      <span className="text-xs font-medium uppercase">Telefone Fixo</span>
                     </div>
-                    <MiniProgressBar percentage={analytics.contatos?.tipo_telefone?.fixo && analytics.contatos?.telefone?.com ? Math.round((analytics.contatos.tipo_telefone.fixo / analytics.contatos.telefone.com) * 100) : 0} isDark={isDark} />
-                  </div>
-                </CardContent>
-              </Card>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>
+                          <AnimatedCounter value={analytics.contatos?.tipo_telefone?.fixo || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.contatos?.tipo_telefone?.fixo && analytics.contatos?.telefone?.com ? Math.round((analytics.contatos.tipo_telefone.fixo / analytics.contatos.telefone.com) * 100) : 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* WhatsApp Pendente */}
               <Card className={cn(
@@ -967,59 +979,63 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                 </CardContent>
               </Card>
 
-              {/* Sites Internacionais */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className={cn(
-                    "flex items-center gap-2 mb-3",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    <span className="text-xs font-medium uppercase">Sites Internacionais</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className={cn(
-                        "text-3xl font-bold",
-                        isDark ? "text-white" : "text-zinc-900"
-                      )}>
-                        <AnimatedCounter value={analytics.contatos?.website?.internacional || 0} />
-                      </span>
+              {/* Sites Internacionais - Oculto para Instagram */}
+              {!isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-zinc-500" : "text-zinc-600"
+                    )}>
+                      <span className="text-xs font-medium uppercase">Sites Internacionais</span>
                     </div>
-                    <MiniProgressBar percentage={analytics.contatos?.website?.internacional && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.internacional / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
-                  </div>
-                </CardContent>
-              </Card>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>
+                          <AnimatedCounter value={analytics.contatos?.website?.internacional || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.contatos?.website?.internacional && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.internacional / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* Sites .br */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className={cn(
-                    "flex items-center gap-2 mb-3",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    <span className="text-xs font-medium uppercase">Sites .br</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className={cn(
-                        "text-3xl font-bold",
-                        isDark ? "text-white" : "text-zinc-900"
-                      )}>
-                        <AnimatedCounter value={analytics.contatos?.website?.brasileiro || 0} />
-                      </span>
+              {/* Sites .br - Oculto para Instagram */}
+              {!isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-zinc-500" : "text-zinc-600"
+                    )}>
+                      <span className="text-xs font-medium uppercase">Sites .br</span>
                     </div>
-                    <MiniProgressBar percentage={analytics.contatos?.website?.brasileiro && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.brasileiro / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
-                  </div>
-                </CardContent>
-              </Card>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>
+                          <AnimatedCounter value={analytics.contatos?.website?.brasileiro || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.contatos?.website?.brasileiro && analytics.contatos?.website?.com ? Math.round((analytics.contatos.website.brasileiro / analytics.contatos.website.com) * 100) : 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* ========== GRUPO EMAIL ========== */}
               {/* Email */}
@@ -1050,60 +1066,206 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
               </Card>
 
               {/* ========== GRUPO CNPJ ========== */}
-              {/* CNPJ */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className={cn(
-                    "flex items-center gap-2 mb-3",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    <span className="text-xs font-medium uppercase">Com CNPJ</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className={cn(
-                        "text-3xl font-bold",
-                        isDark ? "text-white" : "text-zinc-900"
-                      )}>
-                        <AnimatedCounter value={analytics.contatos?.cnpj?.com || 0} />
-                      </span>
+              {/* CNPJ - Oculto para Instagram */}
+              {!isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-zinc-500" : "text-zinc-600"
+                    )}>
+                      <span className="text-xs font-medium uppercase">Com CNPJ</span>
                     </div>
-                    <MiniProgressBar percentage={analytics.contatos?.cnpj?.percentual || 0} isDark={isDark} />
-                  </div>
-                </CardContent>
-              </Card>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>
+                          <AnimatedCounter value={analytics.contatos?.cnpj?.com || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.contatos?.cnpj?.percentual || 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* ========== GRUPO LOCALIZAÇÃO ========== */}
-              {/* Com Endereço */}
-              <Card className={cn(
-                isDark 
-                  ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
-                  : "bg-white border border-zinc-200"
-              )}>
-                <CardContent className="pt-6">
-                  <div className={cn(
-                    "flex items-center gap-2 mb-3",
-                    isDark ? "text-zinc-500" : "text-zinc-600"
-                  )}>
-                    <span className="text-xs font-medium uppercase">Com Endereço</span>
-                  </div>
-                  <div className="space-y-2">
+              {/* Com Endereço - Oculto para Instagram */}
+              {!isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-zinc-950 to-black border-0"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-zinc-500" : "text-zinc-600"
+                    )}>
+                      <span className="text-xs font-medium uppercase">Com Endereço</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-white" : "text-zinc-900"
+                        )}>
+                          <AnimatedCounter value={analytics.contatos?.localizacao?.com_endereco || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.contatos?.localizacao?.com_endereco && analytics.contatos?.total ? Math.round((analytics.contatos.localizacao.com_endereco / analytics.contatos.total) * 100) : 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ========== CARDS ESPECÍFICOS INSTAGRAM ========== */}
+              {/* Perfis Empresariais - Apenas para Instagram */}
+              {isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-purple-950/20 via-zinc-950 to-black border border-purple-900/30"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-purple-400" : "text-purple-600"
+                    )}>
+                      <Building2 className="w-4 h-4" />
+                      <span className="text-xs font-medium uppercase">Perfis Empresariais</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-purple-400" : "text-purple-600"
+                        )}>
+                          <AnimatedCounter value={analytics.perfis?.tipos?.empresas || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.perfis?.tipos?.empresas && analytics.perfis?.total ? Math.round((analytics.perfis.tipos.empresas / analytics.perfis.total) * 100) : 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Perfis Verificados - Apenas para Instagram */}
+              {isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-blue-950/20 via-zinc-950 to-black border border-blue-900/30"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-blue-400" : "text-blue-600"
+                    )}>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="text-xs font-medium uppercase">Verificados</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className={cn(
+                          "text-3xl font-bold",
+                          isDark ? "text-blue-400" : "text-blue-600"
+                        )}>
+                          <AnimatedCounter value={analytics.perfis?.tipos?.verificados || 0} />
+                        </span>
+                      </div>
+                      <MiniProgressBar percentage={analytics.perfis?.tipos?.verificados && analytics.perfis?.total ? Math.round((analytics.perfis.tipos.verificados / analytics.perfis.total) * 100) : 0} isDark={isDark} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Média de Seguidores - Apenas para Instagram */}
+              {isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-pink-950/20 via-zinc-950 to-black border border-pink-900/30"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-pink-400" : "text-pink-600"
+                    )}>
+                      <Users className="w-4 h-4" />
+                      <span className="text-xs font-medium uppercase">Média de Seguidores</span>
+                    </div>
                     <div className="flex items-baseline gap-2">
                       <span className={cn(
                         "text-3xl font-bold",
-                        isDark ? "text-white" : "text-zinc-900"
+                        isDark ? "text-pink-400" : "text-pink-600"
                       )}>
-                        <AnimatedCounter value={analytics.contatos?.localizacao?.com_endereco || 0} />
+                        {analytics.perfis?.seguidores?.media?.toLocaleString('pt-BR') || 0}
                       </span>
                     </div>
-                    <MiniProgressBar percentage={analytics.contatos?.localizacao?.com_endereco && analytics.contatos?.total ? Math.round((analytics.contatos.localizacao.com_endereco / analytics.contatos.total) * 100) : 0} isDark={isDark} />
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Mínimo de Seguidores - Apenas para Instagram */}
+              {isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-cyan-950/20 via-zinc-950 to-black border border-cyan-900/30"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-cyan-400" : "text-cyan-600"
+                    )}>
+                      <TrendingDown className="w-4 h-4" />
+                      <span className="text-xs font-medium uppercase">Mínimo de Seguidores</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-cyan-400" : "text-cyan-600"
+                      )}>
+                        {analytics.perfis?.seguidores?.minimo?.toLocaleString('pt-BR') || 0}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Máximo de Seguidores - Apenas para Instagram */}
+              {isInstagram && (
+                <Card className={cn(
+                  isDark
+                    ? "bg-gradient-to-br from-amber-950/20 via-zinc-950 to-black border border-amber-900/30"
+                    : "bg-white border border-zinc-200"
+                )}>
+                  <CardContent className="pt-6">
+                    <div className={cn(
+                      "flex items-center gap-2 mb-3",
+                      isDark ? "text-amber-400" : "text-amber-600"
+                    )}>
+                      <TrendingUp className="w-4 h-4" />
+                      <span className="text-xs font-medium uppercase">Máximo de Seguidores</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className={cn(
+                        "text-3xl font-bold",
+                        isDark ? "text-amber-400" : "text-amber-600"
+                      )}>
+                        {analytics.perfis?.seguidores?.maximo?.toLocaleString('pt-BR') || 0}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
               </div>
             </div>
 
@@ -1377,12 +1539,17 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                   Gráficos de Distribuição
                 </h3>
 
-                {/* Grid de Gráficos de Pizza */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  
+                {/* Grid de Gráficos de Pizza - 3 colunas para Instagram, 2 para outros */}
+                <div className={cn(
+                  "grid gap-4",
+                  isInstagram
+                    ? "grid-cols-1 sm:grid-cols-3"
+                    : "grid-cols-1 sm:grid-cols-2"
+                )}>
+
                   {/* Pizza: Contatos */}
                   {analytics.graficos.pizza_contatos && analytics.graficos.pizza_contatos.length > 0 && (
-                    <DonutChart 
+                    <DonutChart
                       data={analytics.graficos.pizza_contatos}
                       title="Contatos"
                       colors={['#14b8a6', '#f97316', '#a855f7', '#22c55e']}
@@ -1393,7 +1560,7 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
 
                   {/* Pizza: WhatsApp */}
                   {analytics.graficos.pizza_whatsapp && analytics.graficos.pizza_whatsapp.length > 0 && (
-                    <DonutChart 
+                    <DonutChart
                       data={analytics.graficos.pizza_whatsapp}
                       title="WhatsApp"
                       colors={['#22c55e', '#ef4444', '#52525b']}
@@ -1404,7 +1571,7 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
 
                   {/* Pizza: Website */}
                   {analytics.graficos.pizza_website && analytics.graficos.pizza_website.length > 0 && (
-                    <DonutChart 
+                    <DonutChart
                       data={analytics.graficos.pizza_website}
                       title="Websites"
                       colors={['#22c55e', '#3b82f6', '#52525b']}
@@ -1413,9 +1580,9 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                     />
                   )}
 
-                  {/* Pizza: Qualidade */}
-                  {analytics.graficos.pizza_qualidade && analytics.graficos.pizza_qualidade.length > 0 && (
-                    <DonutChart 
+                  {/* Pizza: Qualidade - Oculto para Instagram */}
+                  {!isInstagram && analytics.graficos.pizza_qualidade && analytics.graficos.pizza_qualidade.length > 0 && (
+                    <DonutChart
                       data={analytics.graficos.pizza_qualidade}
                       title="Qualidade"
                       colors={['#22c55e', '#84cc16', '#facc15', '#f97316', '#ef4444']}
@@ -1430,8 +1597,8 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
 
             {/* Seção Qualidade e Enriquecimento */}
             <div className="space-y-4">
-              {/* Score de Qualidade */}
-              {analytics.qualidade && (
+              {/* Score de Qualidade - Oculto para Instagram */}
+              {analytics.qualidade && !isInstagram && (
                 <Card className={cn(
                   isDark 
                     ? "bg-gradient-to-br from-zinc-950 to-black border-0" 
@@ -1545,20 +1712,39 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                       const timeline = analytics.timeline || [];
                       const enrichmentLogs = analytics.enrichment_timeline || [];
 
-                      // Se for aba de enriquecimento, usa enrichment_timeline
+                      // Steps do Google Maps (extração)
+                      const googleMapsSteps = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'];
+                      // Steps do Instagram Discovery (extração)
+                      const instagramDiscoverySteps = ['queries', 'serper query', 'loop complete', 'conclusão', 'ai expansion'];
+                      // Steps de enriquecimento (Instagram)
+                      const enrichmentSteps = ['api call', 'run succeeded', 'processamento', 'auto-trigger', 'batch'];
+
+                      // Combinar todos os steps de extração
+                      const allExtractionSteps = [...googleMapsSteps, ...instagramDiscoverySteps];
+
+                      // Se for aba de enriquecimento, combina enrichment_timeline + logs de enriquecimento da timeline
                       if (logTab === 'enriquecimento') {
-                        const filtered = enrichmentLogs.filter((event: any) => {
+                        // Logs da enrichment_timeline (Google Maps)
+                        const fromEnrichmentTimeline = enrichmentLogs.filter((event: any) => {
                           if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
                           return true;
                         });
-                        return filtered.length;
+                        // Logs de enriquecimento da timeline principal (Instagram)
+                        const fromMainTimeline = timeline.filter((event: any) => {
+                          const stepLower = (event.step || '').toLowerCase();
+                          const isEnrichment = enrichmentSteps.some(s => stepLower.includes(s.toLowerCase()));
+                          if (!isEnrichment) return false;
+                          if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
+                          return true;
+                        });
+                        return fromEnrichmentTimeline.length + fromMainTimeline.length;
                       }
 
                       const filtered = timeline.filter((event: any) => {
                         // Filtro por aba
                         const stepLower = (event.step || '').toLowerCase();
                         if (logTab === 'extracao') {
-                          const isExtracao = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'].some(s => stepLower.includes(s.toLowerCase()));
+                          const isExtracao = allExtractionSteps.some(s => stepLower.includes(s.toLowerCase()));
                           if (!isExtracao) return false;
                         }
                         // Filtro por nível
@@ -1713,12 +1899,24 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                     const timeline = analytics.timeline || [];
                     const enrichmentLogs = analytics.enrichment_timeline || [];
 
+                    // Steps de enriquecimento (Instagram)
+                    const enrichmentSteps = ['api call', 'run succeeded', 'processamento', 'auto-trigger', 'batch'];
+
                     // Se for aba de enriquecimento
                     if (logTab === 'enriquecimento') {
-                      const filteredEnrichment = enrichmentLogs.filter((event: any) => {
+                      // Combinar logs da enrichment_timeline (Google Maps) + logs de enriquecimento da timeline (Instagram)
+                      const fromEnrichmentTimeline = enrichmentLogs.filter((event: any) => {
                         if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
                         return true;
                       });
+                      const fromMainTimeline = timeline.filter((event: any) => {
+                        const stepLower = (event.step || '').toLowerCase();
+                        const isEnrichment = enrichmentSteps.some(s => stepLower.includes(s.toLowerCase()));
+                        if (!isEnrichment) return false;
+                        if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
+                        return true;
+                      });
+                      const filteredEnrichment = [...fromEnrichmentTimeline, ...fromMainTimeline];
 
                       if (filteredEnrichment.length === 0) {
                         // Mostrar status do enriquecimento quando não há logs
@@ -1837,7 +2035,13 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                     const filteredTimeline = timeline.filter((event: any) => {
                       const stepLower = (event.step || '').toLowerCase();
                       if (logTab === 'extracao') {
-                        const isExtracao = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'].some(s => stepLower.includes(s.toLowerCase()));
+                        // Steps do Google Maps
+                        const googleMapsSteps = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'];
+                        // Steps do Instagram Discovery
+                        const instagramSteps = ['queries', 'serper query', 'loop complete', 'conclusão', 'ai expansion'];
+                        // Combinar todos os steps de extração
+                        const allExtractionSteps = [...googleMapsSteps, ...instagramSteps];
+                        const isExtracao = allExtractionSteps.some(s => stepLower.includes(s.toLowerCase()));
                         if (!isExtracao) return false;
                       }
                       if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;

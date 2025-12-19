@@ -47,6 +47,8 @@ interface CalendarViewProps {
   onThemeToggle: () => void;
   onNavigateToSettings: () => void;
   onMobileMenuClick?: () => void;
+  urlEventId?: string | null;
+  onEventChange?: (eventId: string | null) => void;
 }
 
 // Ícones por tipo de evento
@@ -101,6 +103,8 @@ export function CalendarView({
   onThemeToggle,
   onNavigateToSettings,
   onMobileMenuClick,
+  urlEventId,
+  onEventChange,
 }: CalendarViewProps) {
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
@@ -152,6 +156,34 @@ export function CalendarView({
   } = useCalendar({
     workspaceId: currentWorkspace?.id || '',
   });
+
+  // ✅ Abrir evento automaticamente quando há eventId na URL (/calendario/evento/:eventId)
+  useEffect(() => {
+    if (urlEventId && events.length > 0 && !isEventModalOpen) {
+      console.log('[CalendarView] 🔗 Evento na URL:', urlEventId);
+      const eventFromUrl = events.find(e => e.id === urlEventId);
+      if (eventFromUrl) {
+        console.log('[CalendarView] ✅ Evento encontrado:', eventFromUrl.title);
+        openEditEventModal(eventFromUrl);
+      } else {
+        console.warn('[CalendarView] ⚠️ Evento não encontrado:', urlEventId);
+        // Limpa a URL se o evento não existir
+        onEventChange?.(null);
+      }
+    }
+  }, [urlEventId, events, isEventModalOpen, openEditEventModal, onEventChange]);
+
+  // ✅ Wrapper para openEditEventModal que também atualiza a URL
+  const handleOpenEditEventModal = useCallback((event: InternalEventWithRelations) => {
+    openEditEventModal(event);
+    onEventChange?.(event.id);
+  }, [openEditEventModal, onEventChange]);
+
+  // ✅ Wrapper para closeEventModal que também limpa a URL
+  const handleCloseEventModal = useCallback(() => {
+    closeEventModal();
+    onEventChange?.(null);
+  }, [closeEventModal, onEventChange]);
 
   // Mapa de cores por responsável (memoizado)
   const assigneeColorMap = useMemo(() => {
@@ -372,7 +404,7 @@ export function CalendarView({
         </button>
 
         <div
-          onClick={() => openEditEventModal(event)}
+          onClick={() => handleOpenEditEventModal(event)}
           className="cursor-pointer"
         >
           <div className="flex items-start gap-3">
@@ -838,7 +870,7 @@ export function CalendarView({
                             onDragEnd={handleDragEnd}
                             onClick={(e) => {
                               e.stopPropagation();
-                              openEditEventModal(event);
+                              handleOpenEditEventModal(event);
                             }}
                             className={cn(
                               'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate transition-all group',
@@ -957,7 +989,7 @@ export function CalendarView({
                   return (
                     <div
                       key={event.id}
-                      onClick={() => openEditEventModal(event)}
+                      onClick={() => handleOpenEditEventModal(event)}
                       className={cn(
                         'flex items-center gap-2 p-2 rounded cursor-pointer transition-colors',
                         isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'
@@ -998,7 +1030,7 @@ export function CalendarView({
         <EventModal
           theme={theme}
           isOpen={isEventModalOpen}
-          onClose={closeEventModal}
+          onClose={handleCloseEventModal}
           event={selectedEvent}
           selectedDate={currentDate}
           settings={settings}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Loader2, Play, Moon, Sun, Clock, AlertCircle, Save, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -17,6 +17,8 @@ interface CampaignViewProps {
   onThemeToggle: () => void;
   onNavigateToSettings: () => void;
   onNavigateToPipeline?: () => void;
+  urlRunId?: string | null;
+  onRunChange?: (runId: string | null) => void;
 }
 
 interface CampaignHistory {
@@ -64,7 +66,7 @@ interface CampaignRunsResponse {
   runs: CampaignRun[];
 }
 
-export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNavigateToPipeline }: CampaignViewProps) {
+export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNavigateToPipeline, urlRunId, onRunChange }: CampaignViewProps) {
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
 
@@ -122,6 +124,25 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
   // Estados para deletar campanha
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
   const [confirmDeleteRunId, setConfirmDeleteRunId] = useState<string | null>(null);
+
+  // ✅ Abrir run automaticamente quando há runId na URL
+  useEffect(() => {
+    if (urlRunId && urlRunId !== selectedRunId) {
+      setSelectedRunId(urlRunId);
+    }
+  }, [urlRunId, selectedRunId]);
+
+  // ✅ Wrapper para abrir detalhes que também atualiza a URL
+  const handleOpenRunDetails = useCallback((runId: string) => {
+    setSelectedRunId(runId);
+    onRunChange?.(runId);
+  }, [onRunChange]);
+
+  // ✅ Wrapper para fechar detalhes que também limpa a URL
+  const handleCloseRunDetails = useCallback(() => {
+    setSelectedRunId(null);
+    onRunChange?.(null);
+  }, [onRunChange]);
 
   // Dados mockados - Histórico de campanhas
   const campaignHistory: CampaignHistory[] = [
@@ -569,7 +590,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       // Abrir detalhes da execução recém-criada
       if (data.run_id) {
         console.log('📂 [EXECUTE NOW] Abrindo detalhes da execução:', data.run_id);
-        setSelectedRunId(data.run_id);
+        handleOpenRunDetails(data.run_id);
       }
 
       console.log('✅ [EXECUTE NOW] Processo concluído com sucesso!');
@@ -737,7 +758,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
         theme={theme}
         onThemeToggle={onThemeToggle}
         runId={selectedRunId}
-        onBack={() => setSelectedRunId(null)}
+        onBack={handleCloseRunDetails}
         onNavigateToSettings={onNavigateToSettings}
         onRefresh={handleRefreshDetails}
       />
@@ -1377,7 +1398,7 @@ NUNCA:
                             <td className="px-6 py-3 text-center whitespace-nowrap">
                               <div className="flex items-center justify-center gap-2">
                                 <button
-                                  onClick={() => setSelectedRunId(run.id)}
+                                  onClick={() => handleOpenRunDetails(run.id)}
                                   className="px-3 py-1 text-sm rounded-lg bg-[#0169D9] hover:bg-[#0159c9] text-white transition-colors"
                                 >
                                   Detalhes

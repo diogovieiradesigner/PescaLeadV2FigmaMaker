@@ -193,18 +193,31 @@ export async function cancelInstagramExtraction(runId: string): Promise<void> {
 
 /**
  * Exclui uma extração (e todos os dados relacionados)
- * NOTA: Usa tabela compartilhada lead_extraction_runs
+ * NOTA: Usa função RPC que deleta em cascata, mantendo leads órfãos
  */
-export async function deleteInstagramExtraction(runId: string): Promise<void> {
-  const { error } = await supabase
-    .from('lead_extraction_runs')
-    .delete()
-    .eq('id', runId)
-    .eq('source', 'instagram');
+export async function deleteInstagramExtraction(runId: string): Promise<{
+  success: boolean;
+  deleted_counts?: {
+    discovery_results: number;
+    enriched_profiles: number;
+    logs: number;
+    staging: number;
+  };
+  error?: string;
+}> {
+  const { data, error } = await supabase.rpc('delete_instagram_extraction', {
+    p_run_id: runId,
+  });
 
   if (error) {
     throw new Error(`Erro ao excluir extração: ${error.message}`);
   }
+
+  if (!data?.success) {
+    throw new Error(data?.error || 'Erro desconhecido ao excluir extração');
+  }
+
+  return data;
 }
 
 // ============================================
@@ -258,57 +271,15 @@ export async function getDiscoveryStatus(runId: string): Promise<DiscoveryRespon
 }
 
 // ============================================
-// EDGE FUNCTIONS - ENRICHMENT
+// EDGE FUNCTIONS - ENRICHMENT (SOMENTE LEITURA)
 // ============================================
+// NOTA: O enrichment é disparado automaticamente pelo backend após discovery.
+// Frontend NÃO deve chamar start/check, apenas monitorar status.
 
 /**
- * Inicia a etapa de enriquecimento (Bright Data)
- */
-export async function startEnrichment(runId: string): Promise<EnrichmentResponse> {
-  const headers = await getHeaders();
-
-  const response = await fetch(`${EDGE_FUNCTION_BASE}/instagram-enrichment`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      run_id: runId,
-      action: 'start',
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro ao iniciar enriquecimento: ${error}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Verifica status do enriquecimento e processa resultados se pronto
- */
-export async function checkEnrichment(runId: string): Promise<EnrichmentResponse> {
-  const headers = await getHeaders();
-
-  const response = await fetch(`${EDGE_FUNCTION_BASE}/instagram-enrichment`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      run_id: runId,
-      action: 'check',
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro ao verificar enriquecimento: ${error}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Verifica status do enriquecimento
+ * Verifica status do enriquecimento (SOMENTE LEITURA)
+ * IMPORTANTE: O enriquecimento é iniciado automaticamente pelo backend.
+ * Use esta função apenas para monitorar o progresso.
  */
 export async function getEnrichmentStatus(runId: string): Promise<EnrichmentResponse> {
   const headers = await getHeaders();
@@ -331,38 +302,15 @@ export async function getEnrichmentStatus(runId: string): Promise<EnrichmentResp
 }
 
 // ============================================
-// EDGE FUNCTIONS - MIGRATION
+// EDGE FUNCTIONS - MIGRATION (SOMENTE LEITURA)
 // ============================================
+// NOTA: A migração é disparada automaticamente pelo backend após enrichment.
+// Frontend NÃO deve chamar start, apenas monitorar status.
 
 /**
- * Inicia a migração para leads
- */
-export async function startMigration(
-  runId: string,
-  limit = 50
-): Promise<MigrationResponse> {
-  const headers = await getHeaders();
-
-  const response = await fetch(`${EDGE_FUNCTION_BASE}/instagram-migrate`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      run_id: runId,
-      action: 'start',
-      limit,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro ao iniciar migração: ${error}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Verifica status da migração
+ * Verifica status da migração (SOMENTE LEITURA)
+ * IMPORTANTE: A migração é iniciada automaticamente pelo backend.
+ * Use esta função apenas para monitorar o progresso.
  */
 export async function getMigrationStatus(runId: string): Promise<MigrationResponse> {
   const headers = await getHeaders();
@@ -387,90 +335,14 @@ export async function getMigrationStatus(runId: string): Promise<MigrationRespon
 // ============================================
 // EXECUÇÃO COMPLETA
 // ============================================
-
-/**
- * Executa todas as etapas de uma extração em sequência
- * Retorna um generator para acompanhar o progresso
- */
-export async function* runFullExtraction(
-  runId: string
-): AsyncGenerator<{
-  phase: 'discovery' | 'enrichment' | 'migration' | 'completed';
-  status: string;
-  progress?: number;
-  message: string;
-}> {
-  // Fase 1: Descoberta
-  yield {
-    phase: 'discovery',
-    status: 'starting',
-    message: 'Iniciando descoberta de perfis...',
-  };
-
-  const discoveryResult = await startDiscovery(runId);
-
-  yield {
-    phase: 'discovery',
-    status: 'completed',
-    message: `Descoberta concluída: ${discoveryResult.discovery?.unique_profiles || 0} perfis únicos`,
-  };
-
-  // Fase 2: Enriquecimento
-  yield {
-    phase: 'enrichment',
-    status: 'starting',
-    message: 'Iniciando enriquecimento de perfis...',
-  };
-
-  const enrichmentStart = await startEnrichment(runId);
-
-  // Poll até completar
-  let enrichmentDone = false;
-  while (!enrichmentDone) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    const status = await checkEnrichment(runId);
-
-    yield {
-      phase: 'enrichment',
-      status: status.status || 'running',
-      progress: status.progress,
-      message: `Enriquecimento: ${status.progress || 0}%`,
-    };
-
-    if (status.status === 'completed' || status.status === 'failed') {
-      enrichmentDone = true;
-    }
-  }
-
-  // Fase 3: Migração
-  yield {
-    phase: 'migration',
-    status: 'starting',
-    message: 'Iniciando migração para leads...',
-  };
-
-  let migrationDone = false;
-  while (!migrationDone) {
-    const migrationResult = await startMigration(runId);
-
-    yield {
-      phase: 'migration',
-      status: migrationResult.has_more ? 'running' : 'completed',
-      message: `Migração: ${migrationResult.batch?.leads_created || 0} leads criados`,
-    };
-
-    if (!migrationResult.has_more) {
-      migrationDone = true;
-    }
-  }
-
-  yield {
-    phase: 'completed',
-    status: 'completed',
-    message: 'Extração concluída com sucesso!',
-  };
-}
+// NOTA: O fluxo completo é gerenciado pelo backend automaticamente.
+// Frontend apenas inicia discovery e monitora via real-time subscription.
+//
+// Fluxo automático do backend:
+// 1. startDiscovery() - Frontend chama
+// 2. discovery completa → backend auto-trigger enrichment
+// 3. enrichment completa → backend auto-trigger migration
+// 4. Frontend monitora via subscribeToExtractionUpdates()
 
 // ============================================
 // DADOS - DISCOVERY RESULTS

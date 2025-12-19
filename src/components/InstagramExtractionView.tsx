@@ -1,12 +1,10 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase/client';
 import { toast } from 'sonner@2.0.3';
 import {
   Instagram,
-  Search,
-  MapPin,
   Target,
   Loader2,
   Users,
@@ -16,18 +14,19 @@ import {
   AlertCircle,
   XCircle,
   Eye,
-  Clock
+  Clock,
+  Trash2,
+  Save
 } from 'lucide-react';
+import { LocationSearchInput } from './LocationSearchInput';
+import { SearchTermInput, SearchTermInputRef } from './SearchTermInput';
 import {
   createInstagramExtraction,
   startDiscovery,
-  startEnrichment,
-  checkEnrichment,
-  startMigration,
   listInstagramExtractions,
+  deleteInstagramExtraction,
 } from '../services/instagram-extraction-service';
 import type { InstagramExtractionRun } from '../types/instagram.types';
-import { SUGGESTED_NICHES, SUGGESTED_LOCATIONS } from '../types/instagram.types';
 
 interface InstagramExtractionViewProps {
   theme: Theme;
@@ -38,6 +37,8 @@ export interface InstagramExtractionViewRef {
   execute: () => Promise<void>;
   canExecute: () => boolean;
   isExecuting: () => boolean;
+  save: () => Promise<void>;
+  isSaving: () => boolean;
 }
 
 interface Funnel {
@@ -74,8 +75,22 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
   const [recentRuns, setRecentRuns] = useState<InstagramExtractionRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
 
+  // Delete state
+  const [deleteRunId, setDeleteRunId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Save state
+  const [saving, setSaving] = useState(false);
+  const searchTermInputRef = useRef<SearchTermInputRef>(null);
+
+  // Ref para armazenar columnId pendente (quando carregamos config salva antes das colunas carregarem)
+  const pendingColumnIdRef = useRef<string | null>(null);
+
   // Validação
-  const canExecute = Boolean(niche && location && funnelId && columnId);
+  const canExecute = Boolean(niche && location && funnelId && columnId && targetQuantity >= 10);
+
+  // Chave para localStorage
+  const LOCAL_STORAGE_KEY = `instagram_extraction_config_${currentWorkspace?.id}`;
 
   // Funções de fetch - definidas antes dos useEffect que as usam
   const fetchFunnels = async () => {
@@ -110,6 +125,16 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
 
       if (error) throw error;
       setColumns(data || []);
+
+      // Restaurar columnId pendente se houver
+      if (pendingColumnIdRef.current) {
+        const pendingColumnId = pendingColumnIdRef.current;
+        // Verificar se a coluna existe na lista carregada
+        if (data?.some(col => col.id === pendingColumnId)) {
+          setColumnId(pendingColumnId);
+        }
+        pendingColumnIdRef.current = null;
+      }
     } catch (error) {
       console.error('Error fetching columns:', error);
       toast.error('Erro ao carregar colunas');
@@ -135,6 +160,8 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
     execute: handleExecute,
     canExecute: () => canExecute && !executing,
     isExecuting: () => executing,
+    save: handleSave,
+    isSaving: () => saving,
   }));
 
   // Fetch funnels e histórico
@@ -142,6 +169,24 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
     if (currentWorkspace?.id) {
       fetchFunnels();
       fetchRecentRuns();
+
+      // Carregar configurações salvas do localStorage
+      const savedConfig = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (savedConfig) {
+        try {
+          const config = JSON.parse(savedConfig);
+          if (config.niche) setNiche(config.niche);
+          if (config.location) setLocation(config.location);
+          if (config.targetQuantity) setTargetQuantity(config.targetQuantity);
+          if (config.funnelId) setFunnelId(config.funnelId);
+          // Armazenar columnId na ref para restaurar após carregar as colunas
+          if (config.columnId) {
+            pendingColumnIdRef.current = config.columnId;
+          }
+        } catch (e) {
+          console.error('Erro ao carregar configurações salvas:', e);
+        }
+      }
     }
   }, [currentWorkspace?.id]);
 
@@ -197,6 +242,61 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
     return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Salvar configurações
+  const handleSave = async () => {
+    if (!currentWorkspace?.id) {
+      toast.error('Workspace não encontrado');
+      return;
+    }
+
+    if (!niche.trim()) {
+      toast.error('Informe o termo de busca');
+      return;
+    }
+
+    if (!location.trim()) {
+      toast.error('Informe a localização');
+      return;
+    }
+
+    if (!funnelId || !columnId) {
+      toast.error('Selecione o funil e coluna de destino');
+      return;
+    }
+
+    if (targetQuantity < 10 || targetQuantity > 1000) {
+      toast.error('Quantidade deve estar entre 10 e 1.000');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // Salvar no localStorage
+      const config = {
+        niche: niche.trim(),
+        location: location.trim(),
+        targetQuantity,
+        funnelId,
+        columnId,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
+
+      // Salvar termo no histórico (se houver ref)
+      if (searchTermInputRef.current) {
+        await searchTermInputRef.current.saveToHistory();
+      }
+
+      toast.success('Configurações salvas com sucesso!');
+    } catch (error) {
+      console.error('Error saving config:', error);
+      toast.error('Erro ao salvar configurações');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleExecute = async () => {
     if (!currentWorkspace?.id) {
       toast.error('Workspace não encontrado');
@@ -233,49 +333,22 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
       });
 
       toast.success('Extração criada! Iniciando descoberta...');
+
+      // Atualizar lista imediatamente para mostrar a nova extração
+      await fetchRecentRuns();
+
       setExecutionPhase('Descobrindo perfis...');
 
-      // 2. Start discovery
+      // 2. Start discovery - O backend controla automaticamente o resto do fluxo
+      // (discovery → enrichment → migration)
       const discoveryResult = await startDiscovery(run.id);
-      toast.success(`Descoberta concluída: ${discoveryResult.discovery?.unique_profiles || 0} perfis encontrados`);
+      const profilesFound = discoveryResult.discovery?.unique_profiles || 0;
 
-      // 3. Start enrichment
-      setExecutionPhase('Enriquecendo perfis...');
-      await startEnrichment(run.id);
+      toast.success(`Descoberta concluída: ${profilesFound} perfis encontrados`);
 
-      // 4. Poll enrichment status
-      let enrichmentDone = false;
-      let attempts = 0;
-      const maxAttempts = 60; // 5 minutes max
-
-      while (!enrichmentDone && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        attempts++;
-
-        const status = await checkEnrichment(run.id);
-        setExecutionPhase(`Enriquecendo: ${status.progress || 0}%`);
-
-        if (status.status === 'completed' || status.status === 'failed') {
-          enrichmentDone = true;
-          if (status.status === 'completed') {
-            toast.success(`Enriquecimento concluído: ${status.enriched || 0} perfis`);
-          }
-        }
+      if (profilesFound > 0) {
+        toast.info('Enriquecimento e migração iniciados automaticamente. Acompanhe o progresso no histórico.');
       }
-
-      // 5. Start migration
-      setExecutionPhase('Migrando para leads...');
-      let hasMore = true;
-      let totalCreated = 0;
-
-      while (hasMore) {
-        const migrationResult = await startMigration(run.id, 50);
-        totalCreated += migrationResult.batch?.leads_created || 0;
-        hasMore = migrationResult.has_more || false;
-        setExecutionPhase(`Migrados: ${totalCreated} leads`);
-      }
-
-      toast.success(`Extração concluída! ${totalCreated} leads criados`);
 
       // Atualizar histórico
       await fetchRecentRuns();
@@ -296,6 +369,38 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
     }
   };
 
+  const handleDelete = async (runId: string) => {
+    try {
+      setDeleting(true);
+      const result = await deleteInstagramExtraction(runId);
+
+      // Mostrar detalhes do que foi deletado
+      const counts = result.deleted_counts;
+      const details = [];
+      if (counts?.discovery_results && counts.discovery_results > 0) details.push(`${counts.discovery_results} perfis descobertos`);
+      if (counts?.enriched_profiles && counts.enriched_profiles > 0) details.push(`${counts.enriched_profiles} perfis enriquecidos`);
+      if (counts?.logs && counts.logs > 0) details.push(`${counts.logs} logs`);
+      if (counts?.staging && counts.staging > 0) details.push(`${counts.staging} registros em staging`);
+
+      const detailsMessage = details.length > 0
+        ? `\nDeletado: ${details.join(', ')}`
+        : '';
+
+      toast.success(`Extração excluída com sucesso!${detailsMessage}`);
+      setDeleteRunId(null);
+      await fetchRecentRuns();
+    } catch (error) {
+      console.error('Error deleting extraction:', error);
+      toast.error(`Erro ao excluir extração: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const getRunDescription = (run: InstagramExtractionRun) => {
+    return `${run.niche} - ${run.location}`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Form Section */}
@@ -306,31 +411,20 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
             Parâmetros de Busca
           </h3>
 
-          {/* Niche */}
+          {/* Termo de Busca (Niche) */}
           <div>
             <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
-              Nicho / Segmento *
+              Termo de Busca *
             </label>
-            <div className="relative">
-              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
-              <input
-                type="text"
-                value={niche}
-                onChange={(e) => setNiche(e.target.value)}
-                placeholder="Ex: dentista, restaurante, academia..."
-                list="niche-suggestions"
-                className={`w-full pl-10 pr-4 py-2 border-b transition-all ${
-                  isDark
-                    ? 'bg-black border-white/[0.2] text-white focus:border-[#0169D9]'
-                    : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'
-                } focus:outline-none`}
-              />
-              <datalist id="niche-suggestions">
-                {SUGGESTED_NICHES.map(n => (
-                  <option key={n} value={n} />
-                ))}
-              </datalist>
-            </div>
+            <SearchTermInput
+              ref={searchTermInputRef}
+              value={niche}
+              onChange={setNiche}
+              workspaceId={currentWorkspace?.id || ''}
+              isDark={isDark}
+              placeholder="Ex: dentista, restaurante, academia..."
+              source="instagram"
+            />
           </div>
 
           {/* Location */}
@@ -338,26 +432,11 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
             <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
               Localização *
             </label>
-            <div className="relative">
-              <MapPin className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Ex: São Paulo, Rio de Janeiro..."
-                list="location-suggestions"
-                className={`w-full pl-10 pr-4 py-2 border-b transition-all ${
-                  isDark
-                    ? 'bg-black border-white/[0.2] text-white focus:border-[#0169D9]'
-                    : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'
-                } focus:outline-none`}
-              />
-              <datalist id="location-suggestions">
-                {SUGGESTED_LOCATIONS.map(l => (
-                  <option key={l} value={l} />
-                ))}
-              </datalist>
-            </div>
+            <LocationSearchInput
+              value={location}
+              onChange={setLocation}
+              isDark={isDark}
+            />
           </div>
 
           {/* Target Quantity */}
@@ -369,10 +448,11 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
               <Target className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
               <input
                 type="number"
-                min={10}
-                max={500}
+                min={0}
+                max={1000}
+                step={10}
                 value={targetQuantity}
-                onChange={(e) => setTargetQuantity(Math.min(500, Math.max(10, parseInt(e.target.value) || 50)))}
+                onChange={(e) => setTargetQuantity(Math.min(1000, Math.max(0, parseInt(e.target.value) || 0)))}
                 className={`w-full pl-10 pr-4 py-2 border-b transition-all ${
                   isDark
                     ? 'bg-black border-white/[0.2] text-white focus:border-[#0169D9]'
@@ -381,7 +461,7 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
               />
             </div>
             <p className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
-              Mínimo 10, máximo 500 perfis
+              Máximo 1000 perfis
             </p>
           </div>
         </div>
@@ -443,35 +523,6 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
             </select>
           </div>
 
-          {/* Info Box */}
-          <div className={`p-4 rounded-lg ${isDark ? 'bg-white/[0.05]' : 'bg-gray-50'}`}>
-            <div className="flex items-start gap-3">
-              <Instagram className={`w-5 h-5 mt-0.5 ${isDark ? 'text-pink-400' : 'text-pink-500'}`} />
-              <div>
-                <h4 className={`font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  Como funciona
-                </h4>
-                <ul className={`mt-2 space-y-1 text-xs ${isDark ? 'text-white/60' : 'text-gray-600'}`}>
-                  <li className="flex items-center gap-2">
-                    <Search className="w-3 h-3" />
-                    Busca perfis no Google (Serper.dev)
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Users className="w-3 h-3" />
-                    Enriquece dados via Instagram (Bright Data)
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Mail className="w-3 h-3" />
-                    Extrai email, telefone e WhatsApp
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Phone className="w-3 h-3" />
-                    Cria leads automaticamente no funil
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -549,11 +600,11 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded text-sm font-medium ${
-                        run.leads_created > 0
+                        (run.created_quantity || run.leads_created || 0) > 0
                           ? 'bg-green-500/10 text-green-500'
                           : 'bg-gray-500/10 text-gray-500'
                       }`}>
-                        {run.leads_created || 0}
+                        {run.created_quantity || run.leads_created || 0}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -581,6 +632,18 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
                           <Eye className="w-4 h-4" />
                           <span>Detalhes</span>
                         </button>
+                        <button
+                          onClick={() => setDeleteRunId(run.id)}
+                          disabled={['discovering', 'enriching', 'migrating'].includes(run.status)}
+                          className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-colors ${
+                            ['discovering', 'enriching', 'migrating'].includes(run.status)
+                              ? 'bg-gray-500/10 text-gray-400 cursor-not-allowed'
+                              : 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                          }`}
+                          title={['discovering', 'enriching', 'migrating'].includes(run.status) ? 'Não é possível excluir enquanto em execução' : 'Excluir extração'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -590,6 +653,56 @@ export const InstagramExtractionView = forwardRef<InstagramExtractionViewRef, In
           </table>
         </div>
       </div>
+
+      {/* Modal de confirmação de exclusão */}
+      {deleteRunId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className={`w-full max-w-md p-6 rounded-xl shadow-xl ${isDark ? 'bg-elevated' : 'bg-white'}`}>
+            <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+              Confirmar Exclusão
+            </h3>
+            <p className={`mb-4 ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+              Tem certeza que deseja excluir esta extração?
+            </p>
+            <p className={`text-sm mb-4 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+              <strong>Extração:</strong> {recentRuns.find(r => r.id === deleteRunId)?.niche} - {recentRuns.find(r => r.id === deleteRunId)?.location}
+            </p>
+            <p className={`text-sm mb-6 p-3 rounded-lg ${isDark ? 'bg-yellow-500/10 text-yellow-400' : 'bg-yellow-50 text-yellow-700'}`}>
+              ⚠️ Os dados da extração serão removidos, mas os leads criados serão mantidos.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteRunId(null)}
+                disabled={deleting}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isDark
+                    ? 'bg-white/10 text-white hover:bg-white/20'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                } disabled:opacity-50`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDelete(deleteRunId)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Excluir
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

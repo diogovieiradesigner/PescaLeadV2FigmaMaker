@@ -7,41 +7,115 @@
 
 /**
  * Extrai username de uma URL do Instagram
- * Suporta múltiplos formatos de URL
+ * Suporta TODOS os formatos conhecidos de URL do Instagram
+ *
+ * Formatos suportados:
+ * - Perfil direto: instagram.com/username/
+ * - Post: instagram.com/username/p/CODE/
+ * - Reel: instagram.com/username/reel/CODE/
+ * - Reels: instagram.com/username/reels/
+ * - TV/IGTV: instagram.com/username/tv/CODE/
+ * - Live: instagram.com/username/live/CODE/
+ * - Stories: instagram.com/stories/username/ID/
+ * - Highlights: instagram.com/stories/highlights/ID/ (NÃO tem username)
+ * - Guide: instagram.com/username/guide/title/ID/
+ * - Tagged: instagram.com/username/tagged/
+ * - Channel: instagram.com/username/channel/
+ * - Saved: instagram.com/username/saved/
+ * - URLs com query params: instagram.com/username/?igshid=xxx&utm_source=xxx
+ * - Mobile deep link: instagram://user?username=xxx
+ * - @username
  *
  * @example
  * extractUsernameFromUrl("https://www.instagram.com/drdentista_sp/")
  * // => "drdentista_sp"
  *
- * extractUsernameFromUrl("https://instagram.com/drdentista_sp")
- * // => "drdentista_sp"
+ * extractUsernameFromUrl("https://www.instagram.com/jaimeportugal.arquiteto/reel/DMIirUIMlmZ/")
+ * // => "jaimeportugal.arquiteto"
+ *
+ * extractUsernameFromUrl("https://www.instagram.com/stories/clinica_dental/12345/")
+ * // => "clinica_dental"
  */
 export function extractUsernameFromUrl(url: string): string | null {
   if (!url) return null;
 
   try {
-    // Limpa a URL
-    const cleanUrl = url.trim().toLowerCase();
-
-    // Padrões de URL do Instagram
-    const patterns = [
-      // https://www.instagram.com/username/
-      /(?:https?:\/\/)?(?:www\.)?instagram\.com\/([a-zA-Z0-9_.]+)\/?(?:\?.*)?$/i,
-      // https://instagram.com/username
-      /(?:https?:\/\/)?instagram\.com\/([a-zA-Z0-9_.]+)\/?(?:\?.*)?$/i,
-      // @username
-      /^@([a-zA-Z0-9_.]+)$/i,
+    // Páginas especiais/reservadas que NÃO são usernames
+    const specialPages = [
+      'p', 'reel', 'reels', 'stories', 'explore', 'accounts', 'directory',
+      'about', 'legal', 'tv', 'live', 'highlights', 'guide', 'guides',
+      'tagged', 'channel', 'saved', 'api', 'developer', 'help', 'privacy',
+      'terms', 'press', 'jobs', 'brand', 'advertising', 'blog', 'nametag',
+      'direct', 'emails', 'settings', 'session', 'login', 'challenge',
+      'web', 'static', 'challenge', 'data', 'loc', 'locations'
     ];
 
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match && match[1]) {
-        const username = match[1].toLowerCase();
-        // Ignora páginas especiais
-        if (!['p', 'reel', 'reels', 'stories', 'explore', 'accounts', 'directory', 'about', 'legal'].includes(username)) {
-          return username;
-        }
-      }
+    // Helper: valida se é um username válido
+    const isValidUsername = (u: string): boolean => {
+      if (!u) return false;
+      const lower = u.toLowerCase();
+      if (specialPages.includes(lower)) return false;
+      // Username deve ter 1-30 chars, apenas letras, números, _ e .
+      return /^[a-zA-Z0-9_.]{1,30}$/.test(u);
+    };
+
+    // === MOBILE DEEP LINK ===
+    // instagram://user?username=xxx
+    const deepLinkPattern = /instagram:\/\/user\?username=([a-zA-Z0-9_.]+)/i;
+    const deepLinkMatch = url.match(deepLinkPattern);
+    if (deepLinkMatch && isValidUsername(deepLinkMatch[1])) {
+      return deepLinkMatch[1].toLowerCase();
+    }
+
+    // === @USERNAME (texto simples) ===
+    const patternAt = /^@([a-zA-Z0-9_.]+)$/i;
+    const matchAt = url.match(patternAt);
+    if (matchAt && isValidUsername(matchAt[1])) {
+      return matchAt[1].toLowerCase();
+    }
+
+    // === STORIES URL ===
+    // instagram.com/stories/username/ID/
+    // CUIDADO: instagram.com/stories/highlights/ID/ NÃO tem username
+    const storiesPattern = /instagram\.com\/stories\/([a-zA-Z0-9_.]+)(?:\/|\?|$)/i;
+    const storiesMatch = url.match(storiesPattern);
+    if (storiesMatch && isValidUsername(storiesMatch[1])) {
+      return storiesMatch[1].toLowerCase();
+    }
+
+    // === URL COM USERNAME NO PATH SEGUIDO DE SUBPÁGINA ===
+    // instagram.com/username/reel/CODE/
+    // instagram.com/username/p/CODE/
+    // instagram.com/username/tv/CODE/
+    // instagram.com/username/live/CODE/
+    // instagram.com/username/guide/title/ID/
+    // instagram.com/username/tagged/
+    // instagram.com/username/channel/
+    // instagram.com/username/saved/
+    // instagram.com/username/reels/
+    const pathPattern = /instagram\.com\/([a-zA-Z0-9_.]+)\/(?:reel|p|reels|tv|live|guide|guides|tagged|channel|saved)(?:\/|$|\?)/i;
+    const pathMatch = url.match(pathPattern);
+    if (pathMatch && isValidUsername(pathMatch[1])) {
+      return pathMatch[1].toLowerCase();
+    }
+
+    // === URL DE PERFIL DIRETO ===
+    // instagram.com/username/
+    // instagram.com/username?hl=en&igshid=xxx
+    // instagram.com/username/?utm_source=xxx
+    // Deve capturar username mesmo com query params complexos
+    const profilePattern = /instagram\.com\/([a-zA-Z0-9_.]+)\/?(?:\?[^\/]*)?$/i;
+    const profileMatch = url.match(profilePattern);
+    if (profileMatch && isValidUsername(profileMatch[1])) {
+      return profileMatch[1].toLowerCase();
+    }
+
+    // === FALLBACK: Primeiro segmento após instagram.com/ ===
+    // Tenta extrair qualquer coisa que pareça username
+    const fallbackPattern = /instagram\.com\/([a-zA-Z0-9_.]+)/i;
+    const fallbackMatch = url.match(fallbackPattern);
+    if (fallbackMatch && isValidUsername(fallbackMatch[1])) {
+      return fallbackMatch[1].toLowerCase();
     }
 
     return null;
@@ -236,6 +310,42 @@ export function removeAccents(str: string): string {
 }
 
 /**
+ * Gera hash SHA-256 de uma string
+ * Usado para deduplicação robusta de perfis
+ *
+ * @example
+ * const hash = await sha256("username_fullname_bio");
+ * // => "a1b2c3d4e5f6..."
+ */
+export async function sha256(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Gera hash de deduplicação para um perfil do Instagram
+ * Combina username + full_name + primeiros 50 chars da bio para hash único
+ *
+ * @example
+ * const hash = await generateProfileHash({ username: "test", full_name: "Test User", biography: "..." });
+ */
+export async function generateProfileHash(profile: {
+  username: string;
+  full_name?: string;
+  biography?: string;
+}): Promise<string> {
+  const hashInput = [
+    profile.username?.toLowerCase() || '',
+    profile.full_name?.toLowerCase() || '',
+    (profile.biography || '').slice(0, 50).toLowerCase(),
+  ].join('_');
+
+  return sha256(hashInput);
+}
+
+/**
  * Formata número de telefone brasileiro
  */
 export function formatBrazilianPhone(phone: string): string {
@@ -402,6 +512,73 @@ export function processEnrichedProfile(rawData: any): EnrichedProfile {
     }
   }
 
+  // === Extrai WhatsApp dos links externos (externalUrls) ===
+  // Muitos perfis têm wa.me ou api.whatsapp.com nos links, não na bio
+  if (!profile.whatsapp_from_bio && profile.external_urls && Array.isArray(profile.external_urls)) {
+    for (const linkObj of profile.external_urls) {
+      const url = (linkObj.url || linkObj || '').toLowerCase();
+
+      // Detecta links do WhatsApp
+      if (url.includes('wa.me') || url.includes('whatsapp.com') || url.includes('api.whatsapp')) {
+        // Extrai número do link wa.me/5511999999999
+        const waMatch = url.match(/wa\.me\/(\d+)/);
+        if (waMatch) {
+          let num = waMatch[1];
+          // Remove prefixo 55 se presente e número tem mais de 11 dígitos
+          if (num.startsWith('55') && num.length > 11) {
+            num = num.slice(2);
+          }
+          profile.whatsapp_from_bio = num;
+          break;
+        }
+
+        // Extrai número do link api.whatsapp.com/send?phone=5511999999999
+        const apiMatch = url.match(/phone=(\d+)/);
+        if (apiMatch) {
+          let num = apiMatch[1];
+          if (num.startsWith('55') && num.length > 11) {
+            num = num.slice(2);
+          }
+          profile.whatsapp_from_bio = num;
+          break;
+        }
+
+        // Se tem link de WhatsApp mas não conseguiu extrair número, marca como "link"
+        // para indicar que tem WhatsApp mesmo sem número extraído
+        if (!profile.whatsapp_from_bio) {
+          profile.whatsapp_from_bio = 'link_externo';
+        }
+        break;
+      }
+    }
+  }
+
+  // === Também verifica o external_url principal ===
+  if (!profile.whatsapp_from_bio && profile.external_url) {
+    const url = profile.external_url.toLowerCase();
+    if (url.includes('wa.me') || url.includes('whatsapp.com') || url.includes('api.whatsapp')) {
+      const waMatch = url.match(/wa\.me\/(\d+)/);
+      if (waMatch) {
+        let num = waMatch[1];
+        if (num.startsWith('55') && num.length > 11) {
+          num = num.slice(2);
+        }
+        profile.whatsapp_from_bio = num;
+      } else {
+        const apiMatch = url.match(/phone=(\d+)/);
+        if (apiMatch) {
+          let num = apiMatch[1];
+          if (num.startsWith('55') && num.length > 11) {
+            num = num.slice(2);
+          }
+          profile.whatsapp_from_bio = num;
+        } else {
+          profile.whatsapp_from_bio = 'link_externo';
+        }
+      }
+    }
+  }
+
   // === Calcular lead score ===
   profile.lead_score = calculateLeadScore(profile);
 
@@ -410,82 +587,27 @@ export function processEnrichedProfile(rawData: any): EnrichedProfile {
 
 /**
  * Constrói queries de busca para o Google/Serper
+ * ATUALIZADO: Retorna apenas variações do termo de busca (nicho).
+ * A localização é passada separadamente para a API Serper (campo "location").
+ * O operador site:instagram.com é adicionado automaticamente na função de busca.
  *
  * @example
  * buildSearchQueries("dentista", "são paulo")
  * // => [
- * //   "dentista são paulo site:instagram.com",
- * //   "dentista sp site:instagram.com",
- * //   "dentista sao paulo instagram",
- * //   ...
+ * //   "dentista",
+ * //   "clinica odontologica",
+ * //   "consultorio dentario",
+ * //   "odontologia",
  * // ]
  */
 export function buildSearchQueries(niche: string, location: string): string[] {
+  // SIMPLIFICADO: Retorna APENAS o termo exato digitado pelo usuário
+  // O sistema deve avançar nas páginas (1, 2, 3...) ao invés de variar o termo
+  // Variações de termo confundem o usuário e não trazem resultados consistentes
   const nicheClean = niche.trim().toLowerCase();
-  const locationClean = location.trim().toLowerCase();
-  const locationNoAccents = removeAccents(locationClean);
 
-  // Mapeamento de estados para siglas
-  const stateAbbreviations: Record<string, string> = {
-    'são paulo': 'sp', 'sao paulo': 'sp',
-    'rio de janeiro': 'rj',
-    'minas gerais': 'mg',
-    'bahia': 'ba',
-    'paraná': 'pr', 'parana': 'pr',
-    'rio grande do sul': 'rs',
-    'santa catarina': 'sc',
-    'pernambuco': 'pe',
-    'ceará': 'ce', 'ceara': 'ce',
-    'goiás': 'go', 'goias': 'go',
-    'distrito federal': 'df', 'brasília': 'df', 'brasilia': 'df',
-  };
-
-  const queries: string[] = [];
-  const abbrev = stateAbbreviations[locationClean] || stateAbbreviations[locationNoAccents] || '';
-
-  // Query principal
-  queries.push(`${nicheClean} ${locationClean} site:instagram.com`);
-
-  // Com sigla do estado
-  if (abbrev) {
-    queries.push(`${nicheClean} ${abbrev} site:instagram.com`);
-  }
-
-  // Sem acentos
-  if (locationNoAccents !== locationClean) {
-    queries.push(`${nicheClean} ${locationNoAccents} site:instagram.com`);
-  }
-
-  // Variação com "instagram" no texto
-  queries.push(`${nicheClean} ${locationClean} instagram`);
-
-  // Hashtag style (colado)
-  const nicheHashtag = nicheClean.replace(/\s+/g, '');
-  const locationHashtag = locationNoAccents.replace(/\s+/g, '');
-  queries.push(`${nicheHashtag}${locationHashtag} site:instagram.com`);
-
-  // Variações de nicho comuns
-  const nicheVariations: Record<string, string[]> = {
-    'dentista': ['clinica odontologica', 'consultorio dentario', 'odontologia'],
-    'advogado': ['escritorio de advocacia', 'advogada', 'advocacia'],
-    'medico': ['clinica medica', 'consultorio medico', 'medica'],
-    'nutricionista': ['nutri', 'nutrição'],
-    'psicologo': ['psicologa', 'psicologia', 'terapeuta'],
-    'personal trainer': ['personal', 'treinador pessoal'],
-    'fotografo': ['fotografa', 'fotografia', 'estudio fotografico'],
-    'restaurante': ['restaurantes', 'gastronomia'],
-    'salão de beleza': ['salao', 'cabeleireiro', 'cabelereira'],
-  };
-
-  const variations = nicheVariations[nicheClean];
-  if (variations) {
-    for (const variation of variations.slice(0, 2)) { // Limita a 2 variações
-      queries.push(`${variation} ${locationClean} site:instagram.com`);
-    }
-  }
-
-  // Remove duplicatas e retorna
-  return [...new Set(queries)];
+  // Retorna apenas o termo exato - SEM variações
+  return [nicheClean];
 }
 
 /**

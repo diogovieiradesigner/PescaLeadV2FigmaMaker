@@ -149,8 +149,10 @@ function getConnection() {
     sql = postgres(connectionString, {
       max: 5,
       idle_timeout: 20,
-      connect_timeout: 10,
-      prepare: false  // Compativel com PgBouncer
+      connect_timeout: 30,  // Aumentado para 30s
+      prepare: false,  // Compativel com PgBouncer
+      onnotice: () => {}, // Silenciar notices
+      debug: false
     });
   }
 

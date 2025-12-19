@@ -161,22 +161,37 @@ Deno.serve(async (req) => {
       }
 
       // CASO 3: Business - Enfileirar para scraping
-      const { error: queueError } = await supabase.rpc('pgmq_send', {
+      const messagePayload = {
+        profile_id: id,
+        website_url: normalizedUrl,
+        workspace_id: workspace_id,
+        run_id: run_id,
+        source: 'instagram',
+        queued_at: new Date().toISOString()
+      };
+
+      const { data: msgId, error: queueError } = await supabase.rpc('pgmq_send', {
         queue_name: 'scraping_queue',
-        message: {
-          profile_id: id,
-          website_url: normalizedUrl,
-          workspace_id: workspace_id,
-          run_id: run_id,
-          source: 'instagram',
-          queued_at: new Date().toISOString()
-        }
+        message: messagePayload,
+        delay_seconds: 0
       });
 
       if (queueError) {
         console.error(`  ❌ Erro ao enfileirar: ${queueError.message}`);
+        // Marcar como failed para não ficar travado
+        await supabase
+          .from('instagram_enriched_profiles')
+          .update({
+            website_scraping_status: 'failed',
+            website_scraping_enriched: true,
+            website_scraping_error: `Erro ao enfileirar: ${queueError.message}`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
         continue;
       }
+
+      console.log(`  ✅ Enfileirado: msg_id=${msgId}`);
 
       // Marcar como enfileirado
       await supabase

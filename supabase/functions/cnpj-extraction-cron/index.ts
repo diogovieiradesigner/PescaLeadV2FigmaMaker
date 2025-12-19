@@ -1,9 +1,9 @@
 // =============================================================================
-// PROCESS-CNPJ-EXTRACTION-QUEUE v1
-// Processa fila de migração de leads CNPJ para tabela leads
+// CNPJ-EXTRACTION-CRON
+// Processa fila de migração de leads CNPJ automaticamente
+// Chamada pelo pg_cron a cada 30 segundos
 // =============================================================================
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -45,7 +45,6 @@ interface StagingLead {
 }
 
 // Mapeamento de campos CNPJ para custom_fields
-// Esses IDs são buscados dinamicamente por workspace ou criados se não existirem
 interface CustomFieldMapping {
   cnpj?: string;
   razao_social?: string;
@@ -101,13 +100,11 @@ async function getOrCreateCustomFields(supabase: any, workspaceId: string): Prom
     existingMap.set(field.name, field.id);
   }
 
-  console.log(`[getOrCreateCustomFields] Found ${existingMap.size} existing fields for workspace ${workspaceId}`);
-
   // 3. Identificar campos que precisam ser criados
   const fieldsToCreate = CNPJ_CUSTOM_FIELDS.filter(f => !existingMap.has(f.name));
 
   if (fieldsToCreate.length > 0) {
-    console.log(`[getOrCreateCustomFields] Creating ${fieldsToCreate.length} missing fields...`);
+    console.log(`[cnpj-cron] Creating ${fieldsToCreate.length} missing custom fields...`);
 
     // Buscar a última posição usada no workspace
     const { data: lastField } = await supabase
@@ -135,11 +132,8 @@ async function getOrCreateCustomFields(supabase: any, workspaceId: string): Prom
       .select('id, name');
 
     if (createError) {
-      console.error('[getOrCreateCustomFields] Error creating custom fields:', createError);
-      // Continuar com os campos que existem
+      console.error('[cnpj-cron] Error creating custom fields:', createError);
     } else if (createdFields) {
-      console.log(`[getOrCreateCustomFields] Created ${createdFields.length} new fields`);
-      // Adicionar ao mapa
       for (const field of createdFields) {
         existingMap.set(field.name, field.id);
       }
@@ -156,7 +150,6 @@ async function getOrCreateCustomFields(supabase: any, workspaceId: string): Prom
     }
   }
 
-  console.log(`[getOrCreateCustomFields] Final mapping has ${Object.keys(mapping).length} fields`);
   return mapping;
 }
 
@@ -208,7 +201,6 @@ async function insertCustomFieldValues(
     customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.situacao, value: staging.situacao });
   }
   if (fieldMapping.data_abertura && staging.data_abertura) {
-    // Converter de YYYY-MM-DD para DD/MM/YYYY
     const [year, month, day] = staging.data_abertura.split('-');
     const dataFormatted = `${day}/${month}/${year}`;
     customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.data_abertura, value: dataFormatted });
@@ -229,14 +221,12 @@ async function insertCustomFieldValues(
       .insert(customValues);
 
     if (error) {
-      console.error(`[insertCustomFieldValues] Error inserting custom values for lead ${leadId}:`, error);
-    } else {
-      console.log(`[insertCustomFieldValues] Inserted ${customValues.length} custom field values for lead ${leadId}`);
+      console.error(`[cnpj-cron] Error inserting custom values for lead ${leadId}:`, error);
     }
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -245,6 +235,8 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
+    console.log('[cnpj-cron] === CRON STARTED ===');
+
     // Criar cliente Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -258,11 +250,12 @@ serve(async (req) => {
     });
 
     if (readError) {
-      console.error('[process-cnpj-extraction-queue] Error reading queue:', readError);
+      console.error('[cnpj-cron] Error reading queue:', readError);
       throw readError;
     }
 
     if (!messages || messages.length === 0) {
+      console.log('[cnpj-cron] No messages in queue');
       return new Response(
         JSON.stringify({ success: true, message: 'No messages in queue' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -274,20 +267,17 @@ serve(async (req) => {
     const payload: QueueMessage = queueMsg.message;
     const readCount = queueMsg.read_ct || 1;
 
-    console.log(`[process-cnpj-extraction-queue] Processing message ${msgId}, read count: ${readCount}`);
-    console.log(`[process-cnpj-extraction-queue] Run ID: ${payload.run_id}`);
+    console.log(`[cnpj-cron] Processing message ${msgId}, run_id: ${payload.run_id}, read_count: ${readCount}`);
 
     // Verificar se excedeu tentativas (DLQ)
     if (readCount > 3) {
-      console.log(`[process-cnpj-extraction-queue] Message ${msgId} exceeded retries, sending to DLQ`);
+      console.log(`[cnpj-cron] Message ${msgId} exceeded retries, sending to DLQ`);
 
-      // Arquivar na DLQ
       await supabase.rpc('pgmq_archive', {
         queue_name: 'cnpj_extraction_queue',
         msg_id: msgId,
       });
 
-      // Log de erro
       await supabase.from('extraction_logs').insert({
         run_id: payload.run_id,
         source: 'cnpj',
@@ -298,7 +288,6 @@ serve(async (req) => {
         details: { msg_id: msgId, read_count: readCount },
       });
 
-      // Marcar run como falha
       await supabase
         .from('lead_extraction_runs')
         .update({
@@ -319,7 +308,6 @@ serve(async (req) => {
 
     // Buscar ou criar campos personalizados para este workspace
     const customFieldMapping = await getOrCreateCustomFields(supabase, workspace_id);
-    console.log(`[process-cnpj-extraction-queue] Custom field mapping:`, customFieldMapping);
 
     // Buscar leads pendentes em staging
     const { data: stagingLeads, error: stagingError } = await supabase
@@ -330,12 +318,12 @@ serve(async (req) => {
       .limit(batchSize) as { data: StagingLead[] | null; error: any };
 
     if (stagingError) {
-      console.error('[process-cnpj-extraction-queue] Error fetching staging:', stagingError);
+      console.error('[cnpj-cron] Error fetching staging:', stagingError);
       throw stagingError;
     }
 
     if (!stagingLeads || stagingLeads.length === 0) {
-      console.log(`[process-cnpj-extraction-queue] No pending leads for run ${run_id}`);
+      console.log(`[cnpj-cron] No pending leads for run ${run_id}`);
 
       // Verificar se processamento está completo
       const { data: statusData } = await supabase.rpc('get_cnpj_extraction_status', {
@@ -345,7 +333,7 @@ serve(async (req) => {
       const status = statusData || { pending: 0, migrated: 0, failed: 0 };
 
       if (status.pending === 0) {
-        // Processamento completo, finalizar run
+        // Processamento completo
         await supabase
           .from('lead_extraction_runs')
           .update({
@@ -355,7 +343,6 @@ serve(async (req) => {
           })
           .eq('id', run_id);
 
-        // Log de conclusão
         await supabase.from('extraction_logs').insert({
           run_id,
           source: 'cnpj',
@@ -399,7 +386,6 @@ serve(async (req) => {
           .maybeSingle();
 
         if (existingLead) {
-          // Lead já existe, marcar como duplicata
           await supabase
             .from('cnpj_extraction_staging')
             .update({
@@ -412,10 +398,7 @@ serve(async (req) => {
           continue;
         }
 
-        // Criar lead na tabela principal
-        // Os dados do CNPJ serão salvos nos campos personalizados (custom_fields)
-
-        // Normalizar telefone para formato brasileiro (55 + DDD + número)
+        // Normalizar telefone para formato brasileiro
         let phoneNormalized: string | null = null;
         if (staging.telefone) {
           const cleanPhone = staging.telefone.replace(/\D/g, '');
@@ -428,19 +411,11 @@ serve(async (req) => {
           workspace_id,
           funnel_id: staging.funnel_id,
           column_id: staging.column_id,
-
-          // Dados básicos - usando colunas existentes na tabela leads
           client_name: staging.nome_fantasia || staging.razao_social || `CNPJ ${staging.cnpj}`,
           company: staging.razao_social,
-
-          // CNPJ e telefone em campos próprios para validação WhatsApp
           cnpj: staging.cnpj,
           phone: phoneNormalized,
-
-          // Tags para identificar origem
           tags: ['cnpj-extraction', staging.uf || 'BR'].filter(Boolean),
-
-          // Metadados de extração
           lead_extraction_run_id: staging.run_id,
         };
 
@@ -451,7 +426,7 @@ serve(async (req) => {
           .single();
 
         if (insertError) {
-          console.error(`[process-cnpj-extraction-queue] Error inserting lead ${staging.cnpj}:`, insertError);
+          console.error(`[cnpj-cron] Error inserting lead ${staging.cnpj}:`, insertError);
 
           await supabase
             .from('cnpj_extraction_staging')
@@ -482,7 +457,7 @@ serve(async (req) => {
 
         migratedCount++;
       } catch (error) {
-        console.error(`[process-cnpj-extraction-queue] Error processing lead ${staging.cnpj}:`, error);
+        console.error(`[cnpj-cron] Error processing lead ${staging.cnpj}:`, error);
 
         await supabase
           .from('cnpj_extraction_staging')
@@ -496,7 +471,7 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[process-cnpj-extraction-queue] Processed batch: ${migratedCount} migrated, ${failedCount} failed`);
+    console.log(`[cnpj-cron] Batch processed: ${migratedCount} migrated, ${failedCount} failed`);
 
     // Atualizar contadores na run
     const { data: runData } = await supabase
@@ -534,15 +509,13 @@ serve(async (req) => {
 
     if (pendingCount && pendingCount > 0) {
       // Ainda há leads pendentes, re-enfileirar
-      console.log(`[process-cnpj-extraction-queue] ${pendingCount} leads still pending, re-queuing`);
+      console.log(`[cnpj-cron] ${pendingCount} leads still pending, re-queuing`);
 
-      // Deletar mensagem atual
       await supabase.rpc('pgmq_delete', {
         queue_name: 'cnpj_extraction_queue',
         msg_id: msgId,
       });
 
-      // Enfileirar nova mensagem
       await supabase.rpc('pgmq_send', {
         queue_name: 'cnpj_extraction_queue',
         message: payload,
@@ -563,7 +536,6 @@ serve(async (req) => {
         })
         .eq('id', run_id);
 
-      // Log de conclusão
       await supabase.from('extraction_logs').insert({
         run_id,
         source: 'cnpj',
@@ -574,7 +546,6 @@ serve(async (req) => {
         details: finalStatus,
       });
 
-      // Deletar mensagem da fila
       await supabase.rpc('pgmq_delete', {
         queue_name: 'cnpj_extraction_queue',
         msg_id: msgId,
@@ -595,7 +566,7 @@ serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('[process-cnpj-extraction-queue] Error:', error);
+    console.error('[cnpj-cron] Error:', error);
 
     return new Response(
       JSON.stringify({

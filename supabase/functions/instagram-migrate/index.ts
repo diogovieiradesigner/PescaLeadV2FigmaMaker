@@ -109,7 +109,7 @@ async function validateAuthAndWorkspace(req: Request, supabase: any, workspaceId
 
   const { data: membership, error: memberError } = await supabase
     .from('workspace_members')
-    .select('id, role')
+    .select('role')
     .eq('user_id', user.id)
     .eq('workspace_id', workspaceId)
     .single();
@@ -313,8 +313,8 @@ serve(async (req) => {
 
           await createLog(
             supabase, run_id, 10, 'Conclusão', 'migration', 'success',
-            `Migração concluída: ${runData.leads_created} leads criados`,
-            { leads_created: runData.leads_created }
+            `Migração concluída: ${runData.created_quantity || 0} leads criados`,
+            { leads_created: runData.created_quantity || 0 }
           );
 
           return new Response(
@@ -322,7 +322,7 @@ serve(async (req) => {
               success: true,
               message: 'Todos os perfis já foram migrados',
               profiles_pending: 0,
-              leads_created: runData.leads_created,
+              leads_created: runData.created_quantity || 0,
             }),
             { status: 200, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
           );
@@ -385,6 +385,18 @@ serve(async (req) => {
           const bestEmail = getBestEmail(profile);
           const bestPhone = getBestPhone(profile);
 
+          // Construir tags para o lead
+          const leadTags: string[] = ['instagram-extraction'];
+          if (profile.is_business_account) {
+            leadTags.push('business');
+          }
+          if (profile.is_verified) {
+            leadTags.push('verificado');
+          }
+          if (profile.business_category) {
+            leadTags.push(profile.business_category.toLowerCase().replace(/\s+/g, '-'));
+          }
+
           // Criar lead
           // NOTA: tabela leads não tem coluna 'source', usamos notes para marcar origem
           const { data: newLead, error: leadError } = await supabase
@@ -398,6 +410,7 @@ serve(async (req) => {
               notes: `Extraído do Instagram | Perfil: @${profile.username}`,
               whatsapp_valid: profile.whatsapp_from_bio ? true : null,
               lead_extraction_run_id: run_id,
+              tags: leadTags,
             })
             .select('id')
             .single();
@@ -630,8 +643,8 @@ serve(async (req) => {
       await supabase
         .from('lead_extraction_runs')
         .update({
-          leads_created: (runData.leads_created || 0) + leadsCreated,
-          leads_duplicates_skipped: (runData.leads_duplicates_skipped || 0) + duplicatesSkipped,
+          created_quantity: (runData.created_quantity || 0) + leadsCreated,
+          duplicates_skipped: (runData.duplicates_skipped || 0) + duplicatesSkipped,
         })
         .eq('id', run_id);
 
@@ -657,12 +670,12 @@ serve(async (req) => {
 
         await createLog(
           supabase, run_id, 10, 'Conclusão', 'migration', 'success',
-          `Migração concluída: ${runData.leads_created + leadsCreated} leads criados no total`,
+          `Migração concluída: ${(runData.created_quantity || 0) + leadsCreated} leads criados no total`,
           {
             leads_created: leadsCreated,
             duplicates_skipped: duplicatesSkipped,
             errors,
-            total_leads: runData.leads_created + leadsCreated,
+            total_leads: (runData.created_quantity || 0) + leadsCreated,
           }
         );
       } else {
@@ -686,7 +699,7 @@ serve(async (req) => {
           has_more: hasMore,
           message: hasMore
             ? `Batch concluído! ${leadsCreated} leads criados, ${remainingCount} restantes.`
-            : `Migração completa! ${runData.leads_created + leadsCreated} leads criados.`,
+            : `Migração completa! ${(runData.created_quantity || 0) + leadsCreated} leads criados.`,
         }),
         { status: 200, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
@@ -699,8 +712,8 @@ serve(async (req) => {
       const { data: runData, error: runError } = await supabase
         .from('lead_extraction_runs')
         .select(`
-          id, status, leads_created, leads_duplicates_skipped,
-          finished_at
+          id, status, created_quantity, duplicates_skipped,
+          finished_at, workspace_id
         `)
         .eq('id', run_id)
         .eq('source', 'instagram')
@@ -745,8 +758,8 @@ serve(async (req) => {
           run_id,
           status: runData.status,
           migration: {
-            leads_created: runData.leads_created,
-            duplicates_skipped: runData.leads_duplicates_skipped,
+            leads_created: runData.created_quantity || 0,
+            duplicates_skipped: runData.duplicates_skipped || 0,
             profiles_pending: pendingCount || 0,
             profiles_migrated: migratedCount || 0,
             finished_at: runData.finished_at,

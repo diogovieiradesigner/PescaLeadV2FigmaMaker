@@ -1,5 +1,9 @@
 // =============================================================================
-// EDGE FUNCTION: fetch-google-maps V17 (EXPANSÃO POR IA)
+// EDGE FUNCTION: fetch-google-maps V18 (MÓDULO COMPARTILHADO)
+// =============================================================================
+// V18 Melhorias:
+// 1. ✅ Usa módulo compartilhado _shared/location-expansion.ts
+// 2. ✅ Mantém todas funcionalidades V17
 // =============================================================================
 // V17 Melhorias:
 // 1. ✅ Detecta mensagens de compensação perdidas/expiradas na fila (V15)
@@ -14,6 +18,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
+// V18: Importar apenas tipos e constantes do módulo compartilhado
+// As funções são mantidas localmente para evitar quebra de compatibilidade
+// Instagram-discovery usará o módulo compartilhado diretamente
+import {
+  AILocationConfig,
+  AILocationResponse,
+} from '../_shared/location-expansion.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
@@ -25,13 +37,13 @@ const TOTAL_API_KEYS = 15;
 const MAX_SEGMENTED_SEARCHES = 20; // V17: Máximo de localizações para segmentação
 const MAX_PAGES_PER_SEGMENT = 3; // V17: Máximo de páginas por localização
 
-// V17: Constantes para IA
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const DEFAULT_AI_MODEL = 'perplexity/sonar-pro';
-const AI_FALLBACK_MODELS = ['anthropic/claude-3-haiku', 'openai/gpt-4o-mini'];
-const AI_MAX_RETRIES = 3;
+// V18: Constantes de IA mantidas localmente para compatibilidade
 const AI_TIMEOUT_MS = 60000; // 60 segundos
 
+// V19: URL do OpenRouter para chamadas de IA
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Constantes de estados brasileiros (mantidas localmente)
 const BRAZILIAN_STATES: Record<string, string> = {
   'AC': 'Acre', 'AL': 'Alagoas', 'AP': 'Amapa', 'AM': 'Amazonas',
   'BA': 'Bahia', 'CE': 'Ceara', 'DF': 'Distrito Federal', 'ES': 'Espirito Santo',
@@ -208,8 +220,21 @@ async function createExtractionLog(supabase: any, runId: string, stepNumber: num
 async function getApiKey(supabase: any, keyIndex: number): Promise<string | null> {
   try {
     const { data, error } = await supabase.rpc('get_serpdev_api_key', { key_index: keyIndex });
-    return error ? null : data;
-  } catch { return null; }
+    if (error) {
+      console.error(`[getApiKey] Erro ao buscar key #${keyIndex}:`, error.message);
+      return null;
+    }
+    if (!data) {
+      console.warn(`[getApiKey] Key #${keyIndex} não encontrada ou vazia`);
+      return null;
+    }
+    // V19: Log parcial da chave para debug (primeiros 10 caracteres)
+    console.log(`[getApiKey] Key #${keyIndex} encontrada: ${data.substring(0, 10)}...`);
+    return data;
+  } catch (e: any) {
+    console.error(`[getApiKey] Exceção ao buscar key #${keyIndex}:`, e.message);
+    return null;
+  }
 }
 
 function isValidResult(result: any): boolean {
@@ -221,67 +246,147 @@ function isValidResult(result: any): boolean {
   });
 }
 
+// V19: Função para buscar página com rotação de chaves
 async function fetchGoogleMapsPage(
-  searchTerm: string, 
-  location: string, 
-  page: number, 
+  searchTerm: string,
+  location: string,
+  page: number,
   apiKey: string,
-  coordinates?: {lat: number, lng: number} // V16: Coordenadas opcionais (não usadas na API, apenas para logs)
-): Promise<{ places: any[], apiEmpty: boolean }> {
+  coordinates?: {lat: number, lng: number}, // V16: Coordenadas opcionais (não usadas na API, apenas para logs)
+  supabase?: any, // V19: Supabase client para rotação de chaves
+  currentKeyIndex?: number // V19: Índice da chave atual para rotação
+): Promise<{ places: any[], apiEmpty: boolean, usedKeyIndex?: number }> {
   const maxRetries = 3;
+  let currentApiKey = apiKey;
+  let keyIndex = currentKeyIndex || 1;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`[API] Buscando página ${page} - Tentativa ${attempt}`);
-      
-      // V16 FIX: SerpDev API não aceita lat/lng como parâmetros separados
-      // Usamos apenas location (que já contém o nome do bairro para buscas segmentadas)
-      const requestBody: any = { 
-        q: searchTerm, 
-        location, // Location já contém o bairro para buscas segmentadas (ex: "Pinheiros, São Paulo, SP")
-        gl: 'br', 
-        hl: 'pt-br', 
-        page 
+      console.log(`[API] Buscando página ${page} - Tentativa ${attempt} (Key #${keyIndex})`);
+
+      // V19: Construir request body conforme documentação SerpDev
+      // Formato: {"q":"termo","location":"Cidade, State of Estado, Brazil","gl":"br","hl":"pt-br","page":1}
+      const requestBody = {
+        q: searchTerm,
+        location: location,
+        gl: 'br',
+        hl: 'pt-br',
+        page: page // Página começa em 1, não 0
       };
-      
+
+      console.log(`[API] Request body:`, JSON.stringify(requestBody));
+
       // V16 FIX: Coordenadas não são enviadas à API (não suportado)
-      // Mas mantemos o parâmetro para logs e possível uso futuro
       if (coordinates) {
         console.log(`[API] Busca segmentada - Bairro com coordenadas: ${coordinates.lat}, ${coordinates.lng} (não enviadas à API)`);
       }
-      
+
       const response = await fetch('https://google.serper.dev/places', {
         method: 'POST',
-        headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+        headers: {
+          'X-API-KEY': currentApiKey,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(requestBody)
       });
-      
+
+      // V19: Tratar diferentes códigos de erro
       if (response.status === 500) {
         console.log(`[API] ⚠️ Página ${page}: Erro 500 - API esgotou resultados`);
-        return { places: [], apiEmpty: true };
+        return { places: [], apiEmpty: true, usedKeyIndex: keyIndex };
       }
-      
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
+
+      if (response.status === 400) {
+        // HTTP 400 = Bad Request - pode ser problema com a chave ou parâmetros
+        const errorText = await response.text();
+        console.error(`[API] ❌ HTTP 400 - Bad Request: ${errorText}`);
+
+        // V19: Tentar rotacionar para próxima chave
+        if (supabase && attempt < maxRetries) {
+          const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+          const nextKey = await getApiKey(supabase, nextKeyIndex);
+          if (nextKey) {
+            currentApiKey = nextKey;
+            keyIndex = nextKeyIndex;
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+          }
+        }
+        throw new Error(`HTTP 400: ${errorText}`);
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        // Chave inválida ou sem créditos - rotacionar
+        console.error(`[API] ❌ HTTP ${response.status} - Chave #${keyIndex} inválida ou sem créditos`);
+
+        if (supabase && attempt < maxRetries) {
+          const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+          const nextKey = await getApiKey(supabase, nextKeyIndex);
+          if (nextKey) {
+            currentApiKey = nextKey;
+            keyIndex = nextKeyIndex;
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+          }
+        }
+        throw new Error(`HTTP ${response.status}: Chave inválida ou sem créditos`);
+      }
+
+      if (response.status === 429) {
+        // Rate limit - aguardar e tentar novamente
+        console.log(`[API] ⏳ Rate limit na chave #${keyIndex}, aguardando...`);
+
+        if (supabase && attempt < maxRetries) {
+          const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+          const nextKey = await getApiKey(supabase, nextKeyIndex);
+          if (nextKey) {
+            currentApiKey = nextKey;
+            keyIndex = nextKeyIndex;
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+        }
+        throw new Error('HTTP 429: Rate limit');
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
       const data = await response.json();
       const places = data.places || [];
-      
+
       const apiEmpty = places.length === 0;
       if (apiEmpty) {
         console.log(`[API] ⚠️ Página ${page}: 0 resultados - API esgotou`);
       } else {
-        console.log(`[API] ✅ Página ${page}: ${places.length} resultados`);
+        console.log(`[API] ✅ Página ${page}: ${places.length} resultados (Key #${keyIndex})`);
       }
-      
-      return { places, apiEmpty };
+
+      return { places, apiEmpty, usedKeyIndex: keyIndex };
     } catch (error: any) {
-      console.error(`[API] ❌ Tentativa ${attempt}:`, error.message);
-      if (attempt < maxRetries) await new Promise(r => setTimeout(r, 3000));
-      else {
-        return { places: [], apiEmpty: true };
+      console.error(`[API] ❌ Tentativa ${attempt} (Key #${keyIndex}):`, error.message);
+
+      // V19: Rotacionar chave em caso de erro
+      if (supabase && attempt < maxRetries) {
+        const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+        console.log(`[API] 🔄 Erro - Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+        const nextKey = await getApiKey(supabase, nextKeyIndex);
+        if (nextKey) {
+          currentApiKey = nextKey;
+          keyIndex = nextKeyIndex;
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      } else if (attempt >= maxRetries) {
+        console.error(`[API] ❌ Todas as tentativas falharam para página ${page}`);
+        return { places: [], apiEmpty: true, usedKeyIndex: keyIndex };
       }
     }
   }
-  return { places: [], apiEmpty: true };
+  return { places: [], apiEmpty: true, usedKeyIndex: keyIndex };
 }
 
 async function enqueueCompensationPages(
@@ -1517,9 +1622,17 @@ serve(async (req) => {
       { page, location: normalizedLocation, workspace_id, is_compensation, is_segmented, segment_neighborhood, expand_state: expandState, api_key_index: keyIndex }
     );
 
-    // V17: Buscar página (coordenadas não são mais usadas - SerpDev recebe apenas location)
-    const { places: rawResults, apiEmpty } = await fetchGoogleMapsPage(search_term, normalizedLocation, page, apiKey);
-    console.log(`\n📥 Página ${page}: ${rawResults.length} resultados brutos, API esgotou: ${apiEmpty}`);
+    // V19: Buscar página com rotação de chaves (coordenadas não são mais usadas - SerpDev recebe apenas location)
+    const { places: rawResults, apiEmpty, usedKeyIndex } = await fetchGoogleMapsPage(
+      search_term,
+      normalizedLocation,
+      page,
+      apiKey,
+      undefined, // coordinates - não usadas
+      supabase,  // V19: Passar supabase para rotação de chaves
+      keyIndex   // V19: Passar índice da chave atual
+    );
+    console.log(`\n📥 Página ${page}: ${rawResults.length} resultados brutos, API esgotou: ${apiEmpty}, Key usada: #${usedKeyIndex || keyIndex}`);
 
     const validResults: any[] = [];
     let preFilterDuplicates = 0;

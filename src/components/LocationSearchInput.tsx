@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Loader2 } from 'lucide-react';
+import { Search, MapPin, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { normalizeLocation } from '../utils/location';
 
 interface LocationSearchInputProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, isValidSelection: boolean) => void;
   isDark: boolean;
+  onValidationChange?: (isValid: boolean) => void;
 }
 
 interface NominatimResult {
@@ -25,32 +26,48 @@ interface NominatimResult {
   };
 }
 
-export function LocationSearchInput({ value, onChange, isDark }: LocationSearchInputProps) {
+export function LocationSearchInput({ value, onChange, isDark, onValidationChange }: LocationSearchInputProps) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [isValidSelection, setIsValidSelection] = useState(false);
+  const [selectedValue, setSelectedValue] = useState<string | null>(value || null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Atualizar query quando value muda externamente (apenas se não estiver editando)
   useEffect(() => {
     if (value !== query && !showResults) {
       setQuery(value);
+      // Se o value externo tem vírgula, considerar válido (edição de extração existente)
+      if (value && value.includes(',')) {
+        setIsValidSelection(true);
+        setSelectedValue(value);
+      }
     }
   }, [value]);
+
+  // Notificar parent sobre mudanças na validação
+  useEffect(() => {
+    onValidationChange?.(isValidSelection);
+  }, [isValidSelection, onValidationChange]);
 
   // Fechar dropdown ao clicar fora
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setShowResults(false);
+        // Se fechou sem selecionar, restaurar valor anterior válido
+        if (!isValidSelection && selectedValue) {
+          setQuery(selectedValue);
+        }
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [wrapperRef]);
+  }, [wrapperRef, isValidSelection, selectedValue]);
 
   // Buscar na API com debounce
   useEffect(() => {
@@ -63,7 +80,7 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=br&limit=5&addressdetails=1`
         );
         const data = await response.json();
-        
+
         // Filtrar duplicatas baseadas no display_name (que é o endereço completo)
         // A API do Nominatim pode retornar o mesmo lugar como "node", "way" ou "relation"
         const uniqueResults = data.filter((item: NominatimResult, index: number, self: NominatimResult[]) =>
@@ -71,7 +88,7 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
             t.display_name === item.display_name
           ))
         );
-        
+
         setResults(uniqueResults);
       } catch (error) {
         console.error('Erro ao buscar localização:', error);
@@ -94,7 +111,7 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
       const city = result.address.city || result.address.town || result.address.village || result.name;
       const state = result.address.state;
       const country = result.address.country || "Brasil";
-      
+
       if (city && state) {
         formattedLocation = `${city}, ${state}, ${country}`;
       }
@@ -102,16 +119,33 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
 
     // Normalizar: remover acentos, caracteres especiais
     const normalized = normalizeLocation(formattedLocation);
-    
+
     setQuery(normalized);
-    onChange(normalized);
+    setSelectedValue(normalized);
+    setIsValidSelection(true);
+    onChange(normalized, true);
     setShowResults(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuery(e.target.value);
-    onChange(e.target.value); // Atualiza o pai também
+    const newValue = e.target.value;
+    setQuery(newValue);
     setShowResults(true);
+
+    // Ao digitar, invalidar a seleção atual
+    // O usuário DEVE selecionar da lista
+    if (newValue !== selectedValue) {
+      setIsValidSelection(false);
+      onChange(newValue, false);
+    }
+  };
+
+  const handleClear = () => {
+    setQuery('');
+    setSelectedValue(null);
+    setIsValidSelection(false);
+    onChange('', false);
+    setShowResults(false);
   };
 
   return (
@@ -128,26 +162,37 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
               e.currentTarget.select();
             }
           }}
-          placeholder="Ex: joao pessoa"
-          className={`w-full px-4 py-2 pr-10 rounded-lg border transition-all ${
-            isDark 
-              ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]' 
+          placeholder="Digite e selecione da lista..."
+          className={`w-full px-4 py-2 pr-20 rounded-lg border transition-all ${
+            isDark
+              ? 'bg-white/[0.05] border-white/[0.08] text-white focus:border-[#0169D9]'
               : 'bg-white border-border-light text-text-primary-light focus:border-[#0169D9]'
-          } focus:outline-none`}
+          } ${!isValidSelection && query ? (isDark ? 'border-yellow-500/50' : 'border-yellow-500') : ''} focus:outline-none`}
         />
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
           {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+          ) : isValidSelection ? (
+            <CheckCircle2 className="w-4 h-4 text-green-500" />
+          ) : query ? (
+            <AlertCircle className="w-4 h-4 text-yellow-500" />
           ) : (
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4 text-gray-400" />
           )}
         </div>
       </div>
 
+      {/* Mensagem de ajuda quando não selecionou */}
+      {!isValidSelection && query && !showResults && (
+        <p className={`text-xs mt-1 ${isDark ? 'text-yellow-400' : 'text-yellow-600'}`}>
+          Selecione uma localização da lista de sugestões
+        </p>
+      )}
+
       {showResults && results.length > 0 && (
         <div className={`absolute z-50 w-full mt-1 rounded-lg shadow-lg border overflow-hidden ${
-          isDark 
-            ? 'bg-[#1E1E1E] border-white/[0.08]' 
+          isDark
+            ? 'bg-[#1E1E1E] border-white/[0.08]'
             : 'bg-white border-gray-200'
         }`}>
           {results.map((result) => (
@@ -155,8 +200,8 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
               key={result.place_id}
               onClick={() => handleSelect(result)}
               className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${
-                isDark 
-                  ? 'hover:bg-white/[0.05] border-b border-white/[0.05]' 
+                isDark
+                  ? 'hover:bg-white/[0.05] border-b border-white/[0.05]'
                   : 'hover:bg-gray-50 border-b border-gray-100'
               } last:border-0`}
             >
@@ -174,6 +219,18 @@ export function LocationSearchInput({ value, onChange, isDark }: LocationSearchI
           <div className={`px-2 py-1 text-[10px] text-right ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
             Via OpenStreetMap
           </div>
+        </div>
+      )}
+
+      {/* Mostrar "Nenhum resultado" quando pesquisou mas não encontrou */}
+      {showResults && !loading && query.length >= 3 && results.length === 0 && (
+        <div className={`absolute z-50 w-full mt-1 rounded-lg shadow-lg border p-4 text-center ${
+          isDark
+            ? 'bg-[#1E1E1E] border-white/[0.08] text-gray-400'
+            : 'bg-white border-gray-200 text-gray-500'
+        }`}>
+          <p className="text-sm">Nenhuma localização encontrada</p>
+          <p className="text-xs mt-1">Tente digitar o nome da cidade</p>
         </div>
       )}
     </div>

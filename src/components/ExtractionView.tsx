@@ -13,11 +13,13 @@ import { toast } from 'sonner@2.0.3';
 import { ProfileMenu } from './ProfileMenu';
 import { MoveLeadsModal } from './MoveLeadsModal';
 import { supabase } from '../utils/supabase/client';
-import { normalizeLocation } from '../utils/location';
 import { LocationSearchInput } from './LocationSearchInput';
 import { SearchTermInput, SearchTermInputRef } from './SearchTermInput';
 import { CNPJExtractionView, CNPJExtractionViewRef } from './CNPJExtractionView';
 import { InstagramExtractionView, InstagramExtractionViewRef } from './InstagramExtractionView';
+
+// Tipo de tab (compatível com URL)
+type ExtractionTabUrl = 'google-maps' | 'cnpj' | 'instagram';
 
 interface ExtractionViewProps {
   theme: Theme;
@@ -25,6 +27,8 @@ interface ExtractionViewProps {
   onNavigateToSettings?: () => void;
   onNavigateToProgress?: (runId: string) => void; // Nova prop para navegação
   onNavigateToDashboard?: () => void; // Nova prop para navegar ao Dashboard
+  urlTab?: ExtractionTabUrl | null; // Tab da URL
+  onTabChange?: (tab: ExtractionTabUrl) => void; // Callback quando tab muda
 }
 
 interface Funnel {
@@ -38,7 +42,7 @@ interface FunnelColumn {
   funnel_id: string;
 }
 
-export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onNavigateToProgress, onNavigateToDashboard }: ExtractionViewProps) {
+export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onNavigateToProgress, onNavigateToDashboard, urlTab, onTabChange }: ExtractionViewProps) {
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
   
@@ -57,6 +61,7 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   const [extractionName, setExtractionName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [location, setLocation] = useState('');
+  const [isLocationValid, setIsLocationValid] = useState(false);
   const [niche, setNiche] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [dailyQuantity, setDailyQuantity] = useState(50);
@@ -100,8 +105,38 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   const [cnpjExecuting, setCnpjExecuting] = useState(false);
   const [instagramExecuting, setInstagramExecuting] = useState(false);
 
+  // Estados para controle de salvamento dos componentes filhos
+  const [cnpjSaving, setCnpjSaving] = useState(false);
+  const [instagramSaving, setInstagramSaving] = useState(false);
+
   // Tab ativa (google_maps, cnpj ou instagram)
-  const [activeTab, setActiveTab] = useState<'google_maps' | 'cnpj' | 'instagram'>('google_maps');
+  // ✅ Converte formato de URL (google-maps) para formato interno (google_maps)
+  const urlTabToInternal = (tab: ExtractionTabUrl | null | undefined): 'google_maps' | 'cnpj' | 'instagram' => {
+    if (tab === 'google-maps') return 'google_maps';
+    if (tab === 'cnpj') return 'cnpj';
+    if (tab === 'instagram') return 'instagram';
+    return 'google_maps'; // default
+  };
+
+  const internalTabToUrl = (tab: 'google_maps' | 'cnpj' | 'instagram'): ExtractionTabUrl => {
+    if (tab === 'google_maps') return 'google-maps';
+    return tab; // cnpj e instagram são iguais
+  };
+
+  const [activeTab, setActiveTabState] = useState<'google_maps' | 'cnpj' | 'instagram'>(() => urlTabToInternal(urlTab));
+
+  // ✅ Sincronizar tab com URL quando urlTab mudar
+  useEffect(() => {
+    if (urlTab) {
+      setActiveTabState(urlTabToInternal(urlTab));
+    }
+  }, [urlTab]);
+
+  // ✅ Wrapper para mudar tab e atualizar URL
+  const setActiveTab = (tab: 'google_maps' | 'cnpj' | 'instagram') => {
+    setActiveTabState(tab);
+    onTabChange?.(internalTabToUrl(tab));
+  };
 
   const itemsPerPage = 10;
 
@@ -178,6 +213,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     setExtractionName(extraction.extraction_name);
     setSearchTerm(extraction.search_term);
     setLocation(extraction.location);
+    // Localização existente é válida (foi selecionada anteriormente)
+    setIsLocationValid(!!extraction.location && extraction.location.includes(','));
     setNiche(extraction.niche || '');
     setIsActive(extraction.is_active);
     setDailyQuantity(extraction.target_quantity);
@@ -202,8 +239,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     }
 
     // Validação de quantidade
-    if (!dailyQuantity || dailyQuantity < 1 || dailyQuantity > 1000) {
-      toast.error('Quantidade deve estar entre 1 e 1.000');
+    if (!dailyQuantity || dailyQuantity < 10 || dailyQuantity > 1000) {
+      toast.error('Quantidade deve estar entre 10 e 1.000');
       return;
     }
 
@@ -216,6 +253,12 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     // Validação dos campos obrigatórios de busca manual
     if (!searchTerm || !location) {
       toast.error('Preencha os campos obrigatórios: Termo de Busca e Localização');
+      return;
+    }
+
+    // Validação de localização selecionada da lista
+    if (!isLocationValid) {
+      toast.error('Selecione uma localização válida da lista de sugestões');
       return;
     }
 
@@ -461,85 +504,162 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
-          {/* Botão Google Maps */}
-          {activeTab === 'google_maps' && selectedExtractionId && (
-            <button
-              onClick={handleExecute}
-              disabled={executing !== null}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {executing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Executando...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  <span>Executar Google Maps</span>
-                </>
+          {/* Botões Google Maps */}
+          {activeTab === 'google_maps' && (
+            <>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Salvar</span>
+                  </>
+                )}
+              </button>
+              {selectedExtractionId && (
+                <button
+                  onClick={handleExecute}
+                  disabled={executing !== null}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {executing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Executando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      <span>Executar</span>
+                    </>
+                  )}
+                </button>
               )}
-            </button>
+            </>
           )}
 
-          {/* Botão CNPJ */}
+          {/* Botões CNPJ */}
           {activeTab === 'cnpj' && (
-            <button
-              onClick={async () => {
-                if (cnpjExtractionRef.current?.canExecute()) {
-                  setCnpjExecuting(true);
-                  try {
-                    await cnpjExtractionRef.current.execute();
-                  } finally {
-                    setCnpjExecuting(false);
+            <>
+              <button
+                onClick={async () => {
+                  if (cnpjExtractionRef.current) {
+                    setCnpjSaving(true);
+                    try {
+                      await cnpjExtractionRef.current.save();
+                    } finally {
+                      setCnpjSaving(false);
+                    }
                   }
-                }
-              }}
-              disabled={cnpjExecuting}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {cnpjExecuting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Executando...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  <span>Executar CNPJ</span>
-                </>
-              )}
-            </button>
+                }}
+                disabled={cnpjSaving}
+                className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {cnpjSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Salvar</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={async () => {
+                  if (cnpjExtractionRef.current?.canExecute()) {
+                    setCnpjExecuting(true);
+                    try {
+                      await cnpjExtractionRef.current.execute();
+                    } finally {
+                      setCnpjExecuting(false);
+                    }
+                  }
+                }}
+                disabled={cnpjExecuting}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {cnpjExecuting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Executando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    <span>Executar</span>
+                  </>
+                )}
+              </button>
+            </>
           )}
 
-          {/* Botão Instagram */}
+          {/* Botões Instagram */}
           {activeTab === 'instagram' && (
-            <button
-              onClick={async () => {
-                if (instagramExtractionRef.current?.canExecute()) {
-                  setInstagramExecuting(true);
-                  try {
-                    await instagramExtractionRef.current.execute();
-                  } finally {
-                    setInstagramExecuting(false);
+            <>
+              <button
+                onClick={async () => {
+                  if (instagramExtractionRef.current) {
+                    setInstagramSaving(true);
+                    try {
+                      await instagramExtractionRef.current.save();
+                    } finally {
+                      setInstagramSaving(false);
+                    }
                   }
-                }
-              }}
-              disabled={instagramExecuting}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {instagramExecuting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Executando...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  <span>Executar Instagram</span>
-                </>
-              )}
-            </button>
+                }}
+                disabled={instagramSaving}
+                className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {instagramSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Salvar</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={async () => {
+                  if (instagramExtractionRef.current?.canExecute()) {
+                    setInstagramExecuting(true);
+                    try {
+                      await instagramExtractionRef.current.execute();
+                    } finally {
+                      setInstagramExecuting(false);
+                    }
+                  }
+                }}
+                disabled={instagramExecuting}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {instagramExecuting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Executando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    <span>Executar</span>
+                  </>
+                )}
+              </button>
+            </>
           )}
 
           {/* Theme Toggle */}
@@ -779,7 +899,10 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                           </label>
                           <LocationSearchInput
                             value={location}
-                            onChange={(val) => setLocation(normalizeLocation(val))}
+                            onChange={(val, isValid) => {
+                              setLocation(val);
+                              setIsLocationValid(isValid);
+                            }}
                             isDark={isDark}
                           />
                         </div>
@@ -934,8 +1057,9 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                       <div className="flex items-center gap-3">
                         <input
                           type="number"
-                          min="1"
+                          min="0"
                           max="1000"
+                          step="10"
                           value={dailyQuantity}
                           onChange={(e) => handleQuantityChange(e.target.value)}
                           onKeyDown={handleSelectAll}
@@ -968,26 +1092,6 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                     </div>
                   </div>
 
-                  {/* Action Button */}
-                  <div className="flex items-center gap-3 pt-4 border-t border-white/[0.05]">
-                    <button 
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="px-6 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {saving ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Salvando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4" />
-                          <span>Salvar Configuração</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
                 </>
               )}
             </div>

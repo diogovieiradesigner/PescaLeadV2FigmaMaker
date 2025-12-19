@@ -378,6 +378,8 @@ async function searchSerperWithPagination(
   const maxPages = Math.min(pagesNeeded, MAX_PAGES_PER_QUERY);
   let lastPage = startPage - 1;
   let isExhausted = false;
+  let consecutiveEmptyPages = 0;
+  const EMPTY_PAGES_TO_EXHAUST = 2; // Só marca como esgotado após 2 páginas vazias consecutivas
 
   console.log(`   [Serper] Busca: "${searchTerm}" em "${location}" - ${maxPages} páginas (iniciando na ${startPage})`);
 
@@ -402,10 +404,23 @@ async function searchSerperWithPagination(
     }
 
     if (!data.organic || data.organic.length === 0) {
-      console.log(`   [Serper] Página ${page}: 0 resultados - query esgotada`);
-      isExhausted = true;
-      break;
+      consecutiveEmptyPages++;
+      console.log(`   [Serper] Página ${page}: 0 resultados (${consecutiveEmptyPages}/${EMPTY_PAGES_TO_EXHAUST} páginas vazias)`);
+
+      // Só marca como esgotado após N páginas vazias consecutivas
+      if (consecutiveEmptyPages >= EMPTY_PAGES_TO_EXHAUST) {
+        console.log(`   [Serper] Query esgotada após ${EMPTY_PAGES_TO_EXHAUST} páginas vazias consecutivas`);
+        isExhausted = true;
+        break;
+      }
+
+      // Continuar para próxima página mesmo com 0 resultados
+      lastPage = page;
+      continue;
     }
+
+    // Reset contador de páginas vazias se encontrou resultados
+    consecutiveEmptyPages = 0;
 
     console.log(`   [Serper] Página ${page}: ${data.organic.length} resultados`);
     allOrganic.push(...data.organic);

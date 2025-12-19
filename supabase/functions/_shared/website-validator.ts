@@ -22,6 +22,8 @@ export const BLOCKED_DOMAINS = [
   'tap.bio', 'koji.to', 'later.com', 'shorby.com',
   'taplink.cc', 'campsite.bio', 'allmylinks.com',
   'linkpop.com', 'stan.store', 'creator.link',
+  'linklist.bio', 'bio.site', 'apptuts.bio', // ⚠️ Encontrados em produção
+  'rdstation.com', 'ig.rdstation.com', // RD Station links
 
   // Site Builders (difícil extração)
   'carrd.co', 'framer.ai', 'wixsite.com',
@@ -48,6 +50,7 @@ export const BLOCKED_DOMAINS = [
   'olx.com.br', 'amazon.com.br', 'americanas.com.br',
   'magazineluiza.com.br', 'casasbahia.com.br',
   'shopee.com.br', 'aliexpress.com',
+  'sympla.com.br', // Eventos/ingressos
 
   // Formulários e Ferramentas
   'calendly.com', 'typeform.com', 'jotform.com',

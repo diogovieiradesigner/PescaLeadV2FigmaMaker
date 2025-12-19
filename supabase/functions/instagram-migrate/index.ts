@@ -88,6 +88,7 @@ function createSupabaseClient() {
 
 /**
  * Valida autenticação do usuário e ownership do workspace
+ * PERMITE chamadas com service_role_key (usado por cron jobs)
  */
 async function validateAuthAndWorkspace(req: Request, supabase: any, workspaceId: string) {
   // Verifica header de autorização
@@ -101,6 +102,14 @@ async function validateAuthAndWorkspace(req: Request, supabase: any, workspaceId
   // Valida token e obtém usuário
   const token = authHeader.replace('Bearer ', '');
   console.log('🔑 Token length:', token.length);
+
+  // ⚠️ NOVO: Permitir service_role_key (usado por cron jobs)
+  // Service role key tem formato diferente de JWT de usuário
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (token === serviceRoleKey) {
+    console.log('🤖 [SERVICE_ROLE] Request from cron job - skipping user validation');
+    return { user: null, membership: null, isServiceRole: true };
+  }
 
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
@@ -128,7 +137,7 @@ async function validateAuthAndWorkspace(req: Request, supabase: any, workspaceId
     throw new Error(`User does not have access to this workspace: ${memberError?.message || 'no membership'}`);
   }
 
-  return { user, membership };
+  return { user, membership, isServiceRole: false };
 }
 
 /**
@@ -223,7 +232,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { run_id, action = 'start', limit = MAX_PROFILES_PER_BATCH } = body;
+    const { run_id, action = 'start', limit = MAX_PROFILES_PER_BATCH, from_cron = false } = body;
 
     if (!run_id) {
       return new Response(
@@ -239,7 +248,7 @@ serve(async (req) => {
     // =========================================================================
     if (action === 'start') {
       console.log(`\n=== INSTAGRAM-MIGRATE: START ===`);
-      console.log(`Run ID: ${run_id}`);
+      console.log(`Run ID: ${run_id}, From Cron: ${from_cron}`);
 
       // Buscar dados do run na tabela compartilhada
       const { data: runData, error: runError } = await supabase
@@ -257,19 +266,22 @@ serve(async (req) => {
       }
 
 
-      // Validar autenticação e ownership do workspace
+      // Validar autenticação e ownership do workspace (SKIP se from_cron=true)
+      if (!from_cron) {
+        try {
 
-      try {
+          await validateAuthAndWorkspace(req, supabase, runData.workspace_id);
 
-        await validateAuthAndWorkspace(req, supabase, runData.workspace_id);
+        } catch (authError) {
+          console.error('Auth validation failed:', authError);
 
-      } catch (authError) {
-        console.error('Auth validation failed:', authError);
-
-        return new Response(
-          JSON.stringify({ error: String(authError) }),
-          { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
-        );
+          return new Response(
+            JSON.stringify({ error: String(authError) }),
+            { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
+          );
+        }
+      } else {
+        console.log('🤖 [CRON] Skipping auth validation (from_cron=true)');
       }
 
 
@@ -286,13 +298,13 @@ serve(async (req) => {
 
       // ⚠️ ATUALIZADO: Aguardar scraping SE website válido
       // Buscar perfis enriquecidos não migrados da tabela instagram_enriched_profiles
-      // Regra: (sem website) OU (website processado: completed/skipped/blocked/failed)
+      // Regra: processing_status='completed' E (sem website OU website processado: completed/skipped/blocked/failed)
       const { data: profiles, error: profilesError } = await supabase
         .from('instagram_enriched_profiles')
         .select('*')
         .eq('run_id', run_id)
         .eq('migrated_to_leads', false)
-        .eq('processing_status', 'pending')
+        .eq('processing_status', 'completed')
         .or(
           'external_url.is.null,' +
           'website_scraping_status.eq.completed,' +
@@ -445,6 +457,29 @@ serve(async (req) => {
           }
 
           console.log(`   ✅ Lead criado: ${leadName} (${newLead.id})`);
+
+          // Criar log detalhado para cada lead criado
+          await createLog(
+            supabase, run_id, 9, 'Lead Criado', 'migration', 'success',
+            `Lead criado: ${leadName} (@${profile.username})`,
+            {
+              lead_id: newLead.id,
+              lead_name: leadName,
+              username: profile.username,
+              followers: profile.followers_count,
+              has_email: !!bestEmail,
+              email: bestEmail,
+              has_phone: !!bestPhone,
+              phone: bestPhone,
+              has_whatsapp: !!profile.whatsapp_from_bio,
+              whatsapp: profile.whatsapp_from_bio,
+              has_website: !!profile.external_url,
+              website: profile.external_url,
+              website_scraped: profile.website_scraping_status === 'completed',
+              is_business: profile.is_business_account,
+              is_verified: profile.is_verified
+            }
+          );
 
           // Atualizar perfil como migrado
           await supabase

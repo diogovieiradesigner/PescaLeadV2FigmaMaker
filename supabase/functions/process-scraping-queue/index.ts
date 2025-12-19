@@ -391,24 +391,47 @@ async function processSingleMessage(
           throw new Error(`Failed to process result: ${processError.message}`);
         }
 
-        // NOVO: Criar log de scraping completado
+        // NOVO: Criar log de scraping completado com detalhes completos
         if (message.run_id) {
-          await supabase.rpc('create_extraction_log_v2', {
-            p_run_id: message.run_id,
-            p_step_number: 13,
-            p_step_name: 'Website Scraped',
-            p_level: 'success',
-            p_message: `Website scraped: ${sanitizedData.emails?.length || 0} emails, ${sanitizedData.phones?.length || 0} phones`,
-            p_source: 'instagram',
-            p_phase: 'scraping',
-            p_details: {
-              website_url: websiteUrl,
-              emails_found: sanitizedData.emails?.length || 0,
-              phones_found: sanitizedData.phones?.length || 0,
-              cnpj_found: sanitizedData.cnpj?.length || 0,
-              whatsapp_found: sanitizedData.whatsapp?.length || 0
+          try {
+            const scrapingSummary = [];
+            if (sanitizedData.emails?.length) scrapingSummary.push(`${sanitizedData.emails.length} emails`);
+            if (sanitizedData.phones?.length) scrapingSummary.push(`${sanitizedData.phones.length} telefones`);
+            if (sanitizedData.whatsapp?.length) scrapingSummary.push(`${sanitizedData.whatsapp.length} WhatsApp`);
+            if (sanitizedData.cnpj?.length) scrapingSummary.push(`${sanitizedData.cnpj.length} CNPJ`);
+            if (sanitizedData.social_media) {
+              const socialCount =
+                (sanitizedData.social_media.facebook?.length || 0) +
+                (sanitizedData.social_media.instagram?.length || 0) +
+                (sanitizedData.social_media.linkedin?.length || 0);
+              if (socialCount > 0) scrapingSummary.push(`${socialCount} redes sociais`);
             }
-          }).catch((e) => console.error('[LOG ERROR]', e));
+
+            await supabase.rpc('create_extraction_log_v2', {
+              p_run_id: message.run_id,
+              p_step_number: 13,
+              p_step_name: 'Website Scraped',
+              p_level: 'success',
+              p_message: `Website scraped: ${websiteUrl.substring(0, 50)}... → ${scrapingSummary.join(', ') || 'nenhum dado'}`,
+              p_source: 'instagram',
+              p_phase: 'scraping',
+              p_details: {
+                website_url: websiteUrl,
+                emails: sanitizedData.emails || [],
+                phones: sanitizedData.phones || [],
+                whatsapp: sanitizedData.whatsapp || [],
+                cnpj: sanitizedData.cnpj || [],
+                social_media: sanitizedData.social_media,
+                metadata_title: sanitizedData.metadata?.title,
+                has_checkout: sanitizedData.checkouts?.have_checkouts,
+                has_pixels: sanitizedData.pixels?.have_pixels,
+                scrape_method: sanitizedData.method,
+                scrape_status: sanitizedData.status
+              }
+            });
+          } catch (e) {
+            console.error('[LOG ERROR]', e);
+          }
         }
       } else {
         // Google Maps (lógica original)

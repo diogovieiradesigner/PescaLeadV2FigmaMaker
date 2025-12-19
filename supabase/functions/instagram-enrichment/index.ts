@@ -773,6 +773,15 @@ serve(async (req) => {
           // Converter para formato enriquecido
           const enrichedProfile = apifyToEnrichedProfile(rawProfile);
 
+          // Log detalhado do perfil enriquecido
+          console.log(`   📱 @${enrichedProfile.username} - ${enrichedProfile.full_name || 'Sem nome'}`);
+          console.log(`      👥 ${enrichedProfile.followers_count || 0} seguidores | 📸 ${enrichedProfile.posts_count || 0} posts`);
+          console.log(`      🔗 Website: ${enrichedProfile.external_url || 'Nenhum'}`);
+          console.log(`      📧 Email: ${enrichedProfile.business_email || enrichedProfile.email_from_bio || 'Nenhum'}`);
+          console.log(`      📱 Phone: ${enrichedProfile.business_phone || enrichedProfile.phone_from_bio || 'Nenhum'}`);
+          console.log(`      💬 WhatsApp: ${enrichedProfile.whatsapp_from_bio || 'Nenhum'}`);
+          console.log(`      ✅ Verified: ${enrichedProfile.is_verified} | 💼 Business: ${enrichedProfile.is_business_account}`);
+
           // Buscar discovery_id correspondente
           const { data: discoveryRecord } = await supabase
             .from('instagram_discovery_results')
@@ -814,8 +823,8 @@ serve(async (req) => {
               email_from_bio: enrichedProfile.email_from_bio,
               phone_from_bio: enrichedProfile.phone_from_bio,
               whatsapp_from_bio: enrichedProfile.whatsapp_from_bio,
-              // Status
-              processing_status: 'pending',
+              // Status: 'completed' se sem website OU 'pending' se aguardando scraping
+              processing_status: enrichedProfile.external_url ? 'pending' : 'completed',
               migrated_to_leads: false,
               raw_data: enrichedProfile.raw_data,
             });
@@ -825,6 +834,29 @@ serve(async (req) => {
             failedCount++;
           } else {
             enrichedCount++;
+
+            // Criar log detalhado para cada perfil enriquecido
+            await createLog(
+              supabase, run_id, 7, 'Perfil Enriquecido', 'enrichment', 'info',
+              `@${enrichedProfile.username}: ${enrichedProfile.followers_count || 0} seguidores, ${enrichedProfile.posts_count || 0} posts`,
+              {
+                username: enrichedProfile.username,
+                full_name: enrichedProfile.full_name,
+                followers: enrichedProfile.followers_count,
+                posts: enrichedProfile.posts_count,
+                has_website: !!enrichedProfile.external_url,
+                website_url: enrichedProfile.external_url,
+                has_email: !!(enrichedProfile.business_email || enrichedProfile.email_from_bio),
+                email: enrichedProfile.business_email || enrichedProfile.email_from_bio,
+                has_phone: !!(enrichedProfile.business_phone || enrichedProfile.phone_from_bio),
+                phone: enrichedProfile.business_phone || enrichedProfile.phone_from_bio,
+                has_whatsapp: !!enrichedProfile.whatsapp_from_bio,
+                whatsapp: enrichedProfile.whatsapp_from_bio,
+                is_verified: enrichedProfile.is_verified,
+                is_business: enrichedProfile.is_business_account,
+                category: enrichedProfile.business_category
+              }
+            );
           }
 
         } catch (profileError) {

@@ -131,6 +131,8 @@ Deno.serve(async (req) => {
           updateData.website_scraping_error = 'WhatsApp URL - número não extraído';
         }
 
+        updateData.processing_status = 'completed'; // Libera para migração
+
         await supabase
           .from('instagram_enriched_profiles')
           .update(updateData)
@@ -150,6 +152,7 @@ Deno.serve(async (req) => {
             website_scraping_enriched: true,
             website_category: category,
             website_scraping_error: `URL categoria: ${category} (não scrapeável)`,
+            processing_status: 'completed', // NOVO: Libera para migração
             updated_at: new Date().toISOString()
           })
           .eq('id', id);
@@ -219,15 +222,15 @@ Deno.serve(async (req) => {
         supabase,
         runId,
         11,
-        'Website Scraping',
+        'Website Classification',
         'info',
-        `Scraping de websites: ${validSites} válidos, ${skippedSites} ignorados`,
+        `Websites classificados: ${validSites} business, ${skippedSites} skipped (${categoryCounts.social} social, ${categoryCounts.aggregator} aggregator, ${categoryCounts.communication} communication)`,
         {
           total_profiles: profiles.length,
           valid_websites: validSites,
           skipped_sites: skippedSites,
           whatsapp_extracted: whatsappExtracted,
-          skipped_categories: categoryCounts
+          skipped_breakdown: categoryCounts
         }
       );
 
@@ -238,8 +241,20 @@ Deno.serve(async (req) => {
           12,
           'Websites Enfileirados',
           'success',
-          `${validSites} websites enfileirados para scraping`,
+          `${validSites} websites enfileirados para scraping (fila PGMQ)`,
           { queued_count: validSites }
+        );
+      }
+
+      if (whatsappExtracted > 0) {
+        await createLog(
+          supabase,
+          runId,
+          12,
+          'WhatsApp Extraído',
+          'success',
+          `${whatsappExtracted} números de WhatsApp extraídos de URLs wa.me`,
+          { whatsapp_count: whatsappExtracted }
         );
       }
     }

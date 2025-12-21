@@ -52,3 +52,4 @@ temp_*.sql
 # Logs
 *.log
 npm-debug.log*
+".kilocode/" 

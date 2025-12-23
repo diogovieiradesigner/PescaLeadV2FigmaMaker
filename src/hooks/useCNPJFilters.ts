@@ -25,6 +25,7 @@ interface UseCNPJFiltersResult {
   cnaes: CNAEOption[];
   cnaesLoading: boolean;
   searchCNAEs: (query: string) => Promise<void>;
+  fetchCNAEByCodes: (codes: string[]) => Promise<void>;
 }
 
 export function useCNPJFilters(): UseCNPJFiltersResult {
@@ -94,7 +95,8 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
       );
 
       if (!response.ok) {
-        console.error('[useCNPJFilters] Stats error:', response.status);
+        const errorData = await response.json().catch(() => ({}));
+        console.error('[useCNPJFilters] Stats error:', response.status, errorData);
         return null;
       }
 
@@ -166,6 +168,44 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
     }
   }, []);
 
+  // Buscar CNAEs específicos por código
+  const fetchCNAEByCodes = useCallback(async (codes: string[]) => {
+    if (!codes.length) return;
+
+    try {
+      const params = new URLSearchParams();
+      codes.forEach(code => params.append('codes', code));
+
+      const url = `${SUPABASE_URL}/functions/v1/cnpj-api/cnaes?${params.toString()}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.cnaes) {
+          // Mesclar com os CNAEs já carregados
+          setCnaes(prev => {
+            const newCnaes = [...prev];
+            data.cnaes.forEach((newOpt: CNAEOption) => {
+              if (!newCnaes.some(p => p.value === newOpt.value)) {
+                newCnaes.push(newOpt);
+              }
+            });
+            return newCnaes;
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[useCNPJFilters] fetchCNAEByCodes error:', err);
+    }
+  }, []);
+
   // Carregar CNAEs populares no início
   useEffect(() => {
     console.log('[useCNPJFilters] Initial useEffect - loading CNAEs on mount');
@@ -186,6 +226,7 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
     cnaes,
     cnaesLoading,
     searchCNAEs,
+    fetchCNAEByCodes,
   };
 }
 

@@ -46,6 +46,7 @@ import { Separator } from './ui/separator';
 import { ProfileMenu } from './ProfileMenu';
 import { PieChart, Pie, BarChart, Bar, Cell, ResponsiveContainer, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 import { MoveLeadsModal } from './MoveLeadsModal';
+import { CNPJLogCard } from './CNPJLogCard';
 
 import { cn } from './ui/utils';
 
@@ -224,7 +225,7 @@ function MiniProgressBar({ percentage, isDark }: { percentage: number; isDark: b
 }
 
 // Tipos para os logs
-type LogTab = 'todos' | 'extracao' | 'enriquecimento';
+type LogTab = 'todos' | 'extracao' | 'enriquecimento' | 'scraping';
 type LogLevel = 'all' | 'info' | 'success' | 'warning' | 'error';
 
 export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavigateToSettings }: ExtractionProgressProps) {
@@ -1716,11 +1717,13 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                       const googleMapsSteps = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'];
                       // Steps do Instagram Discovery (extração)
                       const instagramDiscoverySteps = ['queries', 'serper query', 'loop complete', 'conclusão', 'ai expansion'];
+                      // ✅ Steps do CNPJ (extração)
+                      const cnpjSteps = ['cnpj_api_call', 'staging_insert', 'migrate_batch', 'complete', 'start'];
                       // Steps de enriquecimento (Instagram)
                       const enrichmentSteps = ['api call', 'run succeeded', 'processamento', 'auto-trigger', 'batch'];
 
                       // Combinar todos os steps de extração
-                      const allExtractionSteps = [...googleMapsSteps, ...instagramDiscoverySteps];
+                      const allExtractionSteps = [...googleMapsSteps, ...instagramDiscoverySteps, ...cnpjSteps];
 
                       // Se for aba de enriquecimento, combina enrichment_timeline + logs de enriquecimento da timeline
                       if (logTab === 'enriquecimento') {
@@ -1738,6 +1741,60 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                           return true;
                         });
                         return fromEnrichmentTimeline.length + fromMainTimeline.length;
+                      }
+                      
+                      // ✅ MELHORIA: Incluir logs CNPJ na aba de extração
+                      if (logTab === 'extracao') {
+                        const filtered = timeline.filter((event: any) => {
+                          if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
+                          
+                          // Steps do Google Maps
+                          const googleMapsSteps = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'];
+                          // Steps do Instagram Discovery
+                          const instagramSteps = ['queries', 'serper query', 'loop complete', 'conclusão', 'ai expansion'];
+                          // ✅ Adicionar steps CNPJ
+                          const cnpjSteps = ['cnpj_api_call', 'staging_insert', 'migrate_batch', 'complete', 'start'];
+                          
+                          // Combinar todos os steps de extração
+                          const allExtractionSteps = [...googleMapsSteps, ...instagramSteps, ...cnpjSteps];
+                          const stepLower = (event.step || '').toLowerCase();
+                          const isExtracao = allExtractionSteps.some(s => stepLower.includes(s.toLowerCase()));
+                          
+                          // ✅ Incluir logs CNPJ por source
+                          const isCNPJSource = event.source === 'cnpj';
+                          
+                          return isExtracao || isCNPJSource;
+                        });
+                        return filtered.length;
+                      }
+                      
+                      // Se for aba de scraping, busca logs de scraping por phase OU step_name
+                      if (logTab === 'scraping') {
+                        const filtered = timeline.filter((event: any) => {
+                          if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
+                          
+                          // Buscar logs de scraping por phase OU step_name
+                          const isScrapingPhase = event.phase === 'scraping';
+                          const isScrapingStep = event.step_name && (
+                            event.step_name.toLowerCase().includes('website scraping') ||
+                            event.step_name.toLowerCase().includes('scraping profiles') ||
+                            event.step_name.toLowerCase().includes('scrape website') ||
+                            event.step_name.toLowerCase().includes('scraping')
+                          );
+                          const isEnrichmentWithScraping = event.phase === 'enrichment' && isScrapingStep;
+                          
+                          // ✅ MELHORIA: Incluir logs específicos do CNPJ
+                          const isCNPJLog = event.step_name && (
+                            event.step_name.toLowerCase().includes('migrate_batch') ||
+                            event.step_name.toLowerCase().includes('staging_insert') ||
+                            event.step_name.toLowerCase().includes('cnpj_api_call') ||
+                            event.step_name.toLowerCase().includes('complete') ||
+                            event.source === 'cnpj'
+                          );
+                          
+                          return isScrapingPhase || isEnrichmentWithScraping || isCNPJLog;
+                        });
+                        return filtered.length;
                       }
 
                       const filtered = timeline.filter((event: any) => {
@@ -1806,6 +1863,21 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                   )}
                 >
                   Enriquecimento
+                </button>
+                <button
+                  onClick={() => setLogTab('scraping')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                    logTab === 'scraping'
+                      ? isDark
+                        ? "bg-zinc-800 text-white"
+                        : "bg-white text-zinc-900 shadow-sm border border-zinc-200"
+                      : isDark
+                        ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                        : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+                  )}
+                >
+                  Scraping
                 </button>
               </div>
 
@@ -2030,6 +2102,169 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                         );
                       });
                     }
+                    
+                    // Se for aba de scraping
+                    if (logTab === 'scraping') {
+                      const filteredScraping = timeline.filter((event: any) => {
+                        if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
+                        
+                        // Buscar logs de scraping por phase OU step_name
+                        const isScrapingPhase = event.phase === 'scraping';
+                        const isScrapingStep = event.step_name && (
+                          event.step_name.toLowerCase().includes('website scraping') ||
+                          event.step_name.toLowerCase().includes('scraping profiles') ||
+                          event.step_name.toLowerCase().includes('scrape website') ||
+                          event.step_name.toLowerCase().includes('scraping')
+                        );
+                        const isEnrichmentWithScraping = event.phase === 'enrichment' && isScrapingStep;
+                        
+                        // ✅ MELHORIA: Incluir logs específicos do CNPJ
+                        const isCNPJLog = event.step_name && (
+                          event.step_name.toLowerCase().includes('migrate_batch') ||
+                          event.step_name.toLowerCase().includes('staging_insert') ||
+                          event.step_name.toLowerCase().includes('cnpj_api_call') ||
+                          event.step_name.toLowerCase().includes('complete') ||
+                          event.source === 'cnpj'
+                        );
+                        
+                        return isScrapingPhase || isEnrichmentWithScraping || isCNPJLog;
+                      });
+
+                      if (filteredScraping.length === 0) {
+                        // Mostrar status do scraping quando não há logs
+                        return (
+                          <div className={cn(
+                            "text-center py-6",
+                            isDark ? "text-zinc-500" : "text-zinc-600"
+                          )}>
+                            <div className="space-y-4">
+                              <div className={cn(
+                                "mx-auto w-12 h-12 rounded-full flex items-center justify-center",
+                                isDark ? "bg-zinc-900" : "bg-zinc-100"
+                              )}>
+                                <FileText className={cn(
+                                  "h-6 w-6",
+                                  isDark ? "text-zinc-600" : "text-zinc-400"
+                                )} />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium mb-1">
+                                  Website Scraping em andamento
+                                </p>
+                                <p className="text-xs opacity-70">
+                                  Os logs de scraping de websites serão exibidos aqui conforme os perfis são processados.
+                                </p>
+                              </div>
+                              {enrichmentStatus && (
+                                <div className={cn(
+                                  "grid grid-cols-1 gap-2 text-xs mt-4 p-3 rounded-lg",
+                                  isDark ? "bg-zinc-900" : "bg-zinc-50"
+                                )}>
+                                  <div className="flex items-center justify-between">
+                                    <span>Total com Website:</span>
+                                    <span className="font-medium">{enrichmentStatus.scraping.total_com_site}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span>Concluídos:</span>
+                                    <span className="text-green-500 font-medium">{enrichmentStatus.scraping.completed}</span>
+                                  </div>
+                                  {enrichmentStatus.scraping.processing > 0 && (
+                                    <div className="flex items-center justify-between">
+                                      <span>Processando:</span>
+                                      <span className="text-blue-500 font-medium">{enrichmentStatus.scraping.processing}</span>
+                                    </div>
+                                  )}
+                                  {enrichmentStatus.scraping.pending > 0 && (
+                                    <div className="flex items-center justify-between">
+                                      <span>Pendentes:</span>
+                                      <span className="text-yellow-500 font-medium">{enrichmentStatus.scraping.pending}</span>
+                                    </div>
+                                  )}
+                                  {enrichmentStatus.scraping.failed > 0 && (
+                                    <div className="flex items-center justify-between">
+                                      <span>Falhas:</span>
+                                      <span className="text-red-500 font-medium">{enrichmentStatus.scraping.failed}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Renderizar logs de scraping
+                      return filteredScraping.map((event: any, index: number) => {
+                        const isError = event.level === 'error';
+                        const isSuccess = event.level === 'success';
+                        const isWarning = event.level === 'warning';
+
+                        const levelColor = isError
+                          ? 'bg-red-500'
+                          : isWarning
+                            ? 'bg-yellow-500'
+                            : isSuccess
+                              ? 'bg-green-500'
+                              : 'bg-blue-500';
+
+                        const textColor = isError
+                          ? (isDark ? 'text-red-400' : 'text-red-600')
+                          : isWarning
+                            ? (isDark ? 'text-yellow-400' : 'text-yellow-600')
+                            : isSuccess
+                              ? (isDark ? 'text-green-400' : 'text-green-600')
+                              : (isDark ? 'text-zinc-400' : 'text-zinc-700');
+
+                        return (
+                          <div
+                            key={index}
+                            className={cn(
+                              "relative pl-3 py-2 rounded-lg transition-colors",
+                              isDark ? "hover:bg-zinc-900/50" : "hover:bg-zinc-50"
+                            )}
+                          >
+                            <div className={cn("absolute left-0 top-2 bottom-2 w-1 rounded-full", levelColor)} />
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(
+                                    "text-[11px] font-mono px-1.5 py-0.5 rounded",
+                                    isDark ? "text-zinc-500 bg-zinc-900" : "text-zinc-500 bg-zinc-100"
+                                  )}>
+                                    {event.timestamp}
+                                  </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                      "text-[10px] px-2 h-5 font-medium uppercase",
+                                      isDark ? "bg-zinc-900 text-zinc-500 border-zinc-800" : "bg-zinc-100 text-zinc-600 border-zinc-300"
+                                    )}
+                                  >
+                                    {event.step_name || event.step || 'scraping'}
+                                  </Badge>
+                                </div>
+                              </div>
+                              
+                              {/* ✅ MELHORIA: Usar componente especializado para logs CNPJ */}
+                              {event.source === 'cnpj' ? (
+                                <CNPJLogCard
+                                  timestamp={event.timestamp}
+                                  step_name={event.step_name}
+                                  level={event.level}
+                                  message={event.message}
+                                  source={event.source}
+                                  isDark={isDark}
+                                />
+                              ) : (
+                                <p className={cn("text-sm leading-relaxed pl-0.5", textColor)}>
+                                  {event.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    }
 
                     // Filtrar timeline normal (Todos ou Extração)
                     const filteredTimeline = timeline.filter((event: any) => {
@@ -2039,10 +2274,17 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                         const googleMapsSteps = ['google maps', 'inicialização', 'finalização', 'segmentação', 'compensação', 'compensação filtros', 'correção automática'];
                         // Steps do Instagram Discovery
                         const instagramSteps = ['queries', 'serper query', 'loop complete', 'conclusão', 'ai expansion'];
+                        // ✅ Adicionar steps CNPJ
+                        const cnpjSteps = ['cnpj_api_call', 'staging_insert', 'migrate_batch', 'complete', 'start'];
+                        
                         // Combinar todos os steps de extração
-                        const allExtractionSteps = [...googleMapsSteps, ...instagramSteps];
+                        const allExtractionSteps = [...googleMapsSteps, ...instagramSteps, ...cnpjSteps];
                         const isExtracao = allExtractionSteps.some(s => stepLower.includes(s.toLowerCase()));
-                        if (!isExtracao) return false;
+                        
+                        // ✅ Incluir logs CNPJ por source
+                        const isCNPJSource = event.source === 'cnpj';
+                        
+                        if (!isExtracao && !isCNPJSource) return false;
                       }
                       if (logLevelFilter !== 'all' && event.level !== logLevelFilter) return false;
                       return true;
@@ -2145,12 +2387,60 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                                 {event.level || 'info'}
                               </Badge>
                             </div>
-                            <p className={cn(
-                              "text-sm leading-relaxed pl-0.5",
-                              textColor
-                            )}>
-                              {event.message}
-                            </p>
+                            {/* ✅ MELHORIA: Formato melhorado para logs CNPJ em todas as abas */}
+                            {event.source === 'cnpj' ? (
+                              <div className="space-y-2">
+                                <p className={cn("text-sm leading-relaxed pl-0.5", textColor)}>
+                                  {event.message}
+                                </p>
+                                
+                                {/* Detalhes extras para CNPJ */}
+                                <div className="flex items-center gap-3 text-xs">
+                                  {/* Ícone baseado no step_name */}
+                                  {event.step_name?.toLowerCase().includes('cnpj_api_call') && (
+                                    <div className="flex items-center gap-1.5">
+                                      <Globe className="h-3 w-3 text-blue-500" />
+                                      <span className={isDark ? "text-blue-400" : "text-blue-600"}>API CNPJ</span>
+                                    </div>
+                                  )}
+                                  {event.step_name?.toLowerCase().includes('staging_insert') && (
+                                    <div className="flex items-center gap-1.5">
+                                      <Building2 className="h-3 w-3 text-purple-500" />
+                                      <span className={isDark ? "text-purple-400" : "text-purple-600"}>Inserção em Staging</span>
+                                    </div>
+                                  )}
+                                  {event.step_name?.toLowerCase().includes('migrate_batch') && (
+                                    <div className="flex items-center gap-1.5">
+                                      <ArrowRight className="h-3 w-3 text-green-500" />
+                                      <span className={isDark ? "text-green-400" : "text-green-600"}>Migração em Batch</span>
+                                    </div>
+                                  )}
+                                  {event.step_name?.toLowerCase().includes('complete') && (
+                                    <div className="flex items-center gap-1.5">
+                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                      <span className={isDark ? "text-green-400" : "text-green-600"}>Conclusão</span>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Badge de origem CNPJ */}
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "text-[8px] px-1.5 h-4",
+                                      isDark 
+                                        ? "bg-purple-500/10 text-purple-400 border-purple-500/20" 
+                                        : "bg-purple-100 text-purple-600 border-purple-300"
+                                    )}
+                                  >
+                                    CNPJ
+                                  </Badge>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className={cn("text-sm leading-relaxed pl-0.5", textColor)}>
+                                {event.message}
+                              </p>
+                            )}
                           </div>
                         </div>
                       );

@@ -296,21 +296,17 @@ serve(async (req) => {
         );
       }
 
-      // ⚠️ ATUALIZADO: Aguardar scraping SE website válido
+      // ✅ CORREÇÃO SISTÊMICA: Permitir migração mesmo com scraping pendente
       // Buscar perfis enriquecidos não migrados da tabela instagram_enriched_profiles
-      // Regra: processing_status='completed' E (sem website OU website processado: completed/skipped/blocked/failed)
+      // Incluir perfis com processing_status='pending' E website_scraping_status='processing'
       const { data: profiles, error: profilesError } = await supabase
         .from('instagram_enriched_profiles')
         .select('*')
         .eq('run_id', run_id)
         .eq('migrated_to_leads', false)
-        .eq('processing_status', 'completed')
         .or(
-          'external_url.is.null,' +
-          'website_scraping_status.eq.completed,' +
-          'website_scraping_status.eq.skipped,' +
-          'website_scraping_status.eq.blocked,' +
-          'website_scraping_status.eq.failed'
+          'processing_status.eq.completed,' +
+          'and(processing_status.eq.pending,website_scraping_status.in.(processing,queued))'
         )
         .limit(limit);
 

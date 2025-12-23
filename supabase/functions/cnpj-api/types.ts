@@ -167,7 +167,7 @@ export interface SearchFilters {
   capital_social_max?: number;       // Capital máximo em R$
 
   // Situação e Tipo
-  situacao?: string[];               // 02=Ativa, 08=Baixada
+  situacao?: string[];               // 02=Ativa, 03=Suspensa, 04=Inapta, 08=Baixada
   tipo?: string[];                   // 1=Matriz, 2=Filial
   natureza_juridica?: string[];      // MEI, Ltda, etc
 

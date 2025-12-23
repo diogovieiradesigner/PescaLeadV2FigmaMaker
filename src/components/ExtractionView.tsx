@@ -46,6 +46,34 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   const isDark = theme === 'dark';
   const { currentWorkspace } = useAuth();
   
+  // Tab ativa (google_maps, cnpj ou instagram)
+  // ✅ Converte formato de URL (google-maps) para formato interno (google_maps)
+  const urlTabToInternal = (tab: ExtractionTabUrl | null | undefined): 'google_maps' | 'cnpj' | 'instagram' => {
+    if (tab === 'google-maps') return 'google_maps';
+    if (tab === 'cnpj') return 'cnpj';
+    if (tab === 'instagram') return 'instagram';
+    return 'google_maps'; // default
+  };
+
+  const internalTabToUrl = (tab: 'google_maps' | 'cnpj' | 'instagram'): ExtractionTabUrl => {
+    if (tab === 'google_maps') return 'google-maps';
+    return tab; // cnpj e instagram são iguais
+  };
+
+  const [activeTab, setActiveTabState] = useState<'google_maps' | 'cnpj' | 'instagram'>(() => urlTabToInternal(urlTab));
+  
+  // Estado do formulário separado por tipo de extração
+  const [googleMapsData, setGoogleMapsData] = useState({
+    extractionName: '',
+    searchTerm: '',
+    location: '',
+    isLocationValid: false,
+    niche: '',
+    isActive: false,
+    dailyQuantity: 50,
+    extractionTime: '14:30'
+  });
+  
   const {
     extractions,
     recentRuns,
@@ -57,15 +85,62 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     executeExtraction
   } = useExtractionData(currentWorkspace?.id || '');
 
-  // Estado do formulário
-  const [extractionName, setExtractionName] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [location, setLocation] = useState('');
-  const [isLocationValid, setIsLocationValid] = useState(false);
-  const [niche, setNiche] = useState('');
-  const [isActive, setIsActive] = useState(false);
-  const [dailyQuantity, setDailyQuantity] = useState(50);
-  const [extractionTime, setExtractionTime] = useState('14:30');
+  // Getters e setters para compatibilidade com Google Maps
+  const extractionName = activeTab === 'google_maps' ? googleMapsData.extractionName : '';
+  const setExtractionName = (value: string) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, extractionName: value }));
+    }
+  };
+  
+  const searchTerm = activeTab === 'google_maps' ? googleMapsData.searchTerm : '';
+  const setSearchTerm = (value: string) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, searchTerm: value }));
+    }
+  };
+  
+  const location = activeTab === 'google_maps' ? googleMapsData.location : '';
+  const setLocation = (value: string) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, location: value }));
+    }
+  };
+  
+  const isLocationValid = activeTab === 'google_maps' ? googleMapsData.isLocationValid : false;
+  const setIsLocationValid = (value: boolean) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, isLocationValid: value }));
+    }
+  };
+  
+  const niche = activeTab === 'google_maps' ? googleMapsData.niche : '';
+  const setNiche = (value: string) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, niche: value }));
+    }
+  };
+  
+  const isActive = activeTab === 'google_maps' ? googleMapsData.isActive : false;
+  const setIsActive = (value: boolean) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, isActive: value }));
+    }
+  };
+  
+  const dailyQuantity = activeTab === 'google_maps' ? googleMapsData.dailyQuantity : 50;
+  const setDailyQuantity = (value: number) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, dailyQuantity: value }));
+    }
+  };
+  
+  const extractionTime = activeTab === 'google_maps' ? googleMapsData.extractionTime : '14:30';
+  const setExtractionTime = (value: string) => {
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData(prev => ({ ...prev, extractionTime: value }));
+    }
+  };
   
   // Funil e Coluna
   const [funnelId, setFunnelId] = useState('');
@@ -109,28 +184,21 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
   const [cnpjSaving, setCnpjSaving] = useState(false);
   const [instagramSaving, setInstagramSaving] = useState(false);
 
-  // Tab ativa (google_maps, cnpj ou instagram)
-  // ✅ Converte formato de URL (google-maps) para formato interno (google_maps)
-  const urlTabToInternal = (tab: ExtractionTabUrl | null | undefined): 'google_maps' | 'cnpj' | 'instagram' => {
-    if (tab === 'google-maps') return 'google_maps';
-    if (tab === 'cnpj') return 'cnpj';
-    if (tab === 'instagram') return 'instagram';
-    return 'google_maps'; // default
-  };
-
-  const internalTabToUrl = (tab: 'google_maps' | 'cnpj' | 'instagram'): ExtractionTabUrl => {
-    if (tab === 'google_maps') return 'google-maps';
-    return tab; // cnpj e instagram são iguais
-  };
-
-  const [activeTab, setActiveTabState] = useState<'google_maps' | 'cnpj' | 'instagram'>(() => urlTabToInternal(urlTab));
-
   // ✅ Sincronizar tab com URL quando urlTab mudar
   useEffect(() => {
     if (urlTab) {
       setActiveTabState(urlTabToInternal(urlTab));
     }
   }, [urlTab]);
+  
+  // Limpar dados quando a aba muda (exceto para Google Maps que mantém seu estado)
+  useEffect(() => {
+    if (activeTab !== 'google_maps') {
+      // Resetar seleção de extração ao mudar de aba
+      setSelectedExtractionId(null);
+      // Limpar histórico se necessário
+    }
+  }, [activeTab]);
 
   // ✅ Wrapper para mudar tab e atualizar URL
   const setActiveTab = (tab: 'google_maps' | 'cnpj' | 'instagram') => {
@@ -140,12 +208,19 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
 
   const itemsPerPage = 10;
 
-  // Carregar primeira extração ao montar
+  // Carregar primeira extração ao montar (apenas se estiver na aba Google Maps)
   useEffect(() => {
-    if (extractions.length > 0 && !selectedExtractionId) {
-      loadExtraction(extractions[0]);
+    if (activeTab === 'google_maps' && extractions.length > 0 && !selectedExtractionId) {
+      // Tenta encontrar a primeira extração que seja do Google Maps
+      // Filtra por source 'google_maps' ou null (para extrações antigas)
+      const mapsExtraction = extractions.find(e =>
+        (e.source === 'google_maps' || !e.source) && (e.search_term || e.location)
+      );
+      if (mapsExtraction) {
+        loadExtraction(mapsExtraction);
+      }
     }
-  }, [extractions]);
+  }, [extractions, activeTab, selectedExtractionId]);
 
   // Buscar funnels do workspace
   useEffect(() => {
@@ -207,31 +282,50 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     setColumnId(''); // Reset column when funnel changes
   };
 
-  // Carregar dados de uma extração
+  // Carregar dados de uma extração (apenas para Google Maps)
   const loadExtraction = (extraction: any) => {
+    // Só carregar se for uma extração compatível com Google Maps
+    // Filtra por source 'google_maps' ou null (para extrações antigas)
+    const isMaps = (extraction.source === 'google_maps' || !extraction.source) &&
+                   !!(extraction.search_term || extraction.location);
+    
+    if (!isMaps) return;
+
     setSelectedExtractionId(extraction.id);
-    setExtractionName(extraction.extraction_name);
-    setSearchTerm(extraction.search_term);
-    setLocation(extraction.location);
-    // Localização existente é válida (foi selecionada anteriormente)
-    setIsLocationValid(!!extraction.location && extraction.location.includes(','));
-    setNiche(extraction.niche || '');
-    setIsActive(extraction.is_active);
-    setDailyQuantity(extraction.target_quantity);
-    setExtractionTime(extraction.schedule_time || '14:30');
-    setRequireWebsite(extraction.require_website);
-    setRequirePhone(extraction.require_phone);
-    setRequireEmail(extraction.require_email);
-    setMinReviews(extraction.min_reviews);
-    setMinRating(extraction.min_rating);
-    setExpandToState(extraction.expand_state_search || false);
-    setFunnelId(extraction.funnel_id || '');
-    setColumnId(extraction.column_id || '');
+    
+    // Só carregar dados para o estado do Google Maps se estiver na aba correta
+    if (activeTab === 'google_maps') {
+      setGoogleMapsData({
+        extractionName: extraction.extraction_name || '',
+        searchTerm: extraction.search_term || '',
+        location: extraction.location || '',
+        isLocationValid: !!extraction.location && extraction.location.includes(','),
+        niche: extraction.niche || '',
+        isActive: extraction.is_active || false,
+        dailyQuantity: extraction.target_quantity || 50,
+        extractionTime: extraction.schedule_time || '14:30'
+      });
+      
+      // Filtros e destino (apenas para Google Maps)
+      setRequireWebsite(extraction.require_website);
+      setRequirePhone(extraction.require_phone);
+      setRequireEmail(extraction.require_email);
+      setMinReviews(extraction.min_reviews);
+      setMinRating(extraction.min_rating);
+      setExpandToState(extraction.expand_state_search || false);
+      setFunnelId(extraction.funnel_id || '');
+      setColumnId(extraction.column_id || '');
+    }
   };
 
-  // Salvar/Atualizar extração
+  // Salvar/Atualizar extração (apenas para Google Maps)
   const handleSave = async () => {
     if (!currentWorkspace) return;
+    
+    // Só salvar se estiver na aba Google Maps
+    if (activeTab !== 'google_maps') {
+      return;
+    }
 
     if (!extractionName) {
       toast.error('Preencha o Nome da Extração');
@@ -283,7 +377,8 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
         expand_state_search: expandToState,
         funnel_id: funnelId,
         column_id: columnId,
-        extraction_mode: 'manual' // Sempre manual agora
+        extraction_mode: 'manual', // Sempre manual agora
+        source: 'google_maps'
       };
 
       if (selectedExtractionId) {
@@ -338,13 +433,13 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
     }
   };
 
-  // Toggle ativo/inativo
+  // Toggle ativo/inativo (apenas para Google Maps)
   const handleToggleActive = async () => {
-    if (!selectedExtractionId) return;
+    if (!selectedExtractionId || activeTab !== 'google_maps') return;
 
     try {
       await toggleActive(selectedExtractionId, !isActive);
-      setIsActive(!isActive);
+      setGoogleMapsData(prev => ({ ...prev, isActive: !isActive }));
       toast.success(isActive ? 'Extração desativada' : 'Extração ativada');
     } catch (error) {
       console.error('Error toggling active:', error);
@@ -1229,17 +1324,17 @@ export function ExtractionView({ theme, onThemeToggle, onNavigateToSettings, onN
                             
                             <button
                               onClick={() => setConfirmDeleteRun({ id: item.id, name: item.run_name || item.extraction_name })}
-                              disabled={deletingRunId === item.id || item.status === 'completed'}
+                              disabled={deletingRunId === item.id || (item.status === 'completed' && item.created_quantity > 0)}
                               className={`px-2 py-1 text-sm rounded-lg transition-colors ${
                                 deletingRunId === item.id
                                   ? 'bg-red-500/50 cursor-not-allowed'
-                                  : item.status === 'completed'
+                                  : (item.status === 'completed' && item.created_quantity > 0)
                                   ? 'bg-zinc-500/20 cursor-not-allowed text-zinc-500'
                                   : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
                               }`}
                               title={
-                                item.status === 'completed'
-                                  ? 'Extrações concluídas não podem ser deletadas'
+                                (item.status === 'completed' && item.created_quantity > 0)
+                                  ? 'Extrações concluídas com leads não podem ser deletadas'
                                   : 'Deletar extração'
                               }
                             >

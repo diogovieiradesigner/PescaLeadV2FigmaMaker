@@ -25,6 +25,7 @@ export interface LeadExtraction {
   funnel_id: string | null;
   column_id: string | null;
   created_at: string;
+  source: 'google_maps' | 'cnpj' | 'instagram' | null;
   updated_at: string;
 }
 
@@ -90,6 +91,7 @@ export interface CreateExtractionData {
   extraction_mode?: 'manual' | 'ia';
   funnel_id?: string;
   column_id?: string;
+  source?: 'google_maps' | 'cnpj' | 'instagram';
 }
 
 export interface UpdateExtractionData {
@@ -110,6 +112,7 @@ export interface UpdateExtractionData {
   extraction_mode?: 'manual' | 'ia';
   funnel_id?: string;
   column_id?: string;
+  source?: 'google_maps' | 'cnpj' | 'instagram';
 }
 
 // ============================================
@@ -205,6 +208,23 @@ export async function deleteExtraction(extractionId: string): Promise<void> {
     console.error('Error deleting extraction:', error);
     throw error;
   }
+}
+
+/**
+ * Deletar execução de extração (Run)
+ * Usa a RPC 'delete_extraction_run' que remove em cascata
+ */
+export async function deleteExtractionRun(runId: string): Promise<{ success: boolean; deleted_counts?: any; error?: string }> {
+  const { data, error } = await supabase.rpc('delete_extraction_run', {
+    p_run_id: runId
+  });
+
+  if (error) {
+    console.error('Error deleting extraction run:', error);
+    throw error;
+  }
+
+  return data;
 }
 
 /**

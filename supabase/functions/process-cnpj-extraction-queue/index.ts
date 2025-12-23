@@ -42,6 +42,7 @@ interface StagingLead {
   raw_data: any;
   funnel_id: string;
   column_id: string;
+  capital_social_formatado?: string | null;
 }
 
 // Mapeamento de campos CNPJ para custom_fields
@@ -78,6 +79,9 @@ const CNPJ_CUSTOM_FIELDS = [
   { name: 'Telefone Principal', field_type: 'phone', mappingKey: 'telefone' },
   { name: 'Tipo (Matriz/Filial)', field_type: 'text', mappingKey: 'tipo' },
 ] as const;
+
+// Importar funções de formatação
+import { formatCNPJ, formatPhoneToBrazilian, formatDateToDDMMYYYY, formatCurrencyBRL } from '../_shared/cnpj-formatters.ts';
 
 // Função para buscar ou criar campos personalizados
 async function getOrCreateCustomFields(supabase: any, workspaceId: string): Promise<CustomFieldMapping> {
@@ -169,15 +173,13 @@ async function insertCustomFieldValues(
 ): Promise<void> {
   const customValues: { lead_id: string; custom_field_id: string; value: string }[] = [];
 
-  // Formatar CNPJ: 00.000.000/0000-00
-  const formatCnpj = (cnpj: string) => {
-    const clean = cnpj.replace(/\D/g, '');
-    return clean.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-  };
-
   // Adicionar valores apenas se o campo existir e houver valor
   if (fieldMapping.cnpj && staging.cnpj) {
-    customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.cnpj, value: formatCnpj(staging.cnpj) });
+    // Usar a função de formatação compartilhada
+    const formattedCNPJ = formatCNPJ(staging.cnpj);
+    if (formattedCNPJ) {
+      customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.cnpj, value: formattedCNPJ });
+    }
   }
   if (fieldMapping.razao_social && staging.razao_social) {
     customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.razao_social, value: staging.razao_social });
@@ -189,8 +191,11 @@ async function insertCustomFieldValues(
     customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.porte, value: staging.porte });
   }
   if (fieldMapping.capital_social && staging.capital_social) {
-    const capitalFormatted = `R$ ${staging.capital_social.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.capital_social, value: capitalFormatted });
+    // Usar a função de formatação compartilhada ou o valor formatado se disponível
+    const capitalFormatted = staging.capital_social_formatado || formatCurrencyBRL(staging.capital_social);
+    if (capitalFormatted) {
+      customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.capital_social, value: capitalFormatted });
+    }
   }
   if (fieldMapping.cidade_uf && (staging.municipio || staging.uf)) {
     const cidadeUf = [staging.municipio, staging.uf].filter(Boolean).join('/');
@@ -208,10 +213,11 @@ async function insertCustomFieldValues(
     customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.situacao, value: staging.situacao });
   }
   if (fieldMapping.data_abertura && staging.data_abertura) {
-    // Converter de YYYY-MM-DD para DD/MM/YYYY
-    const [year, month, day] = staging.data_abertura.split('-');
-    const dataFormatted = `${day}/${month}/${year}`;
-    customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.data_abertura, value: dataFormatted });
+    // Usar a função de formatação compartilhada
+    const formattedDate = formatDateToDDMMYYYY(staging.data_abertura);
+    if (formattedDate) {
+      customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.data_abertura, value: formattedDate });
+    }
   }
   if (fieldMapping.email && staging.email) {
     customValues.push({ lead_id: leadId, custom_field_id: fieldMapping.email, value: staging.email });
@@ -387,6 +393,7 @@ serve(async (req) => {
     // Processar leads
     let migratedCount = 0;
     let failedCount = 0;
+    let duplicateCount = 0;
 
     for (const staging of stagingLeads || []) {
       try {
@@ -403,12 +410,12 @@ serve(async (req) => {
           await supabase
             .from('cnpj_extraction_staging')
             .update({
-              status: 'failed',
+              status: 'duplicate',
               error_message: 'Duplicata: CNPJ já existe no workspace',
             })
             .eq('id', staging.id);
 
-          failedCount++;
+          duplicateCount++;
           continue;
         }
 
@@ -496,7 +503,7 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[process-cnpj-extraction-queue] Processed batch: ${migratedCount} migrated, ${failedCount} failed`);
+    console.log(`[process-cnpj-extraction-queue] Processed batch: ${migratedCount} migrated, ${duplicateCount} duplicates, ${failedCount} failed`);
 
     // Atualizar contadores na run
     const { data: runData } = await supabase
@@ -521,8 +528,8 @@ serve(async (req) => {
       step_number: 5,
       step_name: 'migrate_batch',
       level: 'info',
-      message: `Batch processado: ${migratedCount} migrados, ${failedCount} falhas`,
-      details: { migrated: migratedCount, failed: failedCount, batch_size: batchSize },
+      message: `Batch processado: ${migratedCount} migrados, ${duplicateCount} duplicados, ${failedCount} falhas`,
+      details: { migrated: migratedCount, duplicates: duplicateCount, failed: failedCount, batch_size: batchSize },
     });
 
     // Verificar se há mais leads pendentes
@@ -555,6 +562,11 @@ serve(async (req) => {
 
       const status = finalStatus || { migrated: 0, failed: 0 };
 
+      // Se tiver muitas falhas (que não sejam duplicatas), status é partial
+      // Se tiver apenas duplicatas e migrados, status é completed
+      // Precisamos considerar que 'status.failed' na RPC pode incluir as duplicatas antigas marcadas como failed
+      // Então, mantemos a lógica, mas o usuário saberá diferenciar pelos logs
+      
       await supabase
         .from('lead_extraction_runs')
         .update({

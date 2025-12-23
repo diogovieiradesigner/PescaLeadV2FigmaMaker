@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../hooks/useTheme';
-import { ChevronDown, X, Search, Info, Loader2 } from 'lucide-react';
+import { ChevronDown, X, Search, Info, Loader2, AlertTriangle } from 'lucide-react';
 import type { CNPJFilters, FilterOption } from '../types/cnpj-extraction';
 import { PORTE_OPTIONS, SITUACAO_OPTIONS, TIPO_OPTIONS } from '../types/cnpj-extraction';
 import { LocationSearchInput } from './LocationSearchInput';
@@ -52,6 +52,25 @@ function MultiSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const [optionsCache, setOptionsCache] = useState<FilterOption[]>([]);
+
+  // Atualizar cache de opções para manter labels de itens selecionados
+  useEffect(() => {
+    if (options.length > 0) {
+      setOptionsCache(prev => {
+        const newCache = [...prev];
+        options.forEach(opt => {
+          const index = newCache.findIndex(p => p.value === opt.value);
+          if (index === -1) {
+            newCache.push(opt);
+          } else {
+            newCache[index] = opt; // Atualiza se já existir
+          }
+        });
+        return newCache;
+      });
+    }
+  }, [options]);
 
   // Fechar dropdown ao clicar fora (sem bloquear scroll da página)
   useEffect(() => {
@@ -68,12 +87,23 @@ function MultiSelect({
   }, [isOpen]);
 
   // Se tem onSearchChange, filtra no servidor; senão filtra local
-  const filteredOptions = searchable && search && !onSearchChange
+  const baseOptions = searchable && search && !onSearchChange
     ? options.filter(opt =>
         opt.label.toLowerCase().includes(search.toLowerCase()) ||
         opt.value.toLowerCase().includes(search.toLowerCase())
       )
     : options;
+
+  // Garantir que itens selecionados sempre apareçam na lista, mesmo que não estejam nos resultados da busca
+  const filteredOptions = [...baseOptions];
+  
+  selected.forEach(val => {
+    if (!filteredOptions.some(opt => opt.value === val)) {
+      // Tenta achar no cache, senão usa o valor como label
+      const cached = optionsCache.find(opt => opt.value === val);
+      filteredOptions.unshift(cached || { value: val, label: val });
+    }
+  });
 
   const handleSearchInput = (value: string) => {
     setSearch(value);
@@ -83,7 +113,7 @@ function MultiSelect({
   };
 
   const selectedLabels = selected
-    .map(val => options.find(opt => opt.value === val)?.label || val)
+    .map(val => optionsCache.find(opt => opt.value === val)?.label || options.find(opt => opt.value === val)?.label || val)
     .slice(0, 3);
 
   const toggleOption = (value: string) => {
@@ -393,6 +423,88 @@ function SelectWithAll({
   );
 }
 
+// Funções de validação de filtros
+function validateFilters(filters: CNPJFilters): string[] {
+  const errors: string[] = [];
+
+  // 1. Validar compatibilidade entre porte e capital social
+  if (filters.porte && filters.porte.length > 0 && (filters.capital_social_min || filters.capital_social_max)) {
+    const microEmpresa = filters.porte.includes('01');
+    const pequenoPorte = filters.porte.includes('03');
+    const capitalMin = filters.capital_social_min || 0;
+    const capitalMax = filters.capital_social_max;
+
+    // Microempresa: capital social geralmente até R$ 360.000,00
+    if (microEmpresa && capitalMin > 360000) {
+      errors.push('Microempresas geralmente têm capital social de até R$ 360.000,00. Verifique se este filtro é adequado.');
+    }
+
+    // Empresa de Pequeno Porte: capital social geralmente até R$ 4.800.000,00
+    if (pequenoPorte && capitalMin > 4800000) {
+      errors.push('Empresas de Pequeno Porte geralmente têm capital social de até R$ 4.800.000,00. Verifique se este filtro é adequado.');
+    }
+
+    // Se houver máximo definido, validar compatibilidade
+    if (capitalMax && capitalMax < capitalMin) {
+      errors.push('O capital social máximo não pode ser menor que o mínimo.');
+    }
+  }
+
+  // 2. Validar combinações impossíveis de situação cadastral
+  if (filters.situacao && filters.situacao.length > 0) {
+    const ativa = filters.situacao.includes('02');
+    const baixada = filters.situacao.includes('08');
+    const inapta = filters.situacao.includes('04');
+
+    // Não faz sentido buscar empresas ativas e baixadas ao mesmo tempo
+    if (ativa && baixada) {
+      errors.push('Não é possível buscar empresas ativas e baixadas simultaneamente.');
+    }
+
+    // Não faz sentido buscar empresas ativas e inaptas ao mesmo tempo
+    if (ativa && inapta) {
+      errors.push('Não é possível buscar empresas ativas e inaptas simultaneamente.');
+    }
+  }
+
+  // 3. Validar intervalo de capital social
+  if (filters.capital_social_min && filters.capital_social_max) {
+    if (filters.capital_social_max < filters.capital_social_min) {
+      errors.push('O capital social máximo não pode ser menor que o mínimo.');
+    }
+  }
+
+  // 4. Validar datas de abertura
+  if (filters.data_abertura_min && filters.data_abertura_max) {
+    const dataMin = new Date(filters.data_abertura_min);
+    const dataMax = new Date(filters.data_abertura_max);
+    
+    if (dataMax < dataMin) {
+      errors.push('A data de abertura máxima não pode ser anterior à data mínima.');
+    }
+  }
+
+  // 5. Validar MEI vs Porte
+  if (filters.mei && filters.porte && filters.porte.length > 0) {
+    const microEmpresa = filters.porte.includes('01');
+    if (!microEmpresa) {
+      errors.push('Para buscar MEIs, é recomendável selecionar o porte "Micro Empresa".');
+    }
+  }
+
+  // 6. Validar Simples Nacional vs Porte
+  if (filters.simples && filters.porte && filters.porte.length > 0) {
+    const microEmpresa = filters.porte.includes('01');
+    const pequenoPorte = filters.porte.includes('03');
+    
+    if (!microEmpresa && !pequenoPorte) {
+      errors.push('O Simples Nacional é mais comum em microempresas e empresas de pequeno porte.');
+    }
+  }
+
+  return errors;
+}
+
 export function CNPJFiltersForm({
   theme,
   filters,
@@ -404,6 +516,13 @@ export function CNPJFiltersForm({
 }: CNPJFiltersFormProps) {
   const isDark = theme === 'dark';
   const [cnaeSearchTimeout, setCnaeSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  // Validar filtros sempre que mudarem
+  useEffect(() => {
+    const errors = validateFilters(filters);
+    setValidationErrors(errors);
+  }, [filters]);
 
   // Log para debug - verificar CNAEs recebidos da API
   console.log('[CNPJFiltersForm] cnaeOptions received:', cnaeOptions.length, 'items');
@@ -665,6 +784,32 @@ export function CNPJFiltersForm({
           </div>
         </div>
       </div>
+
+      {/* Seção: Mensagens de validação */}
+      {validationErrors.length > 0 && (
+        <div className={`mt-6 p-4 rounded-lg border ${isDark ? 'bg-red-900/20 border-red-800/30' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${isDark ? 'text-red-400' : 'text-red-600'}`} />
+            <div className="flex-1">
+              <h4 className={`text-sm font-medium mb-2 ${isDark ? 'text-red-300' : 'text-red-800'}`}>
+                Atenção: Verifique seus filtros
+              </h4>
+              <ul className={`space-y-1 text-sm ${isDark ? 'text-red-200' : 'text-red-700'}`}>
+                {validationErrors.map((error, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 bg-current rounded-full mt-1.5 flex-shrink-0" />
+                    {error}
+                  </li>
+                ))}
+              </ul>
+              <p className={`mt-3 text-xs ${isDark ? 'text-red-300/70' : 'text-red-600/80'}`}>
+                Essas combinações podem não retornar resultados ou podem ser logicamente inconsistentes.
+                Revise os filtros antes de iniciar a extração.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,28 @@
+{
+  "name": "cnpj-validation-scripts",
+  "version": "1.0.0",
+  "description": "Scripts de validação prática para o sistema CNPJ",
+  "main": "validate-cnpj-system.js",
+  "scripts": {
+    "validate": "node validate-cnpj-system.js",
+    "validate:integrated": "node validate-cnpj-integrated.js",
+    "validate:real": "node test-cnpj-real-environment.js",
+    "validate:all": "npm run validate && npm run validate:integrated && npm run validate:real",
+    "test": "npm run validate:all"
+  },
+  "keywords": [
+    "cnpj",
+    "validation",
+    "supabase",
+    "edge-functions",
+    "testing"
+  ],
+  "author": "PescaLead Team",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

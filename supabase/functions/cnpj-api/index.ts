@@ -406,19 +406,31 @@ Deno.serve(async (req) => {
         });
       }
 
+      // DEBUG: Log detalhado do request recebido
+      console.log('🔍 [SEARCH DEBUG] Request body received:', JSON.stringify(body, null, 2));
+      console.log('🔍 [SEARCH DEBUG] Filters:', JSON.stringify(body.filters || {}, null, 2));
+
       const validation = validateSearchRequest(body);
 
       if (!validation.valid) {
+        console.error('❌ [SEARCH DEBUG] Validation failed:', validation.error);
+        console.log('❌ [SEARCH DEBUG] Body that failed:', JSON.stringify(body, null, 2));
+        
         return new Response(JSON.stringify({
           success: false,
-          error: validation.error
+          error: validation.error,
+          debug: {
+            receivedBody: body,
+            receivedFilters: body.filters || {},
+            hint: 'At least one filter is required. Try adding: situacao: ["02"] for active companies (default behavior)'
+          }
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      console.log(`🔍 [SEARCH] User ${auth.userId} iniciando busca`);
+      console.log(`🔍 [SEARCH] User ${auth.userId} iniciando busca com ${Object.keys(validation.request!.filters).length} filtros`);
 
       const db = getConnection();
       const response = await handleSearch(db, validation.request!);

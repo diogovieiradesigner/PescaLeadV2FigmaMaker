@@ -38,9 +38,25 @@ const ESTADO_PARA_UF: Record<string, string> = {
 // Lista de UFs válidas
 const UFS_VALIDAS = new Set(Object.values(ESTADO_PARA_UF));
 
+// Mapeamento de códigos de porte para valores mínimos e máximos de capital social
+const PORTE_CAPITAL_LIMITES: Record<string, { min: number; max: number }> = {
+  '01': { min: 0, max: 360000 }, // Micro Empresa: até 360 mil
+  '03': { min: 0, max: 4800000 }, // Empresa de Pequeno Porte: até 4,8 milhões
+  '05': { min: 4800000, max: Infinity } // Demais: acima de 4,8 milhões
+};
+
+// Combinações de situação cadastral que resultam em 0 registros
+const SITUACAO_COMBINACOES_IMPOSSIVEIS: string[][] = [
+  ['02', '08'], // Ativa e Baixada ao mesmo tempo
+  ['02', '04'], // Ativa e Inapta ao mesmo tempo
+  ['02', '03'], // Ativa e Suspensa ao mesmo tempo
+];
+
 /**
  * Parseia localização textual para extrair UF e nome do município
  * Ex: "Joao Pessoa, Paraiba, Brasil" -> { uf: 'PB', municipio_nome: 'Joao Pessoa' }
+ * 
+ * CORREÇÃO: Lida melhor com casos onde município = estado (ex: "Paraiba, Paraiba, Brazil")
  */
 function parseLocalizacao(localizacao: string): { uf?: string; municipio_nome?: string } {
   if (!localizacao) return {};
@@ -50,6 +66,7 @@ function parseLocalizacao(localizacao: string): { uf?: string; municipio_nome?: 
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/state of /gi, '') // Remover "State of" que pode vir do frontend
+    .replace(/^cnpj\s*-\s*/i, '') // Remover prefixo "CNPJ - " do início
     .toLowerCase()
     .trim();
 
@@ -61,38 +78,114 @@ function parseLocalizacao(localizacao: string): { uf?: string; municipio_nome?: 
   let uf: string | undefined;
   let municipio_nome: string | undefined;
 
-  // Tentar identificar UF e município
-  for (let i = partes.length - 1; i >= 0; i--) {
-    const parte = partes[i];
+  console.log(`📍 [LOCALIZACAO] Parsing: "${localizacao}" -> partes:`, partes);
 
+  // NOVA LÓGICA: Primeiro, identificar todas as possíveis UFs
+  const ufsEncontradas: Array<{parte: string, uf: string, tipo: string}> = [];
+  const naoUfs: string[] = [];
+
+  for (let i = 0; i < partes.length; i++) {
+    const parte = partes[i];
+    
     // Verificar se é uma sigla de UF
     if (parte.length === 2 && UFS_VALIDAS.has(parte.toUpperCase())) {
-      uf = parte.toUpperCase();
+      ufsEncontradas.push({ parte, uf: parte.toUpperCase(), tipo: 'sigla' });
       continue;
     }
 
     // Verificar se é nome de estado
     if (ESTADO_PARA_UF[parte]) {
-      uf = ESTADO_PARA_UF[parte];
+      ufsEncontradas.push({ parte, uf: ESTADO_PARA_UF[parte], tipo: 'nome' });
       continue;
     }
 
-    // Se ainda não temos município, assumir que é o nome da cidade
-    if (!municipio_nome && parte.length > 2) {
-      // Capitalizar para busca
-      municipio_nome = parte
+    // Não é UF, é possível município
+    naoUfs.push(parte);
+  }
+
+  console.log(`📍 [LOCALIZACAO] UFs encontradas:`, ufsEncontradas);
+  console.log(`📍 [LOCALIZACAO] Partes que não são UF:`, naoUfs);
+
+  // Se temos exatamente 1 UF encontrada, ela é o estado
+  if (ufsEncontradas.length === 1) {
+    uf = ufsEncontradas[0].uf;
+    console.log(`✅ [LOCALIZACAO] UF definida: ${uf}`);
+
+    // Se temos partes que não são UF, a primeira pode ser município
+    if (naoUfs.length > 0) {
+      municipio_nome = naoUfs[0]
         .split(' ')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
+      console.log(`✅ [LOCALIZACAO] Município definido: "${municipio_nome}"`);
+    }
+  } 
+  // Se temos 2+ partes iguais e são UFs (ex: "paraiba, paraiba")
+  else if (ufsEncontradas.length >= 2) {
+    // Usar a primeira parte como município (caso específico de município = estado)
+    // E a segunda como UF
+    const primeiraParte = partes[0];
+    
+    // Verificar se a primeira parte corresponde a uma UF
+    const ufMatch = ufsEncontradas.find(u => u.parte === primeiraParte);
+    if (ufMatch) {
+      uf = ufMatch.uf;
+      
+      // Se há mais de 2 partes, usar a penúltima como município
+      if (partes.length >= 3) {
+        municipio_nome = partes[partes.length - 2]
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+      } else {
+        // Se há apenas 2 partes iguais, a primeira pode ser município com mesmo nome do estado
+        municipio_nome = primeiraParte
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+      }
+      
+      console.log(`✅ [LOCALIZACAO] UF (caso especial): ${uf}`);
+      console.log(`✅ [LOCALIZACAO] Município (caso especial): "${municipio_nome}"`);
+    }
+  }
+  // Se temos 0 UFs, tentar lógica original (menos robusta)
+  else {
+    // Fallback para lógica original (menos robusta)
+    for (let i = partes.length - 1; i >= 0; i--) {
+      const parte = partes[i];
+
+      // Verificar se é uma sigla de UF
+      if (parte.length === 2 && UFS_VALIDAS.has(parte.toUpperCase())) {
+        uf = parte.toUpperCase();
+        continue;
+      }
+
+      // Verificar se é nome de estado
+      if (ESTADO_PARA_UF[parte]) {
+        uf = ESTADO_PARA_UF[parte];
+        continue;
+      }
+
+      // Se ainda não temos município, assumir que é o nome da cidade
+      if (!municipio_nome && parte.length > 2) {
+        municipio_nome = parte
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+      }
     }
   }
 
   // Se só temos uma parte e é nome de estado, não é município
   if (partes.length === 1 && uf && !municipio_nome) {
+    console.log(`⚠️ [LOCALIZACAO] Apenas UF definida, sem município`);
     return { uf };
   }
 
-  return { uf, municipio_nome };
+  const resultado = { uf, municipio_nome };
+  console.log(`📍 [LOCALIZACAO] Resultado final:`, resultado);
+  return resultado;
 }
 
 // Campos válidos para ordenação (com e sem JOIN)
@@ -136,6 +229,139 @@ function determineRequiredJoins(filters: SearchFilters, orderBy: string): {
     needsMunic: true, // Mantemos sempre para mostrar nome do município
     // JOIN cnae: sempre útil para mostrar descrição do CNAE
     needsCnae: true // Mantemos sempre para mostrar descrição do CNAE
+  };
+}
+
+/**
+ * Validação avançada de filtros para evitar combinações logicamente impossíveis
+ * @param filters Filtros a serem validados
+ * @returns Objeto com validação e mensagens de erro específicas
+ */
+export function validateAdvancedFilters(filters: SearchFilters): {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  suggestions: string[];
+  correctedFilters?: SearchFilters
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+  const correctedFilters = { ...filters };
+  let hasCorrections = false;
+
+  console.log('🔍 [VALIDACAO_AVANCADA] Iniciando validação avançada de filtros:', JSON.stringify(filters, null, 2));
+
+  // 1. Verificar combinação MEI + filial (tipo: ["2"]) - raro na prática
+  if (filters.mei === true && filters.tipo && filters.tipo.includes('2')) {
+    warnings.push('A combinação de MEI com filial é rara na prática e pode resultar em poucos ou nenhum registro.');
+    suggestions.push('Considere remover o filtro de filial ou o filtro MEI para obter mais resultados.');
+    console.log('⚠️ [VALIDACAO_AVANCADA] Aviso: Combinação MEI + filial detectada');
+  }
+
+  // 2. Verificar faixas de capital social incompatíveis com porte da empresa
+  if (filters.capital_social_min !== undefined || filters.capital_social_max !== undefined) {
+    if (filters.porte && filters.porte.length > 0) {
+      // Verificar se as faixas de capital são compatíveis com os portes selecionados
+      const incompatibilities: string[] = [];
+      
+      for (const porte of filters.porte) {
+        const limites = PORTE_CAPITAL_LIMITES[porte];
+        if (limites) {
+          if (filters.capital_social_min !== undefined && filters.capital_social_min > limites.max) {
+            incompatibilities.push(`Porte "${decodePorteEmpresa(porte)}" é incompatível com capital mínimo de R$${filters.capital_social_min.toLocaleString('pt-BR')}`);
+          }
+          if (filters.capital_social_max !== undefined && filters.capital_social_max < limites.min) {
+            incompatibilities.push(`Porte "${decodePorteEmpresa(porte)}" é incompatível com capital máximo de R$${filters.capital_social_max.toLocaleString('pt-BR')}`);
+          }
+        }
+      }
+      
+      if (incompatibilities.length > 0) {
+        warnings.push('Faixas de capital social incompatíveis com portes selecionados:');
+        warnings.push(...incompatibilities);
+        suggestions.push('Ajuste as faixas de capital social ou os portes selecionados para torná-los compatíveis.');
+        console.log('⚠️ [VALIDACAO_AVANCADA] Aviso: Faixas de capital incompatíveis com portes - continuando execução');
+      }
+    }
+  }
+
+  // 3. Verificar combinações de situação cadastral que resultariam em 0 registros
+  if (filters.situacao && filters.situacao.length > 1) {
+    // Verificar se há combinações impossíveis
+    for (const combinacao of SITUACAO_COMBINACOES_IMPOSSIVEIS) {
+      if (combinacao.every(situacao => filters.situacao!.includes(situacao))) {
+        errors.push(`Combinação impossível de situações cadastrais: ${combinacao.map(s => decodeSituacaoCadastral(s)).join(' + ')}`);
+        suggestions.push('Remova uma das situações cadastrais incompatíveis.');
+        console.log('❌ [VALIDACAO_AVANCADA] Erro: Combinação impossível de situações cadastrais');
+      }
+    }
+  }
+
+  // 4. Verificar filtros conflitantes entre si
+  // Capital social mínimo maior que máximo
+  if (filters.capital_social_min !== undefined && filters.capital_social_max !== undefined) {
+    if (filters.capital_social_min > filters.capital_social_max) {
+      warnings.push('Capital social mínimo não pode ser maior que o capital social máximo.');
+      // Corrigir automaticamente
+      correctedFilters.capital_social_min = filters.capital_social_max;
+      correctedFilters.capital_social_max = filters.capital_social_min;
+      hasCorrections = true;
+      console.log('🔧 [VALIDACAO_AVANCADA] Corrigido: Capital social min/max invertidos');
+    }
+  }
+
+  // Data de abertura mínima maior que máxima
+  if (filters.data_abertura_min && filters.data_abertura_max) {
+    const minDate = new Date(filters.data_abertura_min);
+    const maxDate = new Date(filters.data_abertura_max);
+    
+    if (minDate > maxDate) {
+      errors.push('Data de abertura mínima não pode ser maior que a data de abertura máxima.');
+      // Corrigir automaticamente
+      correctedFilters.data_abertura_min = filters.data_abertura_max;
+      correctedFilters.data_abertura_max = filters.data_abertura_min;
+      hasCorrections = true;
+      console.log('🔧 [VALIDACAO_AVANCADA] Corrigido: Datas de abertura min/max invertidas');
+    }
+  }
+
+  // Idade mínima maior que máxima
+  if (filters.idade_min_dias !== undefined && filters.idade_max_dias !== undefined) {
+    if (filters.idade_min_dias > filters.idade_max_dias) {
+      errors.push('Idade mínima não pode ser maior que a idade máxima.');
+      // Corrigir automaticamente
+      correctedFilters.idade_min_dias = filters.idade_max_dias;
+      correctedFilters.idade_max_dias = filters.idade_min_dias;
+      hasCorrections = true;
+      console.log('🔧 [VALIDACAO_AVANCADA] Corrigido: Idades min/max invertidas');
+    }
+  }
+
+  // 5. Verificar filtros logicamente impossíveis
+  // MEI e não optante pelo Simples ao mesmo tempo
+  if (filters.mei === true && filters.simples === false) {
+    errors.push('Uma empresa MEI deve ser optante pelo Simples Nacional.');
+    suggestions.push('Remova o filtro "não optante pelo Simples" ou o filtro MEI.');
+    console.log('❌ [VALIDACAO_AVANCADA] Erro: MEI e não optante pelo Simples');
+  }
+
+  // Filial sem matriz
+  if (filters.tipo && filters.tipo.includes('2') && !filters.tipo.includes('1')) {
+    // Esta não é uma combinação impossível, mas pode ser rara
+    warnings.push('Filtro apenas por filiais sem matrizes pode resultar em dados incompletos.');
+    suggestions.push('Considere incluir também matrizes para obter uma visão completa.');
+    console.log('⚠️ [VALIDACAO_AVANCADA] Aviso: Apenas filiais selecionadas');
+  }
+
+  console.log('🔍 [VALIDACAO_AVANCADA] Validação concluída - Erros:', errors.length, 'Avisos:', warnings.length);
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    suggestions,
+    correctedFilters: hasCorrections ? correctedFilters : undefined
   };
 }
 
@@ -253,14 +479,14 @@ export function buildSearchQuery(
   }
 
   if (filters.capital_social_min !== undefined) {
-    // Capital social no banco está em centavos (multiplica por 100)
-    conditions.push(`CAST(REPLACE(emp.capital_social, '.', '') AS BIGINT) >= $${paramIndex++}`);
-    params.push(filters.capital_social_min * 100);
+    // O campo capital_social no banco é NUMERIC
+    conditions.push(`emp.capital_social >= $${paramIndex++}`);
+    params.push(filters.capital_social_min);
   }
 
   if (filters.capital_social_max !== undefined) {
-    conditions.push(`CAST(REPLACE(emp.capital_social, '.', '') AS BIGINT) <= $${paramIndex++}`);
-    params.push(filters.capital_social_max * 100);
+    conditions.push(`emp.capital_social <= $${paramIndex++}`);
+    params.push(filters.capital_social_max);
   }
 
   // ==========================================================================
@@ -528,7 +754,6 @@ export async function handleStats(
   let paramIndex = 1;
 
   // Processar localização textual (igual ao buildSearchQuery)
-  let needsMunicJoin = false;
   if (filters.localizacao) {
     const { uf: parsedUf, municipio_nome: parsedMunicipio } = parseLocalizacao(filters.localizacao);
 
@@ -540,7 +765,6 @@ export async function handleStats(
     if (parsedMunicipio) {
       conditions.push(`mun.descricao ILIKE $${paramIndex++}`);
       params.push(`%${parsedMunicipio}%`);
-      needsMunicJoin = true;
     }
   }
 
@@ -581,10 +805,26 @@ export async function handleStats(
     params.push(...filters.ddd);
   }
 
-  if (filters.porte?.length && joins.needsEmpresa) {
+  if (filters.porte?.length) {
     const placeholders = filters.porte.map(() => `$${paramIndex++}`).join(', ');
     conditions.push(`emp.porte_empresa IN (${placeholders})`);
     params.push(...filters.porte);
+  }
+
+  if (filters.capital_social_min !== undefined) {
+    conditions.push(`emp.capital_social >= $${paramIndex++}`);
+    params.push(filters.capital_social_min);
+  }
+
+  if (filters.capital_social_max !== undefined) {
+    conditions.push(`emp.capital_social <= $${paramIndex++}`);
+    params.push(filters.capital_social_max);
+  }
+
+  if (filters.tipo?.length) {
+    const placeholders = filters.tipo.map(() => `$${paramIndex++}`).join(', ');
+    conditions.push(`est.identificador_matriz_filial IN (${placeholders})`);
+    params.push(...filters.tipo);
   }
 
   if (filters.simples !== undefined && joins.needsSimples) {
@@ -615,7 +855,7 @@ export async function handleStats(
   if (joins.needsSimples) {
     joinClauses.push('LEFT JOIN simples sim ON est.cnpj_basico = sim.cnpj_basico');
   }
-  if (needsMunicJoin) {
+  if (joins.needsMunic) {
     joinClauses.push('LEFT JOIN munic mun ON est.municipio = mun.codigo');
   }
 
@@ -631,7 +871,7 @@ ${joinClauses.join('\n')}
 ${whereClause};
 `;
 
-  console.log(`📊 [STATS] Query: ${params.length} params, JOINs: empresa=${joins.needsEmpresa}, simples=${joins.needsSimples}, munic=${needsMunicJoin}`);
+  console.log(`📊 [STATS] Query: ${params.length} params, JOINs: empresa=${joins.needsEmpresa}, simples=${joins.needsSimples}, munic=${joins.needsMunic}`);
   console.log('📊 [STATS] SQL:', statsSql);
   console.log('📊 [STATS] Params:', params);
 
@@ -709,10 +949,35 @@ export function validateSearchRequest(body: unknown): { valid: boolean; error?: 
     return { valid: false, error: 'At least one filter is required' };
   }
 
+  // Validação avançada de filtros
+  const advancedValidation = validateAdvancedFilters(filters);
+  
+  // Se houver erros na validação avançada, retornar o primeiro erro
+  if (!advancedValidation.valid && advancedValidation.errors.length > 0) {
+    return { valid: false, error: advancedValidation.errors[0] };
+  }
+  
+  // Se houver correções, usar os filtros corrigidos
+  const finalFilters = advancedValidation.correctedFilters || filters;
+  
+  // Logar avisos e sugestões, se houver
+  if (advancedValidation.warnings.length > 0) {
+    console.log('⚠️ [VALIDACAO] Avisos na validação avançada:', advancedValidation.warnings);
+  }
+  
+  if (advancedValidation.suggestions.length > 0) {
+    console.log('💡 [VALIDACAO] Sugestões de melhoria:', advancedValidation.suggestions);
+  }
+  
+  // Se houve correções, logar isso
+  if (advancedValidation.correctedFilters) {
+    console.log('🔧 [VALIDACAO] Filtros corrigidos automaticamente:', JSON.stringify(advancedValidation.correctedFilters, null, 2));
+  }
+
   return {
     valid: true,
     request: {
-      filters,
+      filters: finalFilters,
       limit,
       offset,
       order_by: orderBy,

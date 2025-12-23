@@ -84,6 +84,7 @@ export async function createInstagramExtraction(
       min_reviews: 0,
       min_rating: 0,
       expand_state_search: false,
+      source: 'instagram',
     })
     .select()
     .single();

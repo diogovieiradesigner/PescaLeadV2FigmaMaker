@@ -12,7 +12,7 @@ import { validateCNPJ } from '../_shared/website-validator.ts';
 // ===========================
 // CONFIGURAÇÕES
 // ===========================
-const SCRAPER_API_URL = Deno.env.get('SCRAPER_API_URL') || 'https://proxy-scraper-api.diogo-vieira-pb-f91.workers.dev';
+const SCRAPER_API_URL = Deno.env.get('SCRAPER_API_URL') || 'https://scraper.pescalead.com.br';
 const MAX_CONCURRENT = 60;
 const VT_SECONDS = 240; // ⚠️ AUMENTADO: 4 min (180s request + 60s margem) - previne reprocessamento
 const REQUEST_TIMEOUT_MS = 180000; // 3 minutos
@@ -582,49 +582,42 @@ async function processSingleMessage(
 // SANITIZAÇÃO DE DADOS
 // ===========================
 function sanitizeScrapingData(data: any): ScrapingApiResponse {
-  const MAX_ARRAY_LENGTH = 100;
-  const MAX_STRING_LENGTH = 50000;
-
   return {
-    status: String(data.status || 'unknown').substring(0, 20),
-    url: String(data.url || '').substring(0, 1000),
-    method: String(data.method || '').substring(0, 20),
+    status: String(data.status || 'unknown'),
+    url: String(data.url || ''),
+    method: String(data.method || ''),
     emails: (data.emails || [])
-      .slice(0, MAX_ARRAY_LENGTH)
-      .map((e: any) => String(e).substring(0, 500))
+      .map((e: any) => String(e))
       .filter((e: string) => e && e.includes('@')),
     phones: (data.phones || [])
-      .slice(0, MAX_ARRAY_LENGTH)
-      .map((p: any) => String(p).replace(/[^0-9+() -]/g, '').substring(0, 30))
+      .map((p: any) => String(p).replace(/[^0-9+() -]/g, ''))
       .filter((p: string) => p && p.length >= 8),
     cnpj: (data.cnpj || [])
-      .slice(0, 10)
       .map((c: any) => validateCNPJ(String(c)))
       .filter(Boolean),
     whatsapp: (data.whatsapp || [])
-      .slice(0, MAX_ARRAY_LENGTH)
-      .map((w: any) => String(w).substring(0, 1000)),
+      .map((w: any) => String(w)),
     social_media: {
-      linkedin: ((data.social_media?.linkedin || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
-      facebook: ((data.social_media?.facebook || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
-      instagram: ((data.social_media?.instagram || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
-      youtube: ((data.social_media?.youtube || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
-      twitter: ((data.social_media?.twitter || []) as any[]).slice(0, 20).map(s => String(s).substring(0, 1000)),
+      linkedin: (data.social_media?.linkedin || []).map((s: any) => String(s)),
+      facebook: (data.social_media?.facebook || []).map((s: any) => String(s)),
+      instagram: (data.social_media?.instagram || []).map((s: any) => String(s)),
+      youtube: (data.social_media?.youtube || []).map((s: any) => String(s)),
+      twitter: (data.social_media?.twitter || []).map((s: any) => String(s)),
     },
     metadata: {
-      title: String(data.metadata?.title || '').substring(0, 500),
-      description: String(data.metadata?.description || '').substring(0, 2000),
-      og_image: String(data.metadata?.og_image || '').substring(0, 1000),
+      title: String(data.metadata?.title || ''),
+      description: String(data.metadata?.description || ''),
+      og_image: String(data.metadata?.og_image || ''),
     },
     images: {
-      logos: ((data.images?.logos || []) as any[]).slice(0, 10).map(i => String(i).substring(0, 1000)),
-      favicon: String(data.images?.favicon || '').substring(0, 1000),
-      other_images: ((data.images?.other_images || []) as any[]).slice(0, 20).map(i => String(i).substring(0, 1000)),
+      logos: (data.images?.logos || []).map((i: any) => String(i)),
+      favicon: String(data.images?.favicon || ''),
+      other_images: (data.images?.other_images || []).map((i: any) => String(i)),
     },
-    button_links: ((data.button_links || []) as any[]).slice(0, 50).map(l => String(l).substring(0, 1000)),
+    button_links: (data.button_links || []).map((l: any) => String(l)),
     checkouts: {
       have_checkouts: Boolean(data.checkouts?.have_checkouts),
-      platforms: ((data.checkouts?.platforms || []) as any[]).slice(0, 10).map(p => String(p).substring(0, 100)),
+      platforms: (data.checkouts?.platforms || []).map((p: any) => String(p)),
     },
     pixels: {
       have_pixels: Boolean(data.pixels?.have_pixels),
@@ -634,7 +627,7 @@ function sanitizeScrapingData(data: any): ScrapingApiResponse {
       base64: '', // Não armazenar screenshot (muito grande)
       timestamp: String(data.screenshot?.timestamp || ''),
     },
-    markdown: String(data.markdown || '').substring(0, MAX_STRING_LENGTH),
+    markdown: String(data.markdown || ''),
     performance: {
       total_time: String(data.performance?.total_time || '0s'),
     },

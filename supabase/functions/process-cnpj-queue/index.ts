@@ -9,6 +9,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Importar funções de formatação
+import { formatCNPJ, formatPhoneToBrazilian, formatDateToDDMMYYYY, formatCurrencyBRL } from '../_shared/cnpj-formatters.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
@@ -208,16 +211,17 @@ serve(async (req) => {
       if (provider === 'banco_local') {
         // Banco Local (Hetzner) - dados já normalizados pela cnpj-api
         normalizedData = {
-          cnpj: normalizedCNPJ,
+          cnpj: formatCNPJ(normalizedCNPJ),
           razao_social: apiData.razao_social,
           nome_fantasia: apiData.nome_fantasia,
           porte: apiData.porte,
           natureza_juridica: apiData.natureza_juridica,
           situacao_cadastral: apiData.situacao_cadastral,
-          data_situacao_cadastral: apiData.data_situacao_cadastral,
-          data_inicio_atividade: apiData.data_inicio_atividade,
+          data_situacao_cadastral: formatDateToDDMMYYYY(apiData.data_situacao_cadastral),
+          data_inicio_atividade: formatDateToDDMMYYYY(apiData.data_inicio_atividade),
           tipo: apiData.tipo,
           capital_social: apiData.capital_social,
+          capital_social_formatado: formatCurrencyBRL(apiData.capital_social),
           // Endereço
           logradouro: apiData.endereco?.logradouro ?
             `${apiData.endereco.tipo_logradouro || ''} ${apiData.endereco.logradouro}`.trim() : null,
@@ -265,8 +269,8 @@ serve(async (req) => {
               source: 'cnpj',
               type: number.length === 8 ? 'landline' : 'mobile',
               verified: true,
-              formatted: apiData.contato.telefone_1_formatted,
-              with_country: `+55 ${apiData.contato.telefone_1_formatted}`
+              formatted: formatPhoneToBrazilian(apiData.contato.telefone_1),
+              with_country: `+55 ${formatPhoneToBrazilian(apiData.contato.telefone_1)}`
             });
           }
         }
@@ -282,8 +286,8 @@ serve(async (req) => {
               source: 'cnpj',
               type: number.length === 8 ? 'landline' : 'mobile',
               verified: true,
-              formatted: apiData.contato.telefone_2_formatted,
-              with_country: `+55 ${apiData.contato.telefone_2_formatted}`
+              formatted: formatPhoneToBrazilian(apiData.contato.telefone_2),
+              with_country: `+55 ${formatPhoneToBrazilian(apiData.contato.telefone_2)}`
             });
           }
         }
@@ -291,13 +295,13 @@ serve(async (req) => {
       } else if (provider === 'brasilapi') {
         // BrasilAPI: https://brasilapi.com.br/api/cnpj/v1/{cnpj}
         normalizedData = {
-          cnpj: normalizedCNPJ,
+          cnpj: formatCNPJ(normalizedCNPJ),
           razao_social: apiData.razao_social,
           nome_fantasia: apiData.nome_fantasia,
           porte: apiData.porte,
           natureza_juridica: apiData.natureza_juridica,
           situacao_cadastral: apiData.descricao_situacao_cadastral || apiData.situacao_cadastral,
-          data_situacao_cadastral: apiData.data_situacao_cadastral,
+          data_situacao_cadastral: formatDateToDDMMYYYY(apiData.data_situacao_cadastral),
           logradouro: apiData.logradouro,
           numero: apiData.numero,
           complemento: apiData.complemento,
@@ -309,6 +313,7 @@ serve(async (req) => {
           cnae_fiscal_descricao: apiData.cnae_fiscal_descricao,
           cnaes_secundarios: apiData.cnaes_secundarios,
           capital_social: apiData.capital_social,
+          capital_social_formatado: formatCurrencyBRL(apiData.capital_social),
           qsa: apiData.qsa,
           data_inicio_atividade: apiData.data_inicio_atividade,
           regime_tributario: apiData.regime_tributario,
@@ -332,9 +337,7 @@ serve(async (req) => {
           if (phoneStr.length >= 10) {
             const ddd = phoneStr.substring(0, 2);
             const number = phoneStr.substring(2);
-            const formatted = number.length === 9 
-              ? `(${ddd}) ${number.substring(0, 5)}-${number.substring(5)}`
-              : `(${ddd}) ${number.substring(0, 4)}-${number.substring(4)}`;
+            const formatted = formatPhoneToBrazilian(`${ddd}${number}`);
             
             cnpjPhones.push({
               number: `${ddd}${number}`,
@@ -353,9 +356,7 @@ serve(async (req) => {
           if (phoneStr.length >= 10) {
             const ddd = phoneStr.substring(0, 2);
             const number = phoneStr.substring(2);
-            const formatted = number.length === 9 
-              ? `(${ddd}) ${number.substring(0, 5)}-${number.substring(5)}`
-              : `(${ddd}) ${number.substring(0, 4)}-${number.substring(4)}`;
+            const formatted = formatPhoneToBrazilian(`${ddd}${number}`);
             
             cnpjPhones.push({
               number: `${ddd}${number}`,
@@ -371,15 +372,15 @@ serve(async (req) => {
       } else if (provider === 'receitaws') {
         // ReceitaWS: https://www.receitaws.com.br/v1/cnpj/{cnpj}
         normalizedData = {
-          cnpj: normalizedCNPJ,
+          cnpj: formatCNPJ(normalizedCNPJ),
           razao_social: apiData.nome,  // ReceitaWS usa "nome" ao invés de "razao_social"
           nome_fantasia: apiData.fantasia,  // ReceitaWS usa "fantasia" ao invés de "nome_fantasia"
           porte: apiData.porte,
           natureza_juridica: apiData.natureza_juridica,
           situacao_cadastral: apiData.situacao,
-          data_situacao_cadastral: apiData.data_situacao,
+          data_situacao_cadastral: formatDateToDDMMYYYY(apiData.data_situacao),
           tipo: apiData.tipo,  // MATRIZ ou FILIAL
-          abertura: apiData.abertura,
+          abertura: formatDateToDDMMYYYY(apiData.abertura),
           logradouro: apiData.logradouro,
           numero: apiData.numero,
           complemento: apiData.complemento,
@@ -391,6 +392,7 @@ serve(async (req) => {
           atividades_secundarias: apiData.atividades_secundarias,
           qsa: apiData.qsa,
           capital_social: apiData.capital_social,
+          capital_social_formatado: formatCurrencyBRL(apiData.capital_social),
           simples: apiData.simples,
           simei: apiData.simei,
           ultima_atualizacao: apiData.ultima_atualizacao
@@ -412,9 +414,7 @@ serve(async (req) => {
           if (phoneClean.length >= 10) {
             const ddd = phoneClean.substring(0, 2);
             const number = phoneClean.substring(2);
-            const formatted = number.length === 9 
-              ? `(${ddd}) ${number.substring(0, 5)}-${number.substring(5)}`
-              : `(${ddd}) ${number.substring(0, 4)}-${number.substring(4)}`;
+            const formatted = formatPhoneToBrazilian(`${ddd}${number}`);
             
             cnpjPhones.push({
               number: `${ddd}${number}`,
@@ -433,15 +433,15 @@ serve(async (req) => {
         const estabelecimento = apiData.estabelecimento || {};
         
         normalizedData = {
-          cnpj: normalizedCNPJ,
+          cnpj: formatCNPJ(normalizedCNPJ),
           cnpj_raiz: apiData.cnpj_raiz,
           razao_social: apiData.razao_social,
           nome_fantasia: estabelecimento.nome_fantasia,
           porte: apiData.porte?.descricao || apiData.porte,
           natureza_juridica: apiData.natureza_juridica?.descricao || apiData.natureza_juridica,
           situacao_cadastral: estabelecimento.situacao_cadastral,
-          data_situacao_cadastral: estabelecimento.data_situacao_cadastral,
-          data_inicio_atividade: estabelecimento.data_inicio_atividade,
+          data_situacao_cadastral: formatDateToDDMMYYYY(estabelecimento.data_situacao_cadastral),
+          data_inicio_atividade: formatDateToDDMMYYYY(estabelecimento.data_inicio_atividade),
           tipo: estabelecimento.tipo,  // Matriz ou Filial
           logradouro: estabelecimento.logradouro,
           tipo_logradouro: estabelecimento.tipo_logradouro,
@@ -456,6 +456,7 @@ serve(async (req) => {
           socios: apiData.socios,
           simples: apiData.simples,
           capital_social: apiData.capital_social,
+          capital_social_formatado: formatCurrencyBRL(apiData.capital_social),
           qualificacao_do_responsavel: apiData.qualificacao_do_responsavel,
           inscricoes_estaduais: estabelecimento.inscricoes_estaduais,
           atualizado_em: apiData.atualizado_em || estabelecimento.atualizado_em
@@ -477,9 +478,7 @@ serve(async (req) => {
           const number = estabelecimento.telefone1.toString().replace(/\D/g, '');
           
           if (ddd.length === 2 && number.length >= 8) {
-            const formatted = number.length === 9 
-              ? `(${ddd}) ${number.substring(0, 5)}-${number.substring(5)}`
-              : `(${ddd}) ${number.substring(0, 4)}-${number.substring(4)}`;
+            const formatted = formatPhoneToBrazilian(`${ddd}${number}`);
             
             cnpjPhones.push({
               number: `${ddd}${number}`,
@@ -498,9 +497,7 @@ serve(async (req) => {
           const number = estabelecimento.telefone2.toString().replace(/\D/g, '');
           
           if (ddd.length === 2 && number.length >= 8) {
-            const formatted = number.length === 9 
-              ? `(${ddd}) ${number.substring(0, 5)}-${number.substring(5)}`
-              : `(${ddd}) ${number.substring(0, 4)}-${number.substring(4)}`;
+            const formatted = formatPhoneToBrazilian(`${ddd}${number}`);
             
             cnpjPhones.push({
               number: `${ddd}${number}`,

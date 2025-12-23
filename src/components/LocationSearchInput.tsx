@@ -31,7 +31,11 @@ export function LocationSearchInput({ value, onChange, isDark, onValidationChang
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [isValidSelection, setIsValidSelection] = useState(false);
+  
+  // Heurística: se o valor inicial tem vírgula, assumimos que é uma seleção válida restaurada
+  const isInitialValueValid = !!(value && value.includes(','));
+  
+  const [isValidSelection, setIsValidSelection] = useState(isInitialValueValid);
   const [selectedValue, setSelectedValue] = useState<string | null>(value || null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -43,9 +47,12 @@ export function LocationSearchInput({ value, onChange, isDark, onValidationChang
       if (value && value.includes(',')) {
         setIsValidSelection(true);
         setSelectedValue(value);
+      } else if (!value) {
+        setIsValidSelection(false);
+        setSelectedValue(null);
       }
     }
-  }, [value]);
+  }, [value, query, showResults]);
 
   // Notificar parent sobre mudanças na validação
   useEffect(() => {

@@ -116,17 +116,27 @@ export function formatDate(date: string | Date | null | undefined): string | nul
   return dateStr;
 }
 
-// Formata capital social de centavos para reais
-export function formatCapitalSocial(value: string | null): number | null {
-  if (!value) return null;
+// Formata capital social
+export function formatCapitalSocial(value: string | number | null): number | null {
+  if (value === null || value === undefined) return null;
 
-  // Remove pontos e converte para número
-  const num = parseFloat(value.replace(/\./g, '').replace(',', '.'));
+  if (typeof value === 'number') return value;
 
-  if (isNaN(num)) return null;
+  // O banco retorna numeric como string (ex: "900.00")
+  // Se contiver ponto e vírgula, é formato brasileiro (1.500,00)
+  if (value.includes('.') && value.includes(',')) {
+    const clean = value.replace(/\./g, '').replace(',', '.');
+    return parseFloat(clean);
+  }
+  
+  // Se contiver apenas vírgula, troca por ponto
+  if (value.includes(',') && !value.includes('.')) {
+    return parseFloat(value.replace(',', '.'));
+  }
 
-  // O valor vem em centavos (ex: 1000000 = R$ 10.000,00)
-  return num / 100;
+  // Caso padrão (incluindo "900.00" do Postgres)
+  const num = parseFloat(value);
+  return isNaN(num) ? null : num;
 }
 
 // Normaliza os dados brutos do banco para o formato da API

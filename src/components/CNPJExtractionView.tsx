@@ -7,6 +7,7 @@ import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
 import { useCNPJFilters, useCNPJExtraction } from '../hooks/useCNPJFilters';
+import { deleteExtractionRun } from '../services/extraction-service';
 import { CNPJFiltersForm } from './CNPJFiltersForm';
 import { supabase } from '../utils/supabase/client';
 import { SUPABASE_URL } from '../utils/api-config';
@@ -23,7 +24,8 @@ import {
   TrendingUp,
   XCircle,
   Eye,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 import type { StatsPreview } from '../types/cnpj-extraction';
 
@@ -57,7 +59,16 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   const { currentWorkspace } = useAuth();
 
   // Hooks
-  const { filters: apiFilters, loading: filtersLoading, getStats, statsLoading, cnaes, cnaesLoading, searchCNAEs } = useCNPJFilters();
+  const {
+    filters: apiFilters,
+    loading: filtersLoading,
+    getStats,
+    statsLoading,
+    cnaes,
+    cnaesLoading,
+    searchCNAEs,
+    fetchCNAEByCodes
+  } = useCNPJFilters();
   const {
     state,
     updateFilter,
@@ -107,6 +118,8 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   // Histórico state
   const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [confirmDeleteRun, setConfirmDeleteRun] = useState<{ id: string; name: string } | null>(null);
 
   // Funções de fetch - definidas antes dos useEffect que as usam
   const fetchFunnels = async () => {
@@ -169,6 +182,13 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
       fetchRecentRuns();
     }
   }, [currentWorkspace?.id]);
+
+  // Carregar labels dos CNAEs selecionados no início
+  useEffect(() => {
+    if (state.filters.cnae?.length) {
+      fetchCNAEByCodes(state.filters.cnae);
+    }
+  }, [fetchCNAEByCodes]); // Dependência estável via useCallback
 
   // Carregar colunas quando funil mudar
   useEffect(() => {
@@ -376,6 +396,50 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('pt-BR');
+  };
+
+  // Deletar execução
+  const handleDeleteRun = async () => {
+    if (!confirmDeleteRun) return;
+
+    try {
+      setDeletingRunId(confirmDeleteRun.id);
+
+      // Usar o service para deletar
+      const result = await deleteExtractionRun(confirmDeleteRun.id);
+
+      // Verificar se a função retornou sucesso
+      if (result?.success) {
+        // Mensagem detalhada do que foi deletado
+        const counts = result.deleted_counts;
+        const details = [];
+        
+        if (counts.messages_from_queue > 0) details.push(`${counts.messages_from_queue} mensagens da fila`);
+        if (counts.watchdog_logs > 0) details.push(`${counts.watchdog_logs} logs do watchdog`);
+        if (counts.staging_leads > 0) details.push(`${counts.staging_leads} leads em staging`);
+        if (counts.extraction_logs > 0) details.push(`${counts.extraction_logs} logs de extração`);
+        if (counts.neighborhood_history > 0) details.push(`${counts.neighborhood_history} histórico de bairros`);
+        
+        const detailsMessage = details.length > 0
+          ? `\nDeletado: ${details.join(', ')}`
+          : '';
+        
+        toast.success(`Extração deletada com sucesso!${detailsMessage}`);
+      } else {
+        throw new Error(result?.error || 'Erro desconhecido ao deletar extração');
+      }
+      
+      // Forçar atualização da lista
+      await fetchRecentRuns();
+      
+      // Fechar modal
+      setConfirmDeleteRun(null);
+    } catch (error) {
+      console.error('Error deleting extraction run:', error);
+      toast.error(`Erro ao deletar extração: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    } finally {
+      setDeletingRunId(null);
+    }
   };
 
   // Se não há funis, mostrar aviso
@@ -666,6 +730,23 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
                           <Eye className="w-4 h-4" />
                           <span>Detalhes</span>
                         </button>
+
+                        <button
+                          onClick={() => setConfirmDeleteRun({ id: run.id, name: `Extração CNPJ ${formatDate(run.created_at)}` })}
+                          disabled={deletingRunId === run.id}
+                          className={`px-2 py-1 text-sm rounded-lg transition-colors ${
+                            deletingRunId === run.id
+                              ? 'bg-red-500/50 cursor-not-allowed'
+                              : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
+                          }`}
+                          title="Deletar extração"
+                        >
+                          {deletingRunId === run.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -675,6 +756,64 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
           </table>
         </div>
       </div>
+
+      {/* Modal de Confirmação de Exclusão */}
+      {confirmDeleteRun && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`max-w-md w-full mx-4 rounded-lg shadow-xl ${
+            isDark ? 'bg-[#1a1a1a] border border-white/[0.08]' : 'bg-white border border-border-light'
+          }`}>
+            <div className={`px-6 py-4 border-b ${
+              isDark ? 'border-white/[0.08]' : 'border-border-light'
+            }`}>
+              <h3 className={`font-medium ${
+                isDark ? 'text-white' : 'text-text-primary-light'
+              }`}>
+                Confirmar Exclusão
+              </h3>
+            </div>
+            
+            <div className="px-6 py-4">
+              <p className={isDark ? 'text-white/70' : 'text-text-primary-light'}>
+                Tem certeza que deseja deletar a extração <strong>"{confirmDeleteRun.name}"</strong>? Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            
+            <div className={`px-6 py-4 border-t flex items-center justify-end gap-3 ${
+              isDark ? 'border-white/[0.08]' : 'border-border-light'
+            }`}>
+              <button
+                onClick={() => setConfirmDeleteRun(null)}
+                disabled={deletingRunId === confirmDeleteRun.id}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                  isDark
+                    ? 'bg-white/[0.05] hover:bg-white/[0.1] text-white'
+                    : 'bg-light-elevated hover:bg-light-elevated-hover text-text-primary-light'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteRun}
+                disabled={deletingRunId === confirmDeleteRun.id}
+                className="px-4 py-2 text-sm rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {deletingRunId === confirmDeleteRun.id ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deletando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Deletar</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

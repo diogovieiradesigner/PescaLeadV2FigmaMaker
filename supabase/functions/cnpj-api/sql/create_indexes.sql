@@ -106,17 +106,57 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_simples_opcoes
   ON simples(opcao_pelo_simples, opcao_mei);
 
 -- =============================================================================
--- 4. ÍNDICE COMPOSTO PARA PROSPECÇÃO (Cenário mais comum)
+-- 4. ÍNDICES COMPOSTOS PARA PROSPECÇÃO (Combinações frequentes)
 -- =============================================================================
--- Este índice otimiza queries com múltiplos filtros comuns
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_prospeccao_composto
+-- Combinação: situação_cadastral + uf + cnae_fiscal_principal
+-- Esta é a combinação mais comum para prospecção de empresas ativas em nichos específicos
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_est_situacao_uf_cnae
   ON estabelecimento(situacao_cadastral, uf, cnae_fiscal_principal)
-  INCLUDE (nome_fantasia, correio_eletronico, ddd_1, telefone_1, municipio);
+  INCLUDE (nome_fantasia, correio_eletronico, ddd_1, telefone_1, municipio, cnpj_basico, cnpj_ordem, cnpj_dv, data_inicio_atividade);
+
+-- Combinação: situação_cadastral + uf + municipio
+-- Para prospecção por região específica
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_est_situacao_uf_municipio
+  ON estabelecimento(situacao_cadastral, uf, municipio)
+  INCLUDE (nome_fantasia, correio_eletronico, ddd_1, telefone_1, cnae_fiscal_principal, cnpj_basico, cnpj_ordem, cnpj_dv, data_inicio_atividade);
+
+-- Combinação: opcao_pelo_simples + opcao_mei
+-- Para filtrar empresas por regime tributário
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_simples_opcoes_completas
+  ON simples(opcao_pelo_simples, opcao_mei)
+  INCLUDE (cnpj_basico, data_opcao_simples, data_exclusao_simples, data_opcao_mei, data_exclusao_mei);
+
+-- Combinação: porte_empresa + capital_social
+-- Para filtrar empresas por tamanho e capital
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_emp_porte_capital
+  ON empresa(porte_empresa, capital_social_numeric)
+  INCLUDE (cnpj_basico, razao_social, natureza_juridica);
 
 -- =============================================================================
--- 5. ÍNDICES GIN TRIGRAM PARA BUSCA TEXTUAL (ILIKE)
+-- 5. ÍNDICES PARA FILTROS DE CONTATO (Combinações frequentes)
 -- =============================================================================
+
+-- Combinação: correio_eletronico IS NOT NULL + telefone_1 IS NOT NULL
+-- Para encontrar empresas com dados de contato completos
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_est_contato_completo
+  ON estabelecimento(correio_eletronico, telefone_1)
+  WHERE correio_eletronico IS NOT NULL AND correio_eletronico != '' AND telefone_1 IS NOT NULL AND telefone_1 != '';
+
+-- Índice parcial para empresas com email válido
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_est_com_email_valido
+  ON estabelecimento(correio_eletronico)
+  WHERE correio_eletronico IS NOT NULL AND correio_eletronico != '' AND correio_eletronico LIKE '%@%';
+
+-- Índice parcial para empresas com telefone
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_est_com_telefone
+  ON estabelecimento(telefone_1)
+  WHERE telefone_1 IS NOT NULL AND telefone_1 != '';
+
+-- =============================================================================
+-- 6. ÍNDICES GIN TRIGRAM PARA BUSCA TEXTUAL (ILIKE)
+-- =============================================================================
+
 -- Estes índices aceleram buscas com ILIKE '%termo%'
 
 -- Nome fantasia
@@ -128,7 +168,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_emp_razao_social_trgm
   ON empresa USING GIN (razao_social gin_trgm_ops);
 
 -- =============================================================================
--- 6. ÍNDICES PARCIAIS (Para filtros específicos)
+-- 7. ÍNDICES PARCIAIS (Para filtros específicos)
 -- =============================================================================
 
 -- Apenas estabelecimentos com email válido
@@ -141,8 +181,28 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_est_ativos
   ON estabelecimento(uf, cnae_fiscal_principal)
   WHERE situacao_cadastral = '02';
 
+-- Apenas empresas com porte específico (ex: Micro Empresa)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_emp_porte_micro
+  ON empresa(porte_empresa)
+  WHERE porte_empresa = '01';
+
+-- Apenas empresas com porte específico (ex: Empresa de Pequeno Porte)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_emp_porte_pequeno
+  ON empresa(porte_empresa)
+  WHERE porte_empresa = '03';
+
+-- Apenas empresas MEI
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_simples_mei_ativo
+  ON simples(opcao_mei)
+  WHERE opcao_mei = 'S';
+
+-- Apenas empresas optantes do Simples
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_simples_opcao_ativo
+  ON simples(opcao_pelo_simples)
+  WHERE opcao_pelo_simples = 'S';
+
 -- =============================================================================
--- 7. ATUALIZAR ESTATÍSTICAS (CRÍTICO!)
+-- 8. ATUALIZAR ESTATÍSTICAS (CRÍTICO!)
 -- =============================================================================
 -- ANALYZE atualiza as estatísticas que o query planner usa para escolher
 -- o melhor plano de execução. Sem isso, o PostgreSQL pode escolher
@@ -157,7 +217,7 @@ ANALYZE VERBOSE munic;
 ANALYZE VERBOSE natju;
 
 -- =============================================================================
--- 8. VERIFICAR ÍNDICES CRIADOS
+-- 9. VERIFICAR ÍNDICES CRIADOS
 -- =============================================================================
 SELECT
   schemaname,
@@ -169,7 +229,7 @@ WHERE tablename IN ('estabelecimento', 'empresa', 'simples')
 ORDER BY tablename, indexname;
 
 -- =============================================================================
--- 9. TESTAR PERFORMANCE (Executar manualmente após criação dos índices)
+-- 10. TESTAR PERFORMANCE (Executar manualmente após criação dos índices)
 -- =============================================================================
 /*
 -- Query de teste 1: Filtro simples por UF
@@ -186,12 +246,24 @@ WHERE est.situacao_cadastral = '02'
   AND est.uf = 'SP'
   AND est.cnae_fiscal_principal LIKE '47%'
 LIMIT 100;
--- Esperado: Index Scan usando idx_prospeccao_composto
+-- Esperado: Index Scan usando índices compostos
 
 -- Query de teste 3: Busca textual
 EXPLAIN ANALYZE
 SELECT * FROM estabelecimento
 WHERE nome_fantasia ILIKE '%FARMACIA%'
 LIMIT 100;
--- Esperado: Bitmap Index Scan usando idx_est_nome_fantasia_trgm
+-- Esperado: Bitmap Index Scan usando índices GIN trigram
+
+-- Query de teste 4: Filtros de contato
+EXPLAIN ANALYZE
+SELECT COUNT(*) FROM estabelecimento
+WHERE correio_eletronico IS NOT NULL AND telefone_1 IS NOT NULL;
+-- Esperado: Index Scan usando índices parciais
+
+-- Query de teste 5: Filtros de regime tributário
+EXPLAIN ANALYZE
+SELECT COUNT(*) FROM simples
+WHERE opcao_pelo_simples = 'S' AND opcao_mei = 'S';
+-- Esperado: Index Scan usando índices compostos
 */

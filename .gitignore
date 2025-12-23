@@ -53,3 +53,5 @@ temp_*.sql
 *.log
 npm-debug.log*
 ".kilocode/" 
+
+qdrant_local/

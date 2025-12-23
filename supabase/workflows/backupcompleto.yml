@@ -1,0 +1,1783 @@
+name: 🗄️ Backup Supabase Database
+
+on:
+  schedule:
+    # Roda diariamente às 03:00 UTC (00:00 Brasília)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      backup_type:
+        description: 'Tipo de backup'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - schema-only
+          - data-only
+          - functions-only
+          - crons-only
+          - secrets-only
+          - vault-only
+
+env:
+  BACKUP_ENABLED: true
+  SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+  RETENTION_DAYS: 30
+
+jobs:
+  backup:
+    name: 📦 Criar Backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    
+    permissions:
+      contents: write
+      issues: write
+    
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    
+    steps:
+      - name: ✅ Verificar se backups estão habilitados
+        run: |
+          if [ "$BACKUP_ENABLED" != "true" ]; then
+            echo "⚠️ Backups estão desabilitados. Saindo..."
+            exit 0
+          fi
+          echo "✅ Backups habilitados!"
+      
+      - name: 🔐 Validar Secrets e Variáveis
+        run: |
+          echo "🔍 Validando configurações..."
+          echo ""
+          
+          ERRORS=0
+          
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "❌ ERRO: SUPABASE_DB_URL não configurado!"
+            echo "   📝 Configure em: Settings → Secrets and variables → Actions"
+            echo "   📝 Nome do secret: SUPABASE_DB_URL"
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "✅ SUPABASE_DB_URL: Configurado"
+          fi
+          
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "❌ ERRO: SUPABASE_ACCESS_TOKEN não configurado!"
+            echo "   📝 Configure em: Settings → Secrets and variables → Actions"
+            echo "   📝 Nome do secret: SUPABASE_ACCESS_TOKEN"
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "✅ SUPABASE_ACCESS_TOKEN: Configurado"
+          fi
+          
+          if [ -z "$SUPABASE_PROJECT_ID" ]; then
+            echo "❌ ERRO: SUPABASE_PROJECT_ID não configurado!"
+            echo "   📝 Configure em: Settings → Secrets and variables → Actions"
+            echo "   📝 Nome do secret: SUPABASE_PROJECT_ID"
+            echo "   📝 Valor: ID do seu projeto Supabase (ex: nlbcwaxkeaddfocigwuk)"
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "✅ SUPABASE_PROJECT_ID: Configurado"
+          fi
+          
+          echo ""
+          if [ $ERRORS -gt 0 ]; then
+            echo "╔══════════════════════════════════════════════════════════════╗"
+            echo "║  ❌ ERRO: $ERRORS secret(s) não configurado(s)                 ║"
+            echo "╠══════════════════════════════════════════════════════════════╣"
+            echo "║                                                              ║"
+            echo "║  📋 Como configurar:                                         ║"
+            echo "║  1. Vá em: Settings → Secrets and variables → Actions       ║"
+            echo "║  2. Clique em 'New repository secret'                        ║"
+            echo "║  3. Adicione os secrets listados acima                       ║"
+            echo "║                                                              ║"
+            echo "║  🔗 Link direto:                                             ║"
+            echo "║  https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "║                                                              ║"
+            echo "╚══════════════════════════════════════════════════════════════╝"
+            exit 1
+          fi
+          
+          echo "✅ Todas as variáveis estão configuradas!"
+      
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: 🔧 Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      
+      - name: 🔧 Instalar Dependências
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client jq curl gzip
+      
+      - name: 🔌 Testar Conexão com Banco
+        timeout-minutes: 5
+        run: |
+          echo "🔌 Testando conexão com banco..."
+          
+          if ! psql "$SUPABASE_DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
+            echo "❌ ERRO: Não foi possível conectar ao banco de dados!"
+            echo "Verifique se SUPABASE_DB_URL está correto e acessível."
+            exit 1
+          fi
+          
+          echo "✅ Conexão estabelecida com sucesso!"
+      
+      - name: 📅 Definir timestamp
+        id: timestamp
+        run: |
+          echo "date=$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+          echo "datetime=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_OUTPUT
+          echo "iso=$(date -Iseconds)" >> $GITHUB_OUTPUT
+      
+      - name: 📁 Criar diretórios de backup
+        run: |
+          mkdir -p backups/roles
+          mkdir -p backups/schema
+          mkdir -p backups/data
+          mkdir -p backups/functions
+          mkdir -p backups/functions/_metadata
+          mkdir -p backups/secrets
+          mkdir -p backups/vault
+          mkdir -p backups/crons
+          mkdir -p backups/views
+          mkdir -p backups/sequences
+          mkdir -p backups/extensions
+          mkdir -p backups/types
+          mkdir -p backups/functions_db
+          mkdir -p backups/auth
+          mkdir -p backups/migrations
+          mkdir -p backups/config
+      
+      # ============================================
+      # BACKUP DO BANCO DE DADOS
+      # ============================================
+      
+      - name: 👥 Backup das Roles (permissões)
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 10
+        run: |
+          echo "📋 Exportando roles do banco..."
+          
+          if supabase db dump --db-url "$SUPABASE_DB_URL" \
+            -f backups/roles/roles_${{ steps.timestamp.outputs.date }}.sql \
+            --role-only; then
+            echo "✅ Roles exportadas!"
+            ls -lh backups/roles/
+          else
+            echo "❌ ERRO: Falha ao exportar roles!"
+            exit 1
+          fi
+      
+      # ============================================
+      # BACKUP DO SCHEMA - ORGANIZADO POR TABELA
+      # ============================================
+      
+      - name: 🗄️ Backup do Schema Completo
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 30
+        run: |
+          echo "📋 Exportando schema completo do banco..."
+          mkdir -p backups/schema/_full
+          
+          if supabase db dump --db-url "$SUPABASE_DB_URL" \
+            -f backups/schema/_full/full_schema_${{ steps.timestamp.outputs.date }}.sql; then
+            echo "✅ Schema completo exportado!"
+            
+            # Validar arquivo
+            if [ ! -s "backups/schema/_full/full_schema_${{ steps.timestamp.outputs.date }}.sql" ]; then
+              echo "❌ ERRO: Arquivo de schema está vazio!"
+              exit 1
+            fi
+          else
+            echo "❌ ERRO: Falha ao exportar schema completo!"
+            exit 1
+          fi
+      
+      - name: 📊 Backup do Schema por Tabela
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 45
+        run: |
+          echo "📊 Exportando schema organizado por tabela..."
+          echo ""
+          
+          # Schemas para exportar (excluindo schemas internos do Supabase)
+          SCHEMAS_TO_EXPORT="public"
+          
+          # Criar diretório base
+          SCHEMA_DIR="backups/schema/tables"
+          mkdir -p "$SCHEMA_DIR"
+          
+          # Contador
+          TOTAL_TABLES=0
+          
+          for SCHEMA_NAME in $SCHEMAS_TO_EXPORT; do
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📁 Schema: $SCHEMA_NAME"
+            
+            # Criar diretório do schema
+            mkdir -p "$SCHEMA_DIR/$SCHEMA_NAME"
+            
+            # Listar todas as tabelas do schema
+            TABLES=$(psql "$SUPABASE_DB_URL" -t -A -c "
+              SELECT table_name 
+              FROM information_schema.tables 
+              WHERE table_schema = '$SCHEMA_NAME' 
+                AND table_type = 'BASE TABLE'
+              ORDER BY table_name;
+            " 2>/dev/null)
+            
+            if [ -z "$TABLES" ]; then
+              echo "⚠️ Nenhuma tabela encontrada no schema $SCHEMA_NAME"
+              continue
+            fi
+            
+            for TABLE_NAME in $TABLES; do
+              TOTAL_TABLES=$((TOTAL_TABLES + 1))
+              echo "  📋 [$TOTAL_TABLES] Processando: $SCHEMA_NAME.$TABLE_NAME"
+              
+              # Criar diretório da tabela
+              TABLE_DIR="$SCHEMA_DIR/$SCHEMA_NAME/$TABLE_NAME"
+              mkdir -p "$TABLE_DIR"
+              
+              # 1. Estrutura da tabela (CREATE TABLE)
+              echo "-- ============================================" > "$TABLE_DIR/table.sql"
+              echo "-- Tabela: $SCHEMA_NAME.$TABLE_NAME" >> "$TABLE_DIR/table.sql"
+              echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> "$TABLE_DIR/table.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/table.sql"
+              echo "" >> "$TABLE_DIR/table.sql"
+              
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 
+                  'CREATE TABLE IF NOT EXISTS $SCHEMA_NAME.$TABLE_NAME (' || E'\n' ||
+                  string_agg(
+                    '  ' || column_name || ' ' || 
+                    CASE 
+                      WHEN data_type = 'ARRAY' THEN udt_name || '[]'
+                      WHEN data_type = 'USER-DEFINED' THEN udt_name
+                      ELSE data_type 
+                    END ||
+                    CASE WHEN character_maximum_length IS NOT NULL THEN '(' || character_maximum_length || ')' ELSE '' END ||
+                    CASE WHEN is_nullable = 'NO' THEN ' NOT NULL' ELSE '' END ||
+                    CASE WHEN column_default IS NOT NULL THEN ' DEFAULT ' || column_default ELSE '' END,
+                    ',' || E'\n'
+                    ORDER BY ordinal_position
+                  ) || E'\n);'
+                FROM information_schema.columns
+                WHERE table_schema = '$SCHEMA_NAME' AND table_name = '$TABLE_NAME';
+              " >> "$TABLE_DIR/table.sql" 2>/dev/null
+              
+              # 2. Primary Key
+              echo "" >> "$TABLE_DIR/table.sql"
+              echo "-- Primary Key" >> "$TABLE_DIR/table.sql"
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 'ALTER TABLE $SCHEMA_NAME.$TABLE_NAME ADD CONSTRAINT ' || 
+                       tc.constraint_name || ' PRIMARY KEY (' || 
+                       string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) || ');'
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu 
+                  ON tc.constraint_name = kcu.constraint_name 
+                  AND tc.table_schema = kcu.table_schema
+                WHERE tc.table_schema = '$SCHEMA_NAME' 
+                  AND tc.table_name = '$TABLE_NAME'
+                  AND tc.constraint_type = 'PRIMARY KEY'
+                GROUP BY tc.constraint_name;
+              " >> "$TABLE_DIR/table.sql" 2>/dev/null
+              
+              # 3. Índices
+              echo "" > "$TABLE_DIR/indexes.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/indexes.sql"
+              echo "-- Índices: $SCHEMA_NAME.$TABLE_NAME" >> "$TABLE_DIR/indexes.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/indexes.sql"
+              echo "" >> "$TABLE_DIR/indexes.sql"
+              
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT indexdef || ';'
+                FROM pg_indexes
+                WHERE schemaname = '$SCHEMA_NAME' 
+                  AND tablename = '$TABLE_NAME'
+                  AND indexname NOT LIKE '%_pkey';
+              " >> "$TABLE_DIR/indexes.sql" 2>/dev/null
+              
+              # Verificar se arquivo está vazio
+              if [ ! -s "$TABLE_DIR/indexes.sql" ] || [ "$(cat "$TABLE_DIR/indexes.sql" | grep -v '^--' | grep -v '^$' | wc -l)" -eq 0 ]; then
+                echo "-- Nenhum índice adicional" >> "$TABLE_DIR/indexes.sql"
+              fi
+              
+              # 4. Foreign Keys e Constraints
+              echo "" > "$TABLE_DIR/constraints.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/constraints.sql"
+              echo "-- Constraints: $SCHEMA_NAME.$TABLE_NAME" >> "$TABLE_DIR/constraints.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/constraints.sql"
+              echo "" >> "$TABLE_DIR/constraints.sql"
+              
+              # Foreign Keys
+              echo "-- Foreign Keys" >> "$TABLE_DIR/constraints.sql"
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 
+                  'ALTER TABLE $SCHEMA_NAME.$TABLE_NAME ADD CONSTRAINT ' || 
+                  tc.constraint_name || ' FOREIGN KEY (' || 
+                  kcu.column_name || ') REFERENCES ' || 
+                  ccu.table_schema || '.' || ccu.table_name || '(' || ccu.column_name || ')' ||
+                  CASE 
+                    WHEN rc.delete_rule != 'NO ACTION' THEN ' ON DELETE ' || rc.delete_rule 
+                    ELSE '' 
+                  END ||
+                  CASE 
+                    WHEN rc.update_rule != 'NO ACTION' THEN ' ON UPDATE ' || rc.update_rule 
+                    ELSE '' 
+                  END || ';'
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu 
+                  ON tc.constraint_name = kcu.constraint_name
+                JOIN information_schema.constraint_column_usage ccu 
+                  ON tc.constraint_name = ccu.constraint_name
+                JOIN information_schema.referential_constraints rc 
+                  ON tc.constraint_name = rc.constraint_name
+                WHERE tc.table_schema = '$SCHEMA_NAME' 
+                  AND tc.table_name = '$TABLE_NAME'
+                  AND tc.constraint_type = 'FOREIGN KEY';
+              " >> "$TABLE_DIR/constraints.sql" 2>/dev/null
+              
+              # Check Constraints
+              echo "" >> "$TABLE_DIR/constraints.sql"
+              echo "-- Check Constraints" >> "$TABLE_DIR/constraints.sql"
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 'ALTER TABLE $SCHEMA_NAME.$TABLE_NAME ADD CONSTRAINT ' || 
+                       conname || ' CHECK ' || pg_get_constraintdef(oid) || ';'
+                FROM pg_constraint
+                WHERE conrelid = '$SCHEMA_NAME.$TABLE_NAME'::regclass
+                  AND contype = 'c';
+              " >> "$TABLE_DIR/constraints.sql" 2>/dev/null
+              
+              # Unique Constraints
+              echo "" >> "$TABLE_DIR/constraints.sql"
+              echo "-- Unique Constraints" >> "$TABLE_DIR/constraints.sql"
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 
+                  'ALTER TABLE $SCHEMA_NAME.$TABLE_NAME ADD CONSTRAINT ' || 
+                  tc.constraint_name || ' UNIQUE (' || 
+                  string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) || ');'
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu 
+                  ON tc.constraint_name = kcu.constraint_name 
+                  AND tc.table_schema = kcu.table_schema
+                WHERE tc.table_schema = '$SCHEMA_NAME' 
+                  AND tc.table_name = '$TABLE_NAME'
+                  AND tc.constraint_type = 'UNIQUE'
+                GROUP BY tc.constraint_name;
+              " >> "$TABLE_DIR/constraints.sql" 2>/dev/null
+              
+              # 5. Triggers
+              echo "" > "$TABLE_DIR/triggers.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/triggers.sql"
+              echo "-- Triggers: $SCHEMA_NAME.$TABLE_NAME" >> "$TABLE_DIR/triggers.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/triggers.sql"
+              echo "" >> "$TABLE_DIR/triggers.sql"
+              
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT pg_get_triggerdef(t.oid) || ';'
+                FROM pg_trigger t
+                JOIN pg_class c ON t.tgrelid = c.oid
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                WHERE n.nspname = '$SCHEMA_NAME'
+                  AND c.relname = '$TABLE_NAME'
+                  AND NOT t.tgisinternal;
+              " >> "$TABLE_DIR/triggers.sql" 2>/dev/null
+              
+              if [ ! -s "$TABLE_DIR/triggers.sql" ] || [ "$(cat "$TABLE_DIR/triggers.sql" | grep -v '^--' | grep -v '^$' | wc -l)" -eq 0 ]; then
+                echo "-- Nenhum trigger" >> "$TABLE_DIR/triggers.sql"
+              fi
+              
+              # 6. RLS Policies
+              echo "" > "$TABLE_DIR/rls_policies.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/rls_policies.sql"
+              echo "-- RLS Policies: $SCHEMA_NAME.$TABLE_NAME" >> "$TABLE_DIR/rls_policies.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/rls_policies.sql"
+              echo "" >> "$TABLE_DIR/rls_policies.sql"
+              
+              # Verificar se RLS está habilitado
+              RLS_ENABLED=$(psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT relrowsecurity 
+                FROM pg_class c
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                WHERE n.nspname = '$SCHEMA_NAME' AND c.relname = '$TABLE_NAME';
+              " 2>/dev/null)
+              
+              if [ "$RLS_ENABLED" = "t" ]; then
+                echo "-- RLS está HABILITADO nesta tabela" >> "$TABLE_DIR/rls_policies.sql"
+                echo "ALTER TABLE $SCHEMA_NAME.$TABLE_NAME ENABLE ROW LEVEL SECURITY;" >> "$TABLE_DIR/rls_policies.sql"
+                echo "" >> "$TABLE_DIR/rls_policies.sql"
+              else
+                echo "-- RLS está DESABILITADO nesta tabela" >> "$TABLE_DIR/rls_policies.sql"
+                echo "-- ALTER TABLE $SCHEMA_NAME.$TABLE_NAME ENABLE ROW LEVEL SECURITY;" >> "$TABLE_DIR/rls_policies.sql"
+                echo "" >> "$TABLE_DIR/rls_policies.sql"
+              fi
+              
+              # Exportar políticas
+              echo "-- Políticas:" >> "$TABLE_DIR/rls_policies.sql"
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 
+                  'CREATE POLICY ' || quote_ident(polname) || 
+                  ' ON $SCHEMA_NAME.$TABLE_NAME' ||
+                  ' AS ' || CASE polpermissive WHEN true THEN 'PERMISSIVE' ELSE 'RESTRICTIVE' END ||
+                  ' FOR ' || CASE polcmd 
+                    WHEN 'r' THEN 'SELECT'
+                    WHEN 'a' THEN 'INSERT'
+                    WHEN 'w' THEN 'UPDATE'
+                    WHEN 'd' THEN 'DELETE'
+                    ELSE 'ALL'
+                  END ||
+                  ' TO ' || CASE 
+                    WHEN polroles = '{0}' THEN 'public'
+                    ELSE array_to_string(ARRAY(SELECT rolname FROM pg_roles WHERE oid = ANY(polroles)), ', ')
+                  END ||
+                  CASE WHEN polqual IS NOT NULL THEN E'\n  USING (' || pg_get_expr(polqual, polrelid) || ')' ELSE '' END ||
+                  CASE WHEN polwithcheck IS NOT NULL THEN E'\n  WITH CHECK (' || pg_get_expr(polwithcheck, polrelid) || ')' ELSE '' END ||
+                  ';'
+                FROM pg_policy pol
+                JOIN pg_class c ON pol.polrelid = c.oid
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                WHERE n.nspname = '$SCHEMA_NAME' AND c.relname = '$TABLE_NAME';
+              " >> "$TABLE_DIR/rls_policies.sql" 2>/dev/null
+              
+              # Verificar se há políticas
+              POLICY_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT COUNT(*) FROM pg_policy pol
+                JOIN pg_class c ON pol.polrelid = c.oid
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                WHERE n.nspname = '$SCHEMA_NAME' AND c.relname = '$TABLE_NAME';
+              " 2>/dev/null)
+              
+              if [ "$POLICY_COUNT" = "0" ]; then
+                echo "-- Nenhuma política RLS definida" >> "$TABLE_DIR/rls_policies.sql"
+              fi
+              
+              # 7. Comentários da tabela
+              echo "" > "$TABLE_DIR/comments.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/comments.sql"
+              echo "-- Comentários: $SCHEMA_NAME.$TABLE_NAME" >> "$TABLE_DIR/comments.sql"
+              echo "-- ============================================" >> "$TABLE_DIR/comments.sql"
+              echo "" >> "$TABLE_DIR/comments.sql"
+              
+              # Comentário da tabela
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 'COMMENT ON TABLE $SCHEMA_NAME.$TABLE_NAME IS ' || quote_literal(obj_description(('$SCHEMA_NAME.$TABLE_NAME')::regclass)) || ';'
+                WHERE obj_description(('$SCHEMA_NAME.$TABLE_NAME')::regclass) IS NOT NULL;
+              " >> "$TABLE_DIR/comments.sql" 2>/dev/null
+              
+              # Comentários das colunas
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 'COMMENT ON COLUMN $SCHEMA_NAME.$TABLE_NAME.' || a.attname || ' IS ' || quote_literal(d.description) || ';'
+                FROM pg_description d
+                JOIN pg_attribute a ON d.objoid = a.attrelid AND d.objsubid = a.attnum
+                JOIN pg_class c ON a.attrelid = c.oid
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                WHERE n.nspname = '$SCHEMA_NAME' AND c.relname = '$TABLE_NAME'
+                  AND a.attnum > 0 AND NOT a.attisdropped;
+              " >> "$TABLE_DIR/comments.sql" 2>/dev/null
+              
+            done
+          done
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Schema por tabela exportado!"
+          echo "📊 Total de tabelas processadas: $TOTAL_TABLES"
+      
+      - name: 📝 Criar índice do Schema
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        run: |
+          echo "📝 Criando índice do schema..."
+          
+          SCHEMA_DIR="backups/schema"
+          
+          # Criar README principal
+          cat > "$SCHEMA_DIR/README.md" << 'EOF'
+          # 🗄️ Database Schema Backup
+          
+          Backup organizado da estrutura do banco de dados.
+          
+          ## 📅 Última atualização
+          EOF
+          
+          echo "Data: ${{ steps.timestamp.outputs.iso }}" >> "$SCHEMA_DIR/README.md"
+          echo "" >> "$SCHEMA_DIR/README.md"
+          echo "## 📁 Estrutura" >> "$SCHEMA_DIR/README.md"
+          echo "" >> "$SCHEMA_DIR/README.md"
+          echo '```' >> "$SCHEMA_DIR/README.md"
+          echo "schema/" >> "$SCHEMA_DIR/README.md"
+          echo "├── _full/                    # Backup completo em um arquivo" >> "$SCHEMA_DIR/README.md"
+          echo "│   └── full_schema_YYYYMMDD.sql" >> "$SCHEMA_DIR/README.md"
+          echo "├── tables/                   # Organizado por tabela" >> "$SCHEMA_DIR/README.md"
+          echo "│   └── public/" >> "$SCHEMA_DIR/README.md"
+          echo "│       └── <table_name>/" >> "$SCHEMA_DIR/README.md"
+          echo "│           ├── table.sql         # CREATE TABLE + Primary Key" >> "$SCHEMA_DIR/README.md"
+          echo "│           ├── indexes.sql       # Índices" >> "$SCHEMA_DIR/README.md"
+          echo "│           ├── constraints.sql   # FKs, Checks, Unique" >> "$SCHEMA_DIR/README.md"
+          echo "│           ├── triggers.sql      # Triggers" >> "$SCHEMA_DIR/README.md"
+          echo "│           ├── rls_policies.sql  # Row Level Security" >> "$SCHEMA_DIR/README.md"
+          echo "│           └── comments.sql      # Comentários" >> "$SCHEMA_DIR/README.md"
+          echo "└── README.md" >> "$SCHEMA_DIR/README.md"
+          echo '```' >> "$SCHEMA_DIR/README.md"
+          echo "" >> "$SCHEMA_DIR/README.md"
+          
+          echo "## 📋 Tabelas" >> "$SCHEMA_DIR/README.md"
+          echo "" >> "$SCHEMA_DIR/README.md"
+          echo "| Schema | Tabela | RLS | Políticas | Triggers | FKs |" >> "$SCHEMA_DIR/README.md"
+          echo "|--------|--------|-----|-----------|----------|-----|" >> "$SCHEMA_DIR/README.md"
+          
+          # Gerar tabela de resumo
+          psql "$SUPABASE_DB_URL" -t -A -F '|' -c "
+            SELECT 
+              t.table_schema,
+              t.table_name,
+              CASE WHEN c.relrowsecurity THEN '✅' ELSE '❌' END as rls,
+              COALESCE((
+                SELECT COUNT(*)::text FROM pg_policy pol 
+                WHERE pol.polrelid = c.oid
+              ), '0') as policies,
+              COALESCE((
+                SELECT COUNT(*)::text FROM pg_trigger tr 
+                WHERE tr.tgrelid = c.oid AND NOT tr.tgisinternal
+              ), '0') as triggers,
+              COALESCE((
+                SELECT COUNT(*)::text FROM information_schema.table_constraints tc
+                WHERE tc.table_schema = t.table_schema 
+                  AND tc.table_name = t.table_name 
+                  AND tc.constraint_type = 'FOREIGN KEY'
+              ), '0') as fks
+            FROM information_schema.tables t
+            JOIN pg_class c ON c.relname = t.table_name
+            JOIN pg_namespace n ON c.relnamespace = n.oid AND n.nspname = t.table_schema
+            WHERE t.table_schema = 'public' 
+              AND t.table_type = 'BASE TABLE'
+            ORDER BY t.table_schema, t.table_name;
+          " 2>/dev/null | while read line; do
+            echo "| $line |" >> "$SCHEMA_DIR/README.md"
+          done
+          
+          echo "" >> "$SCHEMA_DIR/README.md"
+          echo "## 🔄 Como restaurar" >> "$SCHEMA_DIR/README.md"
+          echo "" >> "$SCHEMA_DIR/README.md"
+          echo "### Restaurar tudo" >> "$SCHEMA_DIR/README.md"
+          echo '```bash' >> "$SCHEMA_DIR/README.md"
+          echo "psql \$DATABASE_URL < backups/schema/_full/full_schema_YYYYMMDD.sql" >> "$SCHEMA_DIR/README.md"
+          echo '```' >> "$SCHEMA_DIR/README.md"
+          echo "" >> "$SCHEMA_DIR/README.md"
+          echo "### Restaurar uma tabela específica" >> "$SCHEMA_DIR/README.md"
+          echo '```bash' >> "$SCHEMA_DIR/README.md"
+          echo "# Ordem recomendada:" >> "$SCHEMA_DIR/README.md"
+          echo "psql \$DATABASE_URL < backups/schema/tables/public/<tabela>/table.sql" >> "$SCHEMA_DIR/README.md"
+          echo "psql \$DATABASE_URL < backups/schema/tables/public/<tabela>/indexes.sql" >> "$SCHEMA_DIR/README.md"
+          echo "psql \$DATABASE_URL < backups/schema/tables/public/<tabela>/constraints.sql" >> "$SCHEMA_DIR/README.md"
+          echo "psql \$DATABASE_URL < backups/schema/tables/public/<tabela>/triggers.sql" >> "$SCHEMA_DIR/README.md"
+          echo "psql \$DATABASE_URL < backups/schema/tables/public/<tabela>/rls_policies.sql" >> "$SCHEMA_DIR/README.md"
+          echo '```' >> "$SCHEMA_DIR/README.md"
+          
+          echo "✅ Índice criado!"
+      
+      # ============================================
+      # BACKUP DE VIEWS E MATERIALIZED VIEWS
+      # ============================================
+      
+      - name: 👁️ Backup de Views
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 10
+        run: |
+          echo "👁️ Exportando Views..."
+          
+          # Views normais
+          echo "-- ============================================" > backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Views do Schema Public" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- ============================================" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE OR REPLACE VIEW ' || schemaname || '.' || viewname || ' AS ' || E'\n' || definition || E'\n;'
+            FROM pg_views
+            WHERE schemaname = 'public'
+            ORDER BY viewname;
+          " >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+          
+          # Materialized Views
+          echo "" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- ============================================" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Materialized Views" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- ============================================" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          echo "" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE MATERIALIZED VIEW IF NOT EXISTS ' || schemaname || '.' || matviewname || ' AS ' || E'\n' || definition || E'\n;'
+            FROM pg_matviews
+            WHERE schemaname = 'public'
+            ORDER BY matviewname;
+          " >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+          
+          # Verificar se há views
+          VIEW_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_views WHERE schemaname = 'public';
+          " 2>/dev/null || echo "0")
+          
+          MATVIEW_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_matviews WHERE schemaname = 'public';
+          " 2>/dev/null || echo "0")
+          
+          if [ "$VIEW_COUNT" = "0" ] && [ "$MATVIEW_COUNT" = "0" ]; then
+            echo "-- Nenhuma view encontrada" >> backups/views/views_${{ steps.timestamp.outputs.date }}.sql
+          fi
+          
+          echo "✅ Views exportadas! (Views: $VIEW_COUNT, Materialized: $MATVIEW_COUNT)"
+      
+      # ============================================
+      # BACKUP DE SEQUENCES
+      # ============================================
+      
+      - name: 🔢 Backup de Sequences
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 5
+        run: |
+          set +e  # Não falhar em erros, vamos tratar manualmente
+          echo "🔢 Exportando Sequences..."
+          
+          # Criar arquivo primeiro
+          OUTPUT_FILE="backups/sequences/sequences_${{ steps.timestamp.outputs.date }}.sql"
+          echo "-- ============================================" > "$OUTPUT_FILE"
+          echo "-- Sequences do Schema Public" >> "$OUTPUT_FILE"
+          echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> "$OUTPUT_FILE"
+          echo "-- ============================================" >> "$OUTPUT_FILE"
+          echo "" >> "$OUTPUT_FILE"
+          
+          # Verificar se há sequences antes de exportar
+          SEQ_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_sequences WHERE schemaname = 'public';
+          " 2>&1)
+          PSQL_COUNT_EXIT=$?
+          
+          # Remover espaços e quebras de linha
+          SEQ_COUNT=$(echo "$SEQ_COUNT" | tr -d '[:space:]' || echo "0")
+          
+          # Se não conseguir conectar, usar 0
+          if [ $PSQL_COUNT_EXIT -ne 0 ] || ! echo "$SEQ_COUNT" | grep -qE '^[0-9]+$'; then
+            SEQ_COUNT="0"
+            echo "⚠️ Não foi possível contar sequences, assumindo 0"
+          fi
+          
+          if [ "$SEQ_COUNT" = "0" ] || [ -z "$SEQ_COUNT" ]; then
+            echo "-- Nenhuma sequence encontrada no schema public" >> "$OUTPUT_FILE"
+            echo "✅ Sequences exportadas! (Total: 0)"
+            set -e  # Reativar tratamento de erros
+            exit 0
+          fi
+          
+          # Exportar sequences com tratamento de erros
+          PSQL_OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE SEQUENCE IF NOT EXISTS ' || schemaname || '.' || sequencename || 
+                   ' START WITH ' || COALESCE(last_value::text, '1') || 
+                   ' INCREMENT BY ' || COALESCE(increment_by::text, '1') || 
+                   CASE WHEN min_value IS NOT NULL THEN ' MINVALUE ' || min_value::text ELSE '' END ||
+                   CASE WHEN max_value IS NOT NULL THEN ' MAXVALUE ' || max_value::text ELSE '' END ||
+                   CASE WHEN cache_value IS NOT NULL THEN ' CACHE ' || cache_value::text ELSE '' END || ';'
+            FROM pg_sequences
+            WHERE schemaname = 'public'
+            ORDER BY sequencename;
+          " 2>&1)
+          
+          PSQL_EXIT_CODE=$?
+          
+          if [ $PSQL_EXIT_CODE -eq 0 ] && [ -n "$PSQL_OUTPUT" ]; then
+            echo "$PSQL_OUTPUT" >> "$OUTPUT_FILE"
+            echo "✅ Sequences exportadas! (Total: $SEQ_COUNT)"
+          else
+            echo "-- Erro ao exportar sequences ou nenhuma encontrada" >> "$OUTPUT_FILE"
+            if [ -n "$PSQL_OUTPUT" ]; then
+              echo "-- Detalhes do erro (se houver):" >> "$OUTPUT_FILE"
+              echo "-- $PSQL_OUTPUT" >> "$OUTPUT_FILE"
+            fi
+            
+            if [ $PSQL_EXIT_CODE -ne 0 ]; then
+              echo "⚠️ Aviso: Erro ao exportar sequences (código: $PSQL_EXIT_CODE)"
+              echo "⚠️ Output: $PSQL_OUTPUT"
+              echo "⚠️ Continuando com backup (arquivo criado mesmo sem dados)"
+            else
+              echo "✅ Sequences exportadas! (Total: $SEQ_COUNT)"
+            fi
+          fi
+          
+          # Validar arquivo gerado
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "❌ ERRO: Arquivo de sequences não foi criado!"
+            set -e
+            exit 1
+          fi
+          
+          if [ ! -s "$OUTPUT_FILE" ]; then
+            echo "⚠️ AVISO: Arquivo de sequences está vazio (adicionando comentário)"
+            echo "-- Arquivo vazio (nenhuma sequence encontrada)" >> "$OUTPUT_FILE"
+          fi
+          
+          set -e  # Reativar tratamento de erros
+          echo "✅ Step de Sequences concluído!"
+      
+      # ============================================
+      # BACKUP DE EXTENSIONS
+      # ============================================
+      
+      - name: 🔌 Backup de Extensions
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 5
+        run: |
+          echo "🔌 Exportando Extensions..."
+          
+          echo "-- ============================================" > backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- PostgreSQL Extensions" >> backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- ============================================" >> backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql
+          echo "" >> backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql
+          
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE EXTENSION IF NOT EXISTS ' || extname || 
+                   CASE WHEN extversion IS NOT NULL THEN ' VERSION ' || quote_literal(extversion) ELSE '' END || ';'
+            FROM pg_extension
+            WHERE extname NOT IN ('plpgsql')  -- Excluir extensões padrão
+            ORDER BY extname;
+          " >> backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+          
+          # Salvar em JSON para referência
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COALESCE(json_agg(json_build_object(
+              'name', extname,
+              'version', extversion,
+              'schema', n.nspname
+            )), '[]'::json)
+            FROM pg_extension e
+            JOIN pg_namespace n ON e.extnamespace = n.oid
+            WHERE extname NOT IN ('plpgsql');
+          " > backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.json 2>/dev/null || echo "[]" > backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.json
+          
+          # Contar extensions
+          EXT_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_extension WHERE extname NOT IN ('plpgsql');
+          " 2>/dev/null || echo "0")
+          
+          if [ "$EXT_COUNT" = "0" ]; then
+            echo "-- Nenhuma extension customizada encontrada (apenas padrões)" >> backups/extensions/extensions_${{ steps.timestamp.outputs.date }}.sql
+          fi
+          
+          echo "✅ Extensions exportadas! (Total: $EXT_COUNT)"
+      
+      # ============================================
+      # BACKUP DE CUSTOM TYPES E ENUMS
+      # ============================================
+      
+      - name: 🏷️ Backup de Custom Types
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 5
+        run: |
+          echo "🏷️ Exportando Custom Types..."
+          
+          echo "-- ============================================" > backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Custom Types e ENUMs" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- ============================================" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          echo "" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          
+          # ENUMs
+          echo "-- ENUMs" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE TYPE ' || n.nspname || '.' || t.typname || ' AS ENUM (' ||
+                   string_agg(quote_literal(e.enumlabel), ', ' ORDER BY e.enumsortorder) || ');'
+            FROM pg_type t
+            JOIN pg_enum e ON t.oid = e.enumtypid
+            JOIN pg_namespace n ON t.typnamespace = n.oid
+            WHERE n.nspname = 'public' AND t.typtype = 'e'
+            GROUP BY n.nspname, t.typname
+            ORDER BY t.typname;
+          " >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+          
+          # Composite Types
+          echo "" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Composite Types" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE TYPE ' || n.nspname || '.' || t.typname || ' AS (' ||
+                   string_agg(a.attname || ' ' || pg_catalog.format_type(a.atttypid, a.atttypmod), ', ' ORDER BY a.attnum) || ');'
+            FROM pg_type t
+            JOIN pg_namespace n ON t.typnamespace = n.oid
+            JOIN pg_attribute a ON a.attrelid = t.typrelid
+            WHERE n.nspname = 'public' AND t.typtype = 'c' AND a.attnum > 0 AND NOT a.attisdropped
+            GROUP BY n.nspname, t.typname
+            ORDER BY t.typname;
+          " >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+          
+          # Domain Types
+          echo "" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Domain Types" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'CREATE DOMAIN ' || n.nspname || '.' || t.typname || ' AS ' || 
+                   pg_catalog.format_type(t.typbasetype, t.typtypmod) ||
+                   CASE WHEN t.typnotnull THEN ' NOT NULL' ELSE '' END ||
+                   CASE WHEN t.typdefault IS NOT NULL THEN ' DEFAULT ' || t.typdefault ELSE '' END || ';'
+            FROM pg_type t
+            JOIN pg_namespace n ON t.typnamespace = n.oid
+            WHERE n.nspname = 'public' AND t.typtype = 'd'
+            ORDER BY t.typname;
+          " >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+          
+          # Contar types
+          ENUM_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(DISTINCT t.typname) FROM pg_type t
+            JOIN pg_namespace n ON t.typnamespace = n.oid
+            WHERE n.nspname = 'public' AND t.typtype = 'e';
+          " 2>/dev/null || echo "0")
+          
+          COMPOSITE_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_type t
+            JOIN pg_namespace n ON t.typnamespace = n.oid
+            WHERE n.nspname = 'public' AND t.typtype = 'c';
+          " 2>/dev/null || echo "0")
+          
+          DOMAIN_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_type t
+            JOIN pg_namespace n ON t.typnamespace = n.oid
+            WHERE n.nspname = 'public' AND t.typtype = 'd';
+          " 2>/dev/null || echo "0")
+          
+          TOTAL_TYPES=$((ENUM_COUNT + COMPOSITE_COUNT + DOMAIN_COUNT))
+          
+          if [ "$TOTAL_TYPES" = "0" ]; then
+            echo "-- Nenhum tipo customizado encontrado" >> backups/types/custom_types_${{ steps.timestamp.outputs.date }}.sql
+          fi
+          
+          echo "✅ Custom Types exportados! (ENUMs: $ENUM_COUNT, Composite: $COMPOSITE_COUNT, Domain: $DOMAIN_COUNT)"
+      
+      # ============================================
+      # BACKUP DE DATABASE FUNCTIONS (SQL/PLpgSQL)
+      # ============================================
+      
+      - name: ⚙️ Backup de Database Functions
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'data-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 15
+        run: |
+          set +e  # Não falhar em erros, vamos tratar manualmente
+          echo "⚙️ Exportando Database Functions..."
+          
+          OUTPUT_FILE="backups/functions_db/database_functions_${{ steps.timestamp.outputs.date }}.sql"
+          
+          # Criar arquivo primeiro
+          echo "-- ============================================" > "$OUTPUT_FILE"
+          echo "-- Database Functions (SQL/PLpgSQL)" >> "$OUTPUT_FILE"
+          echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> "$OUTPUT_FILE"
+          echo "-- ============================================" >> "$OUTPUT_FILE"
+          echo "" >> "$OUTPUT_FILE"
+          
+          # Contar functions primeiro
+          FUNC_COUNT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COUNT(*) FROM pg_proc p
+            JOIN pg_namespace n ON p.pronamespace = n.oid
+            WHERE n.nspname = 'public'
+              AND p.prokind IN ('f', 'p')
+              AND p.proname NOT LIKE 'pg_%';
+          " 2>&1)
+          PSQL_COUNT_EXIT=$?
+          
+          # Remover espaços e quebras de linha
+          FUNC_COUNT=$(echo "$FUNC_COUNT" | tr -d '[:space:]' || echo "0")
+          
+          # Se não conseguir conectar, usar 0
+          if [ $PSQL_COUNT_EXIT -ne 0 ] || ! echo "$FUNC_COUNT" | grep -qE '^[0-9]+$'; then
+            FUNC_COUNT="0"
+            echo "⚠️ Não foi possível contar functions, assumindo 0"
+          fi
+          
+          if [ "$FUNC_COUNT" = "0" ] || [ -z "$FUNC_COUNT" ]; then
+            echo "-- Nenhuma function customizada encontrada no schema public" >> "$OUTPUT_FILE"
+            echo "✅ Database Functions exportadas! (Total: 0)"
+            set -e  # Reativar tratamento de erros
+            exit 0
+          fi
+          
+          # Exportar functions com tratamento de erros
+          PSQL_OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT pg_get_functiondef(oid) || E'\n' || ';'
+            FROM pg_proc p
+            JOIN pg_namespace n ON p.pronamespace = n.oid
+            WHERE n.nspname = 'public'
+              AND p.prokind IN ('f', 'p')  -- functions e procedures
+              AND p.proname NOT LIKE 'pg_%'  -- Excluir funções do sistema
+            ORDER BY p.proname, p.oid;
+          " 2>&1)
+          
+          PSQL_EXIT_CODE=$?
+          
+          if [ $PSQL_EXIT_CODE -eq 0 ] && [ -n "$PSQL_OUTPUT" ]; then
+            echo "$PSQL_OUTPUT" >> "$OUTPUT_FILE"
+            echo "✅ Database Functions exportadas! (Total: $FUNC_COUNT)"
+          else
+            echo "-- Erro ao exportar functions ou nenhuma encontrada" >> "$OUTPUT_FILE"
+            if [ -n "$PSQL_OUTPUT" ]; then
+              echo "-- Detalhes do erro (se houver):" >> "$OUTPUT_FILE"
+              echo "-- $PSQL_OUTPUT" >> "$OUTPUT_FILE"
+            fi
+            
+            if [ $PSQL_EXIT_CODE -ne 0 ]; then
+              echo "⚠️ Aviso: Erro ao exportar functions (código: $PSQL_EXIT_CODE)"
+              echo "⚠️ Output: $PSQL_OUTPUT"
+              echo "⚠️ Continuando com backup (arquivo criado mesmo sem dados)"
+            else
+              echo "✅ Database Functions exportadas! (Total: $FUNC_COUNT)"
+            fi
+          fi
+          
+          # Validar arquivo gerado
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "❌ ERRO: Arquivo de functions não foi criado!"
+            set -e
+            exit 1
+          fi
+          
+          if [ ! -s "$OUTPUT_FILE" ]; then
+            echo "⚠️ AVISO: Arquivo de functions está vazio (adicionando comentário)"
+            echo "-- Arquivo vazio (nenhuma function encontrada)" >> "$OUTPUT_FILE"
+          fi
+          
+          set -e  # Reativar tratamento de erros
+          echo "✅ Step de Database Functions concluído!"
+      
+      # ============================================
+      # BACKUP DE AUTH USERS (METADADOS)
+      # ============================================
+      
+      - name: 👥 Backup de Auth Users (Metadados)
+        timeout-minutes: 10
+        run: |
+          echo "👥 Exportando metadados de Auth Users..."
+          
+          # Listar usuários via API (sem senhas - nunca são exportadas)
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o "/tmp/auth_users.json" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/auth/users?per_page=1000")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            cat /tmp/auth_users.json | jq '.' > "backups/auth/users_${{ steps.timestamp.outputs.date }}.json" 2>/dev/null
+            
+            # Contar usuários
+            USER_COUNT=$(cat backups/auth/users_${{ steps.timestamp.outputs.date }}.json | jq 'length' 2>/dev/null || echo "0")
+            
+            # Criar resumo em SQL (apenas metadados, sem senhas)
+            echo "-- ============================================" > backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            echo "-- Auth Users Summary (Metadados apenas)" >> backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            echo "-- Backup: ${{ steps.timestamp.outputs.iso }}" >> backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            echo "-- NOTA: Senhas NUNCA são exportadas por segurança" >> backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            echo "-- ============================================" >> backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            echo "" >> backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            echo "-- Total de usuários: $USER_COUNT" >> backups/auth/users_summary_${{ steps.timestamp.outputs.date }}.sql
+            
+            echo "✅ Auth Users exportados! (Total: $USER_COUNT usuários)"
+          else
+            echo "[]" > "backups/auth/users_${{ steps.timestamp.outputs.date }}.json"
+            echo "⚠️ Erro ao exportar Auth Users (HTTP $HTTP_CODE) - pode ser limitação de permissões"
+          fi
+      
+      # ============================================
+      # BACKUP DE MIGRATIONS
+      # ============================================
+      
+      - name: 📜 Backup de Migrations
+        timeout-minutes: 5
+        run: |
+          echo "📜 Exportando Migrations..."
+          
+          # Verificar se existe diretório de migrations
+          if [ -d "supabase/migrations" ]; then
+            mkdir -p backups/migrations
+            cp -r supabase/migrations/* backups/migrations/ 2>/dev/null || true
+            
+            # Contar migrations
+            MIGRATION_COUNT=$(find backups/migrations -name "*.sql" -type f 2>/dev/null | wc -l || echo "0")
+            
+            # Criar índice
+            echo "# Migrations Backup" > backups/migrations/README.md
+            echo "" >> backups/migrations/README.md
+            echo "Data do backup: ${{ steps.timestamp.outputs.iso }}" >> backups/migrations/README.md
+            echo "Total de migrations: $MIGRATION_COUNT" >> backups/migrations/README.md
+            echo "" >> backups/migrations/README.md
+            echo "## Lista de Migrations" >> backups/migrations/README.md
+            echo "" >> backups/migrations/README.md
+            find backups/migrations -name "*.sql" -type f -printf "%f\n" 2>/dev/null | sort >> backups/migrations/README.md || true
+            
+            echo "✅ Migrations exportadas! (Total: $MIGRATION_COUNT)"
+          else
+            echo "⚠️ Diretório supabase/migrations não encontrado"
+            echo "# Migrations Backup" > backups/migrations/README.md
+            echo "Nenhuma migration encontrada no diretório supabase/migrations" >> backups/migrations/README.md
+          fi
+      
+      # ============================================
+      # BACKUP DE DATABASE CONFIGURATION
+      # ============================================
+      
+      - name: ⚙️ Backup de Database Configuration
+        timeout-minutes: 5
+        run: |
+          echo "⚙️ Exportando configuração do banco..."
+          
+          # Configurações importantes do PostgreSQL
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT json_agg(json_build_object(
+              'name', name,
+              'setting', setting,
+              'unit', unit,
+              'category', category,
+              'description', short_desc
+            ) ORDER BY category, name)
+            FROM pg_settings
+            WHERE name IN (
+              'max_connections', 'shared_buffers', 'effective_cache_size',
+              'maintenance_work_mem', 'checkpoint_completion_target',
+              'wal_buffers', 'default_statistics_target', 'random_page_cost',
+              'effective_io_concurrency', 'work_mem', 'min_wal_size', 'max_wal_size',
+              'max_worker_processes', 'max_parallel_workers_per_gather',
+              'max_parallel_workers', 'max_parallel_maintenance_workers',
+              'timezone', 'lc_messages', 'lc_monetary', 'lc_numeric', 'lc_time',
+              'default_text_search_config', 'log_statement', 'log_min_duration_statement'
+            );
+          " > backups/config/database_settings_${{ steps.timestamp.outputs.date }}.json 2>/dev/null || echo "[]" > backups/config/database_settings_${{ steps.timestamp.outputs.date }}.json
+          
+          # Versão do PostgreSQL
+          PG_VERSION=$(psql "$SUPABASE_DB_URL" -t -A -c "SELECT version();" 2>/dev/null || echo "N/A")
+          
+          # Criar arquivo de resumo
+          echo "# Database Configuration" > backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "Data do backup: ${{ steps.timestamp.outputs.iso }}" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "## PostgreSQL Version" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo '```' >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "$PG_VERSION" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo '```' >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "## Settings" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          echo "Ver arquivo: database_settings_${{ steps.timestamp.outputs.date }}.json" >> backups/config/README_${{ steps.timestamp.outputs.date }}.md
+          
+          echo "✅ Database Configuration exportada!"
+      
+      - name: 💾 Backup dos Dados
+        if: ${{ github.event.inputs.backup_type != 'functions-only' && github.event.inputs.backup_type != 'schema-only' && github.event.inputs.backup_type != 'crons-only' && github.event.inputs.backup_type != 'secrets-only' && github.event.inputs.backup_type != 'vault-only' }}
+        timeout-minutes: 45
+        run: |
+          echo "📋 Exportando dados do banco..."
+          
+          if supabase db dump --db-url "$SUPABASE_DB_URL" \
+            -f backups/data/data_${{ steps.timestamp.outputs.date }}.sql \
+            --data-only \
+            --use-copy; then
+            echo "✅ Dados exportados!"
+            
+            # Validar arquivo
+            if [ ! -s "backups/data/data_${{ steps.timestamp.outputs.date }}.sql" ]; then
+              echo "⚠️ AVISO: Arquivo de dados está vazio ou muito pequeno!"
+            fi
+            
+            ls -lh backups/data/
+          else
+            echo "❌ ERRO: Falha ao exportar dados!"
+            exit 1
+          fi
+      
+      # ============================================
+      # BACKUP DOS CRON JOBS (pg_cron)
+      # ============================================
+      
+      - name: ⏰ Backup dos Cron Jobs
+        if: ${{ github.event.inputs.backup_type == 'full' || github.event.inputs.backup_type == 'crons-only' || github.event.inputs.backup_type == '' }}
+        timeout-minutes: 5
+        run: |
+          echo "⏰ Exportando Cron Jobs do pg_cron..."
+          
+          echo "-- ============================================" > backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- BACKUP DOS CRON JOBS - pg_cron" >> backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- Data: ${{ steps.timestamp.outputs.iso }}" >> backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql
+          echo "-- ============================================" >> backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql
+          echo "" >> backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql
+          
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT 'SELECT cron.schedule(' || quote_literal(jobname) || ', ' ||
+                   quote_literal(schedule) || ', ' || E'\$\$' || command || E'\$\$);'
+            FROM cron.job WHERE active = true ORDER BY jobname;
+          " >> backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null || echo "-- Nenhum cron" >> backups/crons/crons_${{ steps.timestamp.outputs.date }}.sql
+          
+          psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT COALESCE(json_agg(json_build_object(
+              'jobid', jobid, 'jobname', jobname, 'schedule', schedule,
+              'command', command, 'active', active
+            )), '[]'::json) FROM cron.job;
+          " > backups/crons/crons_${{ steps.timestamp.outputs.date }}.json 2>/dev/null || echo "[]" > backups/crons/crons_${{ steps.timestamp.outputs.date }}.json
+          
+          echo "✅ Cron Jobs exportados!"
+      
+      # ============================================
+      # DESCRIPTOGRAFAR SECRETS (SE EXISTIR ARQUIVO)
+      # ============================================
+      
+      - name: 🔓 Descriptografar Secrets (Opcional)
+        if: ${{ github.event.inputs.backup_type == 'full' || github.event.inputs.backup_type == 'vault-only' || github.event.inputs.backup_type == 'secrets-only' || github.event.inputs.backup_type == '' }}
+        timeout-minutes: 2
+        run: |
+          echo "🔓 Verificando arquivo criptografado de secrets..."
+          
+          # Verificar se existe arquivo criptografado
+          if [ -f "secrets_encrypted.gpg" ] || [ -f "secrets_encrypted.asc" ]; then
+            echo "✅ Arquivo criptografado encontrado!"
+            
+            # Verificar se tem chave privada GPG configurada
+            if [ -z "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+              echo "⚠️ Arquivo criptografado encontrado, mas GPG_PRIVATE_KEY não configurado"
+              echo "⚠️ Pulando descriptografia. Configure GPG_PRIVATE_KEY para descriptografar automaticamente."
+              echo "false" > /tmp/has_decrypted_secrets
+            else
+              echo "🔐 Configurando GPG..."
+              
+              # Importar chave privada
+              echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --yes --import 2>/dev/null || true
+              
+              # Tentar descriptografar
+              ENCRYPTED_FILE=""
+              if [ -f "secrets_encrypted.gpg" ]; then
+                ENCRYPTED_FILE="secrets_encrypted.gpg"
+              elif [ -f "secrets_encrypted.asc" ]; then
+                ENCRYPTED_FILE="secrets_encrypted.asc"
+              fi
+              
+              if [ -n "$ENCRYPTED_FILE" ]; then
+                if gpg --batch --yes --decrypt "$ENCRYPTED_FILE" > /tmp/secrets_decrypted.txt 2>/dev/null; then
+                  echo "✅ Secrets descriptografados com sucesso!"
+                  echo "true" > /tmp/has_decrypted_secrets
+                  
+                  # Validar formato do arquivo
+                  if [ -s /tmp/secrets_decrypted.txt ]; then
+                    echo "✅ Arquivo descriptografado tem conteúdo"
+                  else
+                    echo "⚠️ Arquivo descriptografado está vazio"
+                    echo "false" > /tmp/has_decrypted_secrets
+                  fi
+                else
+                  echo "❌ Erro ao descriptografar. Verifique se a chave privada está correta."
+                  echo "false" > /tmp/has_decrypted_secrets
+                fi
+              fi
+            fi
+          else
+            echo "ℹ️ Nenhum arquivo criptografado encontrado (secrets_encrypted.gpg ou secrets_encrypted.asc)"
+            echo "ℹ️ Pulando descriptografia. Veja GUIA_SECRETS_CRIPTOGRAFADOS.md para criar um."
+            echo "false" > /tmp/has_decrypted_secrets
+          fi
+      
+      # ============================================
+      # BACKUP DO VAULT
+      # ============================================
+      
+      - name: 🔒 Backup do Vault
+        if: ${{ github.event.inputs.backup_type == 'full' || github.event.inputs.backup_type == 'vault-only' || github.event.inputs.backup_type == 'secrets-only' || github.event.inputs.backup_type == '' }}
+        timeout-minutes: 5
+        run: |
+          echo "🔒 Exportando Secrets do Vault..."
+          
+          VAULT_EXISTS=$(psql "$SUPABASE_DB_URL" -t -A -c "
+            SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'vault');
+          " 2>/dev/null || echo "f")
+          
+          if [ "$VAULT_EXISTS" = "t" ]; then
+            psql "$SUPABASE_DB_URL" -t -A -c "
+              SELECT COALESCE(json_agg(json_build_object(
+                'id', id, 'name', name, 'description', description,
+                'created_at', created_at, 'updated_at', updated_at
+              )), '[]'::json) FROM vault.secrets;
+            " > backups/vault/vault_${{ steps.timestamp.outputs.date }}.json 2>/dev/null
+            
+            # Verificar se temos secrets descriptografados
+            HAS_DECRYPTED=$(cat /tmp/has_decrypted_secrets 2>/dev/null || echo "false")
+            
+            if [ "$HAS_DECRYPTED" = "true" ] && [ -f /tmp/secrets_decrypted.txt ]; then
+              echo "✅ Usando valores descriptografados para preencher Vault Secrets!"
+              
+              echo "-- Vault Secrets (com valores do arquivo criptografado)" > backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql
+              echo "-- ⚠️ ATENÇÃO: Valores foram extraídos de arquivo criptografado" >> backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql
+              echo "" >> backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql
+              
+              # Extrair valores do arquivo descriptografado e preencher
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT name FROM vault.secrets ORDER BY name;
+              " 2>/dev/null | while read secret_name; do
+                # Procurar valor no arquivo descriptografado
+                SECRET_VALUE=$(grep -i "^VAULT_${secret_name}=" /tmp/secrets_decrypted.txt 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || \
+                  grep -i "^${secret_name}=" /tmp/secrets_decrypted.txt 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || \
+                  echo "<VALOR>")
+                
+                # Buscar descrição
+                DESCRIPTION=$(psql "$SUPABASE_DB_URL" -t -A -c "
+                  SELECT description FROM vault.secrets WHERE name = '$secret_name';
+                " 2>/dev/null || echo "")
+                
+                if [ "$SECRET_VALUE" != "<VALOR>" ]; then
+                  echo "SELECT vault.create_secret($(echo "$SECRET_VALUE" | sed "s/'/''/g" | sed "s/^/'/;s/$/'/"), $(echo "$secret_name" | sed "s/'/''/g" | sed "s/^/'/;s/$/'/")$(if [ -n "$DESCRIPTION" ]; then echo ", $(echo "$DESCRIPTION" | sed "s/'/''/g" | sed "s/^/'/;s/$/'/")"; fi));" >> backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql
+                else
+                  echo "SELECT vault.create_secret('<VALOR>', $(echo "$secret_name" | sed "s/'/''/g" | sed "s/^/'/;s/$/'/")$(if [ -n "$DESCRIPTION" ]; then echo ", $(echo "$DESCRIPTION" | sed "s/'/''/g" | sed "s/^/'/;s/$/'/")"; fi));" >> backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql
+                fi
+              done
+              
+              echo "✅ Vault exportado com valores preenchidos!"
+            else
+              echo "-- Vault Secrets (sem valores)" > backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql
+              psql "$SUPABASE_DB_URL" -t -A -c "
+                SELECT 'SELECT vault.create_secret(''<VALOR>'', ' || quote_literal(name) || 
+                       CASE WHEN description IS NOT NULL THEN ', ' || quote_literal(description) ELSE '' END || ');'
+                FROM vault.secrets ORDER BY name;
+              " >> backups/vault/vault_${{ steps.timestamp.outputs.date }}.sql 2>/dev/null
+              
+              echo "✅ Vault exportado (valores precisam ser preenchidos manualmente)"
+            fi
+          else
+            echo "[]" > backups/vault/vault_${{ steps.timestamp.outputs.date }}.json
+            echo "⚠️ Vault não habilitado"
+          fi
+      
+      # ============================================
+      # BACKUP DAS SECRETS (Edge Functions)
+      # ============================================
+      
+      - name: 🔐 Backup das Secrets das Edge Functions
+        if: ${{ github.event.inputs.backup_type == 'full' || github.event.inputs.backup_type == 'functions-only' || github.event.inputs.backup_type == 'secrets-only' || github.event.inputs.backup_type == '' }}
+        timeout-minutes: 10
+        run: |
+          echo "🔐 Exportando Secrets das Edge Functions..."
+          
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          HTTP_CODE=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o "/tmp/secrets.json" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/secrets")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⚠️ Tentativa $RETRY_COUNT/$MAX_RETRIES falhou (HTTP $HTTP_CODE). Aguardando..."
+            sleep $((RETRY_COUNT * 2))
+          done
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            cat /tmp/secrets.json | jq '.' > "backups/secrets/secrets_${{ steps.timestamp.outputs.date }}.json"
+            
+            # Verificar se temos secrets descriptografados
+            HAS_DECRYPTED=$(cat /tmp/has_decrypted_secrets 2>/dev/null || echo "false")
+            
+            if [ "$HAS_DECRYPTED" = "true" ] && [ -f /tmp/secrets_decrypted.txt ]; then
+              echo "✅ Usando valores descriptografados para preencher Edge Functions Secrets!"
+              
+              echo "# Edge Function Secrets (com valores do arquivo criptografado)" > backups/secrets/.env.example
+              echo "# ⚠️ ATENÇÃO: Valores foram extraídos de arquivo criptografado" >> backups/secrets/.env.example
+              echo "" >> backups/secrets/.env.example
+              
+              cat /tmp/secrets.json | jq -r '.[].name' | sort | while read name; do
+                # Procurar valor no arquivo descriptografado
+                SECRET_VALUE=$(grep -i "^EDGE_${name}=" /tmp/secrets_decrypted.txt 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || \
+                  grep -i "^${name}=" /tmp/secrets_decrypted.txt 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || \
+                  echo "<VALOR>")
+                
+                echo "${name}=${SECRET_VALUE}" >> backups/secrets/.env.example
+              done
+              
+              echo "✅ Secrets exportadas com valores preenchidos!"
+            else
+              echo "# Edge Function Secrets" > backups/secrets/.env.example
+              cat /tmp/secrets.json | jq -r '.[].name' | sort | while read name; do
+                echo "${name}=<VALOR>" >> backups/secrets/.env.example
+              done
+              
+              echo "✅ Secrets exportadas (valores precisam ser preenchidos manualmente)"
+            fi
+          else
+            echo "[]" > "backups/secrets/secrets_${{ steps.timestamp.outputs.date }}.json"
+            echo "⚠️ Erro ao exportar secrets após $MAX_RETRIES tentativas (HTTP $HTTP_CODE)"
+          fi
+      
+      # ============================================
+      # BACKUP DAS EDGE FUNCTIONS
+      # ============================================
+      
+      - name: ⚡ Backup das Edge Functions
+        if: ${{ github.event.inputs.backup_type == 'full' || github.event.inputs.backup_type == 'functions-only' || github.event.inputs.backup_type == '' }}
+        timeout-minutes: 15
+        run: |
+          echo "⚡ Exportando Edge Functions..."
+          
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          HTTP_CODE=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o "/tmp/functions.json" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/functions")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⚠️ Tentativa $RETRY_COUNT/$MAX_RETRIES falhou (HTTP $HTTP_CODE). Aguardando..."
+            sleep $((RETRY_COUNT * 2))
+          done
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ ERRO: Falha ao buscar functions após $MAX_RETRIES tentativas (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          
+          cp /tmp/functions.json "backups/functions/_metadata/functions_${{ steps.timestamp.outputs.date }}.json"
+          
+          FUNCTIONS=$(cat /tmp/functions.json | jq -r '.[].slug' 2>/dev/null || echo "")
+          
+          if [ -z "$FUNCTIONS" ]; then
+            echo "⚠️ Nenhuma function encontrada"
+          else
+            for SLUG in $FUNCTIONS; do
+              mkdir -p "backups/functions/$SLUG"
+              
+              curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_ID/functions/$SLUG" \
+                > "/tmp/func_$SLUG.json"
+              
+              cat "/tmp/func_$SLUG.json" | jq '{id,slug,name,version,status,verify_jwt}' \
+                > "backups/functions/$SLUG/metadata.json" 2>/dev/null
+              
+              BODY=$(cat "/tmp/func_$SLUG.json" | jq -r '.body // empty' 2>/dev/null)
+              if [ -n "$BODY" ]; then
+                echo "$BODY" > "backups/functions/$SLUG/index.ts"
+              fi
+              
+              sleep 0.3
+            done
+          fi
+          
+          echo "✅ Edge Functions exportadas!"
+      
+      # ============================================
+      # VALIDAÇÃO E COMPRESSÃO
+      # ============================================
+      
+      - name: ✅ Validar Backups Criados
+        run: |
+          echo "🔍 Validando backups..."
+          
+          ERRORS=0
+          
+          # Verificar arquivos críticos (obrigatórios)
+          CRITICAL_FILES=(
+            "backups/schema/_full/full_schema_${{ steps.timestamp.outputs.date }}.sql"
+            "backups/data/data_${{ steps.timestamp.outputs.date }}.sql"
+          )
+          
+          # Verificar arquivos opcionais (podem não existir se não houver views/sequences)
+          OPTIONAL_FILES=(
+            "backups/views/views_${{ steps.timestamp.outputs.date }}.sql"
+            "backups/sequences/sequences_${{ steps.timestamp.outputs.date }}.sql"
+          )
+          
+          # Validar arquivos críticos
+          for file in "${CRITICAL_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ ERRO: Arquivo não encontrado: $file"
+              ERRORS=$((ERRORS + 1))
+              continue
+            fi
+            
+            if [ ! -s "$file" ]; then
+              echo "❌ ERRO: Arquivo vazio: $file"
+              ERRORS=$((ERRORS + 1))
+              continue
+            fi
+            
+            # Verificar se contém SQL válido (pelo menos algumas linhas)
+            LINE_COUNT=$(wc -l < "$file" 2>/dev/null || echo "0")
+            if [ "$LINE_COUNT" -lt 5 ]; then
+              echo "⚠️ AVISO: Arquivo muito pequeno: $file ($LINE_COUNT linhas)"
+            fi
+          done
+          
+          # Validar arquivos opcionais (apenas avisar se não existirem)
+          for file in "${OPTIONAL_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "⚠️ AVISO: Arquivo opcional não encontrado: $file (pode não existir no banco)"
+              continue
+            fi
+            
+            if [ ! -s "$file" ]; then
+              echo "⚠️ AVISO: Arquivo opcional vazio: $file"
+              continue
+            fi
+          done
+          
+          if [ $ERRORS -gt 0 ]; then
+            echo "❌ Validação falhou com $ERRORS erro(s)!"
+            exit 1
+          fi
+          
+          echo "✅ Validação concluída!"
+      
+      - name: 📦 Comprimir Backups Grandes
+        run: |
+          echo "📦 Comprimindo backups grandes (>10MB)..."
+          
+          find backups -name "*.sql" -size +10M -exec gzip -v {} \;
+          
+          echo "✅ Compressão concluída!"
+      
+      # ============================================
+      # VALIDAÇÃO DE INTEGRIDADE
+      # ============================================
+      
+      - name: 🔐 Gerar Checksums
+        run: |
+          echo "🔐 Gerando checksums dos backups..."
+          
+          # Gerar checksums de todos os arquivos importantes
+          find backups -type f \( -name "*.sql" -o -name "*.sql.gz" -o -name "*.json" \) \
+            -exec sha256sum {} \; \
+            > backups/checksums_${{ steps.timestamp.outputs.date }}.txt 2>/dev/null
+          
+          # Contar arquivos com checksum
+          CHECKSUM_COUNT=$(wc -l < backups/checksums_${{ steps.timestamp.outputs.date }}.txt 2>/dev/null || echo "0")
+          
+          echo "✅ Checksums gerados! ($CHECKSUM_COUNT arquivos)"
+          echo "📄 Arquivo: backups/checksums_${{ steps.timestamp.outputs.date }}.txt"
+      
+      - name: 📝 Criar Guia de Restauração
+        run: |
+          echo "📝 Criando guia de restauração..."
+          
+          cat > backups/RESTAURACAO_IMPORTANTE.md << 'EOF'
+          # ⚠️ IMPORTANTE: Guia de Restauração Completa
+          
+          ## 🔄 O que pode ser restaurado automaticamente (95%)
+          
+          ✅ **Banco de Dados Completo:**
+          - Schema (estrutura, tabelas, índices, constraints, triggers, RLS)
+          - Dados (todos os registros)
+          - Views e Materialized Views
+          - Sequences (com estado atual)
+          - Extensions
+          - Custom Types (ENUMs, etc.)
+          - Database Functions
+          - Cron Jobs
+          - Roles (permissões)
+          
+          ✅ **Edge Functions:**
+          - Código completo das functions
+          
+          ## ⚠️ O que precisa de intervenção manual (5%)
+          
+          ### 1. 🔒 Vault Secrets
+          **Status:** Apenas metadados salvos (nomes, descrições)
+          **Valores:** ❌ NÃO são salvos (por segurança)
+          
+          **Arquivo:** `backups/vault/vault_YYYYMMDD.sql`
+          **Ação:** Preencher `<VALOR>` manualmente para cada secret
+          
+          ### 2. 🔐 Edge Functions Secrets
+          **Status:** Apenas nomes salvos
+          **Valores:** ❌ NÃO são salvos (API não permite)
+          
+          **Arquivo:** `backups/secrets/.env.example`
+          **Ação:** Preencher `<VALOR>` manualmente e configurar via Dashboard/API
+          
+          ### 3. 👥 Auth Users
+          **Status:** Metadados salvos (email, UUID, etc.)
+          **Senhas:** ❌ NÃO são salvas (por segurança)
+          
+          **Arquivo:** `backups/auth/users_YYYYMMDD.json`
+          **Ação:** Usuários precisarão redefinir senhas
+          
+          ## 📋 Checklist de Restauração
+          
+          ### Automático (Execute na ordem):
+          1. ✅ `backups/roles/roles_YYYYMMDD.sql`
+          2. ✅ `backups/extensions/extensions_YYYYMMDD.sql`
+          3. ✅ `backups/types/custom_types_YYYYMMDD.sql`
+          4. ✅ `backups/schema/_full/full_schema_YYYYMMDD.sql`
+          5. ✅ `backups/views/views_YYYYMMDD.sql`
+          6. ✅ `backups/sequences/sequences_YYYYMMDD.sql`
+          7. ✅ `backups/functions_db/database_functions_YYYYMMDD.sql`
+          8. ✅ `backups/data/data_YYYYMMDD.sql`
+          9. ✅ `backups/crons/crons_YYYYMMDD.sql`
+          
+          ### Manual (Após restaurar banco):
+          10. ⚠️ Vault Secrets - Preencher valores em `backups/vault/vault_YYYYMMDD.sql`
+          11. ⚠️ Edge Functions Secrets - Configurar via Dashboard/API
+          12. ⚠️ Auth Users - Redefinir senhas ou criar novos
+          
+          ## 💡 Recomendação
+          
+          **Opção 1: Arquivo Criptografado no GitHub (Recomendado)**
+          - Crie um arquivo `secrets_encrypted.asc` criptografado com GPG
+          - Commite no repositório (é seguro, está criptografado)
+          - Configure `GPG_PRIVATE_KEY` como secret no GitHub
+          - O workflow descriptografa automaticamente!
+          - 📚 Veja: `GUIA_SECRETS_CRIPTOGRAFADOS.md`
+          
+          **Opção 2: Gerenciador de Secrets**
+          - 1Password, LastPass, Bitwarden
+          - AWS Secrets Manager / HashiCorp Vault
+          
+          **NUNCA** commite valores de secrets descriptografados no Git!
+          
+          ## 📚 Documentação Completa
+          
+          - `GUIA_RESTAURACAO_COMPLETA.md` - Instruções detalhadas
+          - `GUIA_SECRETS_CRIPTOGRAFADOS.md` - Como criar arquivo criptografado
+          
+          EOF
+          
+          echo "✅ Guia de restauração criado!"
+      
+      # ============================================
+      # LIMPEZA E FINALIZAÇÃO
+      # ============================================
+      
+      - name: 🧹 Limpar backups antigos
+        run: |
+          echo "🗑️ Removendo backups com mais de $RETENTION_DAYS dias..."
+          find backups -name "*.sql" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
+          find backups -name "*.sql.gz" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
+          find backups -name "*.json" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
+          echo "✅ Limpeza concluída!"
+      
+      - name: 🧹 Limpar Arquivos Temporários
+        if: always()
+        run: |
+          rm -f /tmp/*.json /tmp/func_*.json 2>/dev/null || true
+      
+      - name: 📊 Resumo do Backup
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║              📊 RESUMO DO BACKUP                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo ""
+          echo "👥 Roles:"
+          ls -lh backups/roles/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "🗄️ Schema:"
+          echo "  Completo:"
+          ls -lh backups/schema/_full/*.sql* 2>/dev/null | tail -1 || echo "    -"
+          echo "  Por tabela:"
+          find backups/schema/tables -type d -mindepth 2 -maxdepth 2 2>/dev/null | wc -l | xargs -I {} echo "    {} tabelas"
+          echo ""
+          echo "👁️ Views:"
+          ls -lh backups/views/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "🔢 Sequences:"
+          ls -lh backups/sequences/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "🔌 Extensions:"
+          ls -lh backups/extensions/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "🏷️ Custom Types:"
+          ls -lh backups/types/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "⚙️ Database Functions:"
+          ls -lh backups/functions_db/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "👥 Auth Users:"
+          ls -lh backups/auth/*.json 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "📜 Migrations:"
+          find backups/migrations -name "*.sql" 2>/dev/null | wc -l | xargs -I {} echo "  {} migrations"
+          echo ""
+          echo "⚙️ Database Config:"
+          ls -lh backups/config/*.json 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "💾 Data:"
+          ls -lh backups/data/*.sql* 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "⏰ Crons:"
+          ls -lh backups/crons/*.sql 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "🔐 Secrets:"
+          ls -lh backups/secrets/*.json 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "🔒 Vault:"
+          ls -lh backups/vault/*.json 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "⚡ Functions:"
+          find backups/functions -name "index.ts" 2>/dev/null | wc -l | xargs -I {} echo "  {} funções"
+          echo ""
+          echo "🔐 Checksums:"
+          ls -lh backups/checksums_*.txt 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "⏱️ Métricas:"
+          ls -lh backups/metrics_*.txt 2>/dev/null | tail -1 || echo "  -"
+          echo ""
+          echo "💾 Total:"
+          du -sh backups/ 2>/dev/null
+          echo ""
+          echo "╚══════════════════════════════════════════════════════════════╝"
+      
+      - name: ⏱️ Registrar Métricas de Tempo
+        if: always()
+        run: |
+          echo "⏱️ Registrando métricas de execução..."
+          
+          # Criar arquivo de métricas
+          cat > backups/metrics_${{ steps.timestamp.outputs.date }}.txt << EOF
+          # Métricas de Backup
+          Data: ${{ steps.timestamp.outputs.iso }}
+          Workflow: ${{ github.workflow }}
+          Run ID: ${{ github.run_id }}
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          
+          ## Tempo de Execução
+          Início: ${{ github.event.head_commit.timestamp || 'N/A' }}
+          Duração: Ver logs do GitHub Actions
+          
+          ## Status
+          Status: ${{ job.status }}
+          EOF
+          
+          # Adicionar tamanho dos backups
+          echo "" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          echo "## Tamanho dos Backups" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          du -sh backups/* 2>/dev/null | sed 's/^/  /' >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt || true
+          
+          # Contar arquivos
+          echo "" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          echo "## Estatísticas" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          echo "Total de arquivos SQL: $(find backups -name '*.sql' -type f 2>/dev/null | wc -l)" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          echo "Total de arquivos JSON: $(find backups -name '*.json' -type f 2>/dev/null | wc -l)" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          echo "Total de arquivos comprimidos: $(find backups -name '*.sql.gz' -type f 2>/dev/null | wc -l)" >> backups/metrics_${{ steps.timestamp.outputs.date }}.txt
+          
+          echo "✅ Métricas registradas!"
+      
+      - name: 📤 Commit e Push
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: |
+            🗄️ Backup - ${{ steps.timestamp.outputs.date }}
+            
+            📦 Conteúdo:
+            - 👥 Roles ✅
+            - 🗄️ Schema (por tabela) ✅
+            - 👁️ Views ✅
+            - 🔢 Sequences ✅
+            - 🔌 Extensions ✅
+            - 🏷️ Custom Types ✅
+            - ⚙️ Database Functions ✅
+            - 💾 Data ✅
+            - ⏰ Crons ✅
+            - 🔐 Secrets ✅
+            - 🔒 Vault ✅
+            - ⚡ Edge Functions ✅
+            - 🔐 Checksums ✅
+            - 👥 Auth Users ✅
+            - 📜 Migrations ✅
+            - ⚙️ Database Config ✅
+            - ⏱️ Métricas ✅
+          file_pattern: 'backups/**/*.{sql,sql.gz,json,md,txt}'
+      
+      - name: ✅ Concluído
+        run: |
+          echo "🎉 BACKUP CONCLUÍDO!"
+          echo "📅 ${{ steps.timestamp.outputs.iso }}"
+      
+      - name: 📧 Notificar Sucesso
+        if: success()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Tentar ler métricas se existir
+            let metricsInfo = '';
+            try {
+              const metricsPath = `backups/metrics_${{ steps.timestamp.outputs.date }}.txt`;
+              if (fs.existsSync(metricsPath)) {
+                const metrics = fs.readFileSync(metricsPath, 'utf8');
+                metricsInfo = '\n\n## Métricas\n```\n' + metrics + '\n```';
+              }
+            } catch (e) {
+              // Ignorar erro
+            }
+            
+            // Calcular tamanho total
+            let totalSize = 'N/A';
+            try {
+              const { execSync } = require('child_process');
+              totalSize = execSync('du -sh backups/ 2>/dev/null | cut -f1', { encoding: 'utf8' }).trim();
+            } catch (e) {
+              // Ignorar erro
+            }
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `✅ Backup Concluído - ${{ steps.timestamp.outputs.date }}`,
+              body: `Backup automático concluído com sucesso em ${{ steps.timestamp.outputs.iso }}.\n\n` +
+                    `**Tamanho total:** ${totalSize}\n\n` +
+                    `**Conteúdo:**\n` +
+                    `- 👥 Roles ✅\n` +
+                    `- 🗄️ Schema (por tabela) ✅\n` +
+                    `- 👁️ Views ✅\n` +
+                    `- 🔢 Sequences ✅\n` +
+                    `- 🔌 Extensions ✅\n` +
+                    `- 🏷️ Custom Types ✅\n` +
+                    `- ⚙️ Database Functions ✅\n` +
+                    `- 💾 Data ✅\n` +
+                    `- ⏰ Crons ✅\n` +
+                    `- 🔐 Secrets ✅\n` +
+                    `- 🔒 Vault ✅\n` +
+                    `- ⚡ Edge Functions ✅\n` +
+                    `- 🔐 Checksums ✅\n` +
+                    `- 👥 Auth Users ✅\n` +
+                    `- 📜 Migrations ✅\n` +
+                    `- ⚙️ Database Config ✅\n\n` +
+                    `Verifique os arquivos em \`backups/\`\n\n` +
+                    `Workflow: ${context.workflow}\n` +
+                    `Run: ${context.runId}${metricsInfo}`
+            });
+      
+      - name: 📧 Notificar Falha
+        if: failure()
+        uses: actions/github-script@v6
+        continue-on-error: true
+        with:
+          script: |
+            try {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `❌ Backup Falhou - ${{ steps.timestamp.outputs.date }}`,
+                body: `O backup automático falhou em ${{ steps.timestamp.outputs.iso }}.\n\nVerifique os logs da execução para mais detalhes.\n\nWorkflow: ${context.workflow}\nRun: ${context.runId}\n\n[Ver logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+              });
+              console.log(`✅ Issue criada: #${issue.data.number}`);
+            } catch (error) {
+              console.log(`⚠️ Não foi possível criar issue: ${error.message}`);
+              console.log(`⚠️ Verifique se o workflow tem permissão 'issues: write'`);
+              console.log(`⚠️ A falha do backup ainda será registrada nos logs do workflow`);
+              // Não falhar o step se não conseguir criar issue
+            }

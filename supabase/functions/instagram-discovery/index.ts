@@ -376,12 +376,13 @@ async function searchSerperWithPagination(
   const allOrganic: SerperResult[] = [];
   const pagesNeeded = Math.ceil(targetResults / RESULTS_PER_PAGE);
   const maxPages = Math.min(pagesNeeded, MAX_PAGES_PER_QUERY);
-  let lastPage = startPage - 1;
+  let lastPage = Math.max(startPage - 1, 0);
   let isExhausted = false;
   let consecutiveEmptyPages = 0;
   const EMPTY_PAGES_TO_EXHAUST = 2; // Só marca como esgotado após 2 páginas vazias consecutivas
 
   console.log(`   [Serper] Busca: "${searchTerm}" em "${location}" - ${maxPages} páginas (iniciando na ${startPage})`);
+  console.log(`   [Serper] Debug: lastPage inicial = ${lastPage}, startPage = ${startPage}`);
 
   for (let i = 0; i < maxPages; i++) {
     const page = startPage + i;
@@ -1188,17 +1189,11 @@ serve(async (req) => {
                     }
                   } else {
                     console.log(`⚠️ [V2] IA não retornou localizações`);
-                    await createLog(
-                      supabase, run_id, 3, 'AI Expansion', 'discovery', 'warning',
-                      `IA não retornou bairros para expansão`,
-                      { location_level: locationLevel }
-                    );
                   }
+
                 } else {
                   console.log(`⚠️ [V2] OPENROUTER_API_KEY não configurada`);
                 }
-              } else {
-                console.log(`⚠️ [V2] Configuração de IA não disponível`);
               }
             }
           }

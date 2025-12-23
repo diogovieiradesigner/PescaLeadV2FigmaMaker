@@ -1,4 +1,4 @@
-import { createBrowserRouter, useParams } from 'react-router';
+import { createBrowserRouter, Navigate, useParams } from 'react-router';
 import App from '../App';
 import { PublicBooking } from '../pages/PublicBooking';
 import { PublicChat } from '../pages/PublicChat';
@@ -6,16 +6,9 @@ import { PublicChat } from '../pages/PublicChat';
 // Wrapper para extrair o slug da URL de agendamento
 function BookingWrapper() {
   const { slug } = useParams<{ slug: string }>();
-
+  
   if (!slug) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Link inválido</h2>
-          <p className="text-gray-600">O link de agendamento está incompleto.</p>
-        </div>
-      </div>
-    );
+    return <Navigate to="/" replace />;
   }
 
   return <PublicBooking slug={slug} />;
@@ -26,14 +19,7 @@ function ChatWrapper() {
   const { slug } = useParams<{ slug: string }>();
 
   if (!slug) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
-        <div className="bg-gray-800/50 backdrop-blur-xl border border-white/10 rounded-2xl p-8 max-w-md w-full text-center">
-          <h2 className="text-xl font-semibold text-white mb-2">Link inválido</h2>
-          <p className="text-gray-400">O link do chat está incompleto.</p>
-        </div>
-      </div>
-    );
+    return <Navigate to="/" replace />;
   }
 
   return <PublicChat slug={slug} />;

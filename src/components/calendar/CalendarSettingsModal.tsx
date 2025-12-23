@@ -52,21 +52,6 @@ export function CalendarSettingsModal({
   const isDark = theme === 'dark';
   const queryClient = useQueryClient();
 
-  // DEBUG: Log quando componente renderiza
-  console.log('[CalendarSettingsModal] Render:', {
-    isOpen,
-    hasSettings: !!settings,
-    settingsId: settings?.id,
-    workspaceId,
-    settingsFromProps: settings ? {
-      availability: settings.availability,
-      default_durations: settings.default_durations,
-      buffer_between_events: settings.buffer_between_events,
-      min_booking_notice_hours: settings.min_booking_notice_hours,
-      max_booking_days_ahead: settings.max_booking_days_ahead,
-    } : null,
-  });
-
   // Form state - usar valores padrão se settings não existir
   const [availability, setAvailability] = useState<WeeklyAvailability>(
     settings?.availability || DEFAULT_AVAILABILITY
@@ -103,7 +88,7 @@ export function CalendarSettingsModal({
 
   // Gerar URL do link público
   const publicBookingUrl = workspaceSlug
-    ? `${window.location.origin}/#/agendar/${workspaceSlug}`
+    ? `${window.location.origin}/agendar/${workspaceSlug}`
     : null;
 
   // Copiar link para clipboard
@@ -120,20 +105,7 @@ export function CalendarSettingsModal({
 
   // Sincronizar estados quando settings mudar ou modal abrir
   useEffect(() => {
-    console.log('[CalendarSettingsModal] useEffect triggered:', {
-      isOpen,
-      hasSettings: !!settings,
-      settingsId: settings?.id,
-    });
-
     if (isOpen && settings) {
-      console.log('[CalendarSettingsModal] Syncing from settings:', {
-        availability: settings.availability,
-        default_durations: settings.default_durations,
-        buffer_between_events: settings.buffer_between_events,
-        min_booking_notice_hours: settings.min_booking_notice_hours,
-        max_booking_days_ahead: settings.max_booking_days_ahead,
-      });
       setAvailability(settings.availability || DEFAULT_AVAILABILITY);
       setDefaultDurations(settings.default_durations || DEFAULT_DURATIONS);
       setBufferBetweenEvents(settings.buffer_between_events ?? 15);
@@ -145,7 +117,6 @@ export function CalendarSettingsModal({
       setBookingPageTheme(settings.booking_page_theme ?? 'auto');
       setBookingPageLogo(settings.booking_page_logo ?? null);
     } else if (isOpen && !settings) {
-      console.log('[CalendarSettingsModal] No settings, using defaults');
       // Reset para valores padrão se não há settings
       setAvailability(DEFAULT_AVAILABILITY);
       setDefaultDurations(DEFAULT_DURATIONS);
@@ -176,11 +147,9 @@ export function CalendarSettingsModal({
         booking_page_theme: bookingPageTheme,
         booking_page_logo: bookingPageLogo,
       };
-      console.log('[CalendarSettingsModal] Saving data:', dataToSave);
       return calendarService.upsertCalendarSettings(dataToSave);
     },
     onSuccess: (savedData) => {
-      console.log('[CalendarSettingsModal] Save SUCCESS, returned data:', savedData);
       // Invalidar todas as queries de calendar-settings para garantir refresh
       queryClient.invalidateQueries({ queryKey: ['calendar-settings', workspaceId] });
       toast.success('Configurações salvas!');
@@ -193,7 +162,6 @@ export function CalendarSettingsModal({
   });
 
   const handleSave = () => {
-    console.log('[CalendarSettingsModal] handleSave called');
     saveMutation.mutate();
   };
 

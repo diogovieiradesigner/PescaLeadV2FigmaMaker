@@ -26,7 +26,10 @@ export interface CNPJFilters {
   tipo?: string[];
   natureza_juridica?: string[];
 
-  // Regime Tributário
+  // Regime Tributário (novo campo mutuamente exclusivo)
+  regime_tributario?: 'todos' | 'simples' | 'mei';
+  
+  // Regime Tributário (campos mantidos para compatibilidade)
   simples?: boolean;
   mei?: boolean;
 

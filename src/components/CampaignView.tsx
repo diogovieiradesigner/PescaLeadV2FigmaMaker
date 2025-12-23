@@ -302,6 +302,54 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
     };
   };
 
+  // ✅ NOVA: Função para verificar se é possível executar agora
+  const canExecuteNow = () => {
+    const now = new Date();
+    const [currentHour, currentMinute] = [now.getHours(), now.getMinutes()];
+    const currentMinutes = currentHour * 60 + currentMinute;
+    
+    const [endHour, endMin] = endTime.split(':').map(Number);
+    const endMinutes = endHour * 60 + endMin;
+    
+    // ✅ CORREÇÃO: Verificar se já passou do end_time
+    if (currentMinutes >= endMinutes) {
+      return {
+        canExecute: false,
+        reason: `Já passou do horário limite (${endTime})`,
+        timeRemaining: 0
+      };
+    }
+    
+    // ✅ CORREÇÃO: Calcular tempo restante até end_time usando horário atual REAL
+    const timeRemaining = endMinutes - currentMinutes;
+    
+    // Verificar se há tempo mínimo para pelo menos 1 lead (30 segundos)
+    if (timeRemaining < 1) {
+      return {
+        canExecute: false,
+        reason: 'Tempo insuficiente até o horário limite',
+        timeRemaining
+      };
+    }
+    
+    return {
+      canExecute: true,
+      reason: '',
+      timeRemaining
+    };
+  };
+
+  // ✅ NOVA: Função para formatar tempo restante
+  const formatTimeRemaining = (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${mins}min`;
+    }
+    return `${mins}min`;
+  };
+
   // Função para carregar colunas quando funil é selecionado
   const loadFunnelColumns = async (selectedFunnelId: string) => {
     if (!selectedFunnelId) {
@@ -751,6 +799,9 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
     loadCampaignRuns();
   };
 
+  // ✅ NOVA: Verificar validação antes de permitir executar
+  const validInterval = calculateInterval().isValid;
+
   // Se houver um runId selecionado, exibir o dashboard de detalhes
   if (selectedRunId) {
     return (
@@ -788,23 +839,40 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
         {/* Right Section */}
         <div className="flex items-center gap-3">
           {/* Execute Now Button */}
-          <button
-            onClick={executeNow}
-            disabled={executing}
-            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {executing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Executando...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                <span>Executar Agora</span>
-              </>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={executeNow}
+              disabled={executing || !canExecuteNow().canExecute}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {executing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Executando...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  <span>Executar Agora</span>
+                </>
+              )}
+            </button>
+            
+            {/* ✅ NOVA: Nota informativa sobre restrição de horário */}
+            {!canExecuteNow().canExecute && canExecuteNow().reason && (
+              <div className="flex items-center gap-1 text-xs text-red-400">
+                <AlertCircle className="w-3 h-3" />
+                <span>{canExecuteNow().reason}</span>
+              </div>
             )}
-          </button>
+            
+            {canExecuteNow().canExecute && canExecuteNow().timeRemaining > 0 && (
+              <div className="flex items-center gap-1 text-xs text-white/60">
+                <Clock className="w-3 h-3" />
+                <span>Tempo disponível: {formatTimeRemaining(canExecuteNow().timeRemaining)}</span>
+              </div>
+            )}
+          </div>
 
           {/* Theme Toggle */}
           <button 
@@ -1390,7 +1458,8 @@ NUNCA:
                                     ? 'bg-yellow-500/20 text-yellow-400'
                                     : 'bg-gray-500/20 text-gray-400'
                               }>
-                                ✓ {responseRate}% respostas
+                                ✓ {responseRate}%
+                                respostas
                               </Badge>
                             </td>
 
@@ -1441,33 +1510,33 @@ NUNCA:
                   isDark ? 'border-white/[0.08]' : 'border-border-light'
                 }`}>
                   <p className={`text-sm ${
-                    isDark ? 'text-white/50' : 'text-text-secondary-light'
-                  }`}>
+                  isDark ? 'text-white/50' : 'text-text-secondary-light'
+                }`}>
                     Mostrando <span className="font-medium">{startIndex + 1} - {Math.min(endIndex, totalRuns)}</span> de <span className="font-medium">{totalRuns}</span>
                   </p>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
+                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                         currentPage === 1
-                          ? isDark ? 'bg-white/[0.02] text-white/30 cursor-not-allowed' : 'bg-light-elevated text-text-secondary-light cursor-not-allowed'
+                          ? isDark ? 'bg-white/[0.02] text-white/30 cursor-not-allowed' : 'bg-light-elevated hover:bg-light-elevated-hover text-text-primary-light'
                           : 'bg-[#0169D9] hover:bg-[#0159c9] text-white'
                       }`}
                     >
                       Anterior
                     </button>
                     <span className={`px-3 text-sm ${
-                      isDark ? 'text-white/70' : 'text-text-primary-light'
-                    }`}>
+                  isDark ? 'text-white/70' : 'text-text-primary-light'
+                }`}>
                       Página {currentPage} de {totalPages}
                     </span>
                     <button
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className={`px-3 py-1.5 text-sm rounded-lg transition-all ${
+                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                         currentPage === totalPages
-                          ? isDark ? 'bg-white/[0.02] text-white/30 cursor-not-allowed' : 'bg-light-elevated text-text-secondary-light cursor-not-allowed'
+                          ? isDark ? 'bg-white/[0.02] text-white/30 cursor-not-allowed' : 'bg-light-elevated hover:bg-light-elevated-hover text-text-primary-light'
                           : 'bg-[#0169D9] hover:bg-[#0159c9] text-white'
                       }`}
                     >

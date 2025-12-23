@@ -22,7 +22,7 @@ export const TranscriptionDropdown: React.FC<TranscriptionDropdownProps> = ({
   // Estados de loading/erro
   if (message.transcriptionStatus === 'pending' || message.transcriptionStatus === 'processing') {
     return (
-      <div className={`flex items-center gap-1.5 text-[10px] mt-2 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+      <div className={`flex items-center gap-1.5 text-[10px] mt-2 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
         <div className="animate-pulse">⏳</div>
         <span>Transcrevendo...</span>
       </div>
@@ -78,8 +78,8 @@ export const TranscriptionDropdown: React.FC<TranscriptionDropdownProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-1.5 text-[10px] ${
           isDark 
-            ? 'text-gray-500 hover:text-gray-400' 
-            : 'text-gray-600 hover:text-gray-700'
+            ? 'text-blue-400 hover:text-blue-300' 
+            : 'text-blue-600 hover:text-blue-700'
         } transition-colors`}
       >
         {getIcon()}

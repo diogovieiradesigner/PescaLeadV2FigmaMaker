@@ -502,6 +502,12 @@ function validateFilters(filters: CNPJFilters): string[] {
     }
   }
 
+  // 7. Validar que não é possível ter ambos MEI e Simples selecionados (agora são mutuamente exclusivos)
+  // Esta validação é mantida para compatibilidade com filtros antigos
+  if (filters.mei && filters.simples) {
+    errors.push('Não é possível selecionar "É MEI" e "Optante do Simples Nacional" simultaneamente. Escolha apenas uma opção.');
+  }
+
   return errors;
 }
 
@@ -687,58 +693,73 @@ export function CNPJFiltersForm({
           Filtros Adicionais
         </h4>
 
-        <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={filters.simples || false}
-              onChange={(e) => onFilterChange('simples', e.target.checked || undefined)}
+        <div className="grid grid-cols-1 gap-4">
+          {/* Select para Regime Tributário - Exclusivo */}
+          <div>
+            <label className={`block mb-2 text-sm ${isDark ? 'text-white/70' : 'text-text-secondary-light'}`}>
+              Regime Tributário
+            </label>
+            <select
+              value={filters.regime_tributario || 'todos'}
+              onChange={(e) => {
+                const value = e.target.value as 'todos' | 'simples' | 'mei';
+                // Atualizar o novo campo regime_tributario
+                onFilterChange('regime_tributario', value);
+                
+                // Manter compatibilidade com os campos antigos
+                // Resetar ambos os filtros primeiro
+                onFilterChange('simples', undefined);
+                onFilterChange('mei', undefined);
+                
+                // Aplicar o filtro selecionado nos campos antigos para compatibilidade
+                if (value === 'simples') {
+                  onFilterChange('simples', true);
+                } else if (value === 'mei') {
+                  onFilterChange('mei', true);
+                }
+                // 'todos' não aplica nenhum filtro
+              }}
               disabled={loading}
-              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-            />
-            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-              Optante do Simples Nacional
-            </span>
-          </label>
+              className={`w-full px-4 py-2 border-b transition-all ${
+                isDark
+                  ? 'bg-black border-white/[0.2] text-white focus:bg-black focus:border-[#0169D9]'
+                  : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
+              } focus:outline-none disabled:opacity-50`}
+            >
+              <option value="todos">Todos</option>
+              <option value="simples">Optante do Simples Nacional</option>
+              <option value="mei">É MEI</option>
+            </select>
+          </div>
 
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={filters.mei || false}
-              onChange={(e) => onFilterChange('mei', e.target.checked || undefined)}
-              disabled={loading}
-              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-            />
-            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-              É MEI
-            </span>
-          </label>
+          {/* Checkboxes para outros filtros */}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filters.com_email || false}
+                onChange={(e) => onFilterChange('com_email', e.target.checked || undefined)}
+                disabled={loading}
+                className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
+              />
+              <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                Apenas com E-mail
+              </span>
+            </label>
 
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={filters.com_email || false}
-              onChange={(e) => onFilterChange('com_email', e.target.checked || undefined)}
-              disabled={loading}
-              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-            />
-            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-              Apenas com E-mail
-            </span>
-          </label>
-
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={filters.com_telefone || false}
-              onChange={(e) => onFilterChange('com_telefone', e.target.checked || undefined)}
-              disabled={loading}
-              className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
-            />
-            <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
-              Apenas com Telefone
-            </span>
-          </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filters.com_telefone || false}
+                onChange={(e) => onFilterChange('com_telefone', e.target.checked || undefined)}
+                disabled={loading}
+                className="w-4 h-4 rounded border-gray-300 text-[#0169D9] focus:ring-[#0169D9]"
+              />
+              <span className={`text-sm ${isDark ? 'text-white/70' : 'text-text-primary-light'}`}>
+                Apenas com Telefone
+              </span>
+            </label>
+          </div>
         </div>
       </div>
 

@@ -422,16 +422,59 @@ async function handleIncomingMessage(payload: any) {
     timestamp: messageTimestamp ? messageTimestamp / 1000 : Date.now() / 1000
   };
 
+  // ✅ NOVA FUNCIONALIDADE: Detecção automática de mensagens externas
+  // Se fromMe=true (mensagem do atendente via WhatsApp Web/celular) e conversa está em AI
+  if (fromMe === true) {
+    try {
+      console.log('🤖→👤 [UAZAPI-WEBHOOK] Mensagem do atendente detectada via WhatsApp Web/celular');
+      
+      // Buscar conversa ativa baseada no remoteJid
+      const { data: conversationData, error: conversationError } = await supabase
+        .from('conversations')
+        .select('id, attendant_type')
+        .eq('remote_jid', remoteJid)
+        .eq('instance_name', instanceName)
+        .single();
+      
+      if (conversationError) {
+        console.log('⚠️ [UAZAPI-WEBHOOK] Conversa não encontrada ou erro ao buscar:', conversationError.message);
+      } else if (conversationData) {
+        console.log(`📋 [UAZAPI-WEBHOOK] Conversa encontrada: ${conversationData.id}, tipo atual: ${conversationData.attendant_type}`);
+        
+        // Verificar se precisa alterar de AI para humano
+        if (conversationData.attendant_type === 'ai') {
+          console.log('🔄 [UAZAPI-WEBHOOK] Alterando tipo de atendimento de AI para humano...');
+          
+          const { error: updateError } = await supabase
+            .from('conversations')
+            .update({ attendant_type: 'human' })
+            .eq('id', conversationData.id);
+          
+          if (updateError) {
+            console.error('❌ [UAZAPI-WEBHOOK] Erro ao alterar tipo de atendimento:', updateError);
+          } else {
+            console.log('✅ [UAZAPI-WEBHOOK] Tipo de atendimento alterado para humano com sucesso');
+          }
+        } else {
+          console.log(`ℹ️ [UAZAPI-WEBHOOK] Conversa já está em modo ${conversationData.attendant_type}, não precisa alterar`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ [UAZAPI-WEBHOOK] Erro ao processar detecção de mensagem externa:', error);
+      // Não bloquear o processamento da mensagem por causa deste erro
+    }
+  }
+
   console.log('📤 [UAZAPI-WEBHOOK] Unified message created:');
   console.log(JSON.stringify(unifiedMsg, null, 2));
   console.log('📤 [UAZAPI-WEBHOOK] Calling processIncomingMessage...');
-  
+
   // Processar mensagem através do serviço de chat
   const result = await processIncomingMessage(unifiedMsg);
-  
+
   console.log('✅ [UAZAPI-WEBHOOK] Message processed with result:', JSON.stringify(result, null, 2));
   console.log('--- [UAZAPI-WEBHOOK] Message processing complete ---\n');
-  
+
   return result;
 }
 
@@ -455,27 +498,27 @@ async function processWebhookFromQueue(queueId: number, payload: any) {
   // Processar evento baseado no tipo
   if (eventType === 'messages' && payload.message) {
     const result = await handleIncomingMessage(payload);
-    
+
     console.log('✅ [UAZAPI-WEBHOOK] Event processed successfully');
     console.log('==============================================\n');
-    
+
     // Marcar como processed na fila
     await supabase.rpc('complete_webhook_queue_item', {
       p_queue_id: queueId,
       p_result: result
     });
-    
+
     return result;
   } else {
     console.log(`⚠️ [UAZAPI-WEBHOOK] Unhandled event type: ${eventType}`);
     console.log('==============================================\n');
-    
+
     // Marcar como ignored na fila
     await supabase.rpc('ignore_webhook_queue_item', {
       p_queue_id: queueId,
       p_reason: 'Not a message event'
     });
-    
+
     return { status: 'ignored', reason: 'Not a message event' };
   }
 }

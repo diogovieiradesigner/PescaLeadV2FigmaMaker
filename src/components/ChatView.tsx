@@ -441,6 +441,7 @@ export function ChatView({
             onDeleteConversation={() => selectedConversation && handleDeleteConversation(selectedConversation.id)}
             onNavigateToPipeline={onNavigateToPipeline}
             onDeleteMessage={deleteMessage}
+            onAttendantTypeChange={handleAttendantTypeChange}
           />
           <ContactInfo 
             conversation={selectedConversation} 

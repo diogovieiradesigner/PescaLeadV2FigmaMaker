@@ -351,6 +351,7 @@ export function useCNPJExtraction(): UseCNPJExtractionResult {
   const hasNicheFilter = state.filters.cnae?.length || state.filters.cnae_divisao?.length;
   const hasOtherFilter = state.filters.porte?.length || state.filters.situacao?.length || state.filters.tipo?.length ||
                          state.filters.simples !== undefined || state.filters.mei !== undefined ||
+                         state.filters.regime_tributario && state.filters.regime_tributario !== 'todos' ||
                          state.filters.com_email || state.filters.com_telefone;
 
   if (!hasLocationFilter && !hasNicheFilter && !hasOtherFilter) {

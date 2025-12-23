@@ -41,7 +41,7 @@ export default defineConfig({
   // Shared settings para todos os projetos
   use: {
     // Base URL
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3001',
     
     // Screenshot on failure
     screenshot: 'only-on-failure',
@@ -78,7 +78,7 @@ export default defineConfig({
   // Web server para rodar antes dos testes
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:3000',
+    url: 'http://localhost:3001',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

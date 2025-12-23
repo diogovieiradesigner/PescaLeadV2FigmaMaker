@@ -75,17 +75,17 @@ export function InviteMemberModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div 
+      <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={handleClose}
       />
 
       {/* Modal */}
-      <div className={`relative w-full max-w-md rounded-xl shadow-2xl overflow-hidden ${
+      <div className={`relative w-full max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl max-h-[95vh] rounded-xl shadow-2xl overflow-hidden flex flex-col ${
         isDark ? 'bg-[#0A0A0A]' : 'bg-white'
       }`}>
         {/* Header */}
-        <div className={`px-6 py-4 border-b flex items-center justify-between ${
+        <div className={`px-4 sm:px-6 py-4 border-b flex items-center justify-between flex-shrink-0 ${
           isDark ? 'border-white/[0.08] bg-[#0A0A0A]' : 'border-border-light bg-white'
         }`}>
           <h2 className={`text-lg font-medium flex items-center gap-2 ${
@@ -107,7 +107,8 @@ export function InviteMemberModal({
         </div>
 
         {/* Content */}
-        <form onSubmit={handleSubmit} className="px-6 py-6">
+        <div className="flex-1 overflow-y-auto">
+          <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-6">
           <div className="space-y-4">
             {error && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-2">
@@ -195,6 +196,7 @@ export function InviteMemberModal({
             </div>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

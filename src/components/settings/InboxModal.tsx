@@ -82,7 +82,7 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div
-        className={`w-full max-w-md rounded-2xl shadow-xl overflow-hidden ${
+        className={`w-full max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl max-h-[90vh] rounded-2xl shadow-xl overflow-hidden flex flex-col ${
           isDark ? 'bg-elevated' : 'bg-light-elevated'
         }`}
       >
@@ -105,8 +105,9 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className={`px-6 py-6 space-y-4 ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
+        {/* Content */}
+        <div className={`overflow-y-auto flex-1 ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
+          <form onSubmit={handleSubmit} className="px-6 py-6 space-y-4">
           {/* Nome */}
           <div>
             <label
@@ -308,6 +309,7 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

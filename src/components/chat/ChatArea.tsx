@@ -6,6 +6,7 @@ import { ChatActionsMenu } from './ChatActionsMenu';
 import { AudioPlayer } from './AudioPlayer';
 import { MessageBubble } from './MessageBubble';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useDebounce } from '../../hooks/useDebounce'; // ✅ Importar debounce hook
 
 // ============================================
 // 📅 Componente de Separador de Data (estilo WhatsApp)
@@ -69,6 +70,7 @@ interface ChatAreaProps {
   onDeleteConversation: () => void;
   onNavigateToPipeline?: (leadId: string) => void;
   onDeleteMessage?: (messageId: string) => void;
+  onAttendantTypeChange?: (conversationId: string, attendantType: 'human' | 'ai') => void; // ✅ Nova prop
 }
 
 // ✅ Interface para arquivo selecionado (qualquer tipo)
@@ -80,7 +82,7 @@ interface SelectedFile {
   mediaType: 'image' | 'video' | 'document'; // Tipo de mídia para API
 }
 
-export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved, onStatusChange, onClearHistory, onDeleteConversation, onNavigateToPipeline, onDeleteMessage }: ChatAreaProps) {
+export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved, onStatusChange, onClearHistory, onDeleteConversation, onNavigateToPipeline, onDeleteMessage, onAttendantTypeChange }: ChatAreaProps) {
   const [messageText, setMessageText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -90,6 +92,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
   const [isSending, setIsSending] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<string | null>(null); // ✅ Estado para imagem expandida
+  const [lastAttendantTypeChange, setLastAttendantTypeChange] = useState<number>(0); // ✅ Debounce para mudança de tipo
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -188,7 +191,72 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     try {
       setIsSending(true);
 
-      if (imagePreview) {
+      // ✅ NOVA FUNCIONALIDADE: Mudança automática para humano
+      const now = Date.now();
+      const DEBOUNCE_TIME = 2000; // 2 segundos de debounce
+      
+      // Verificar se:
+      // 1. A conversa está com IA
+      // 2. Não mudou tipo recentemente (debounce)
+      // 3. Há conteúdo real para enviar (não apenas espaços)
+      const hasContent = (imagePreview || selectedFile || messageText.trim());
+      
+      if (conversation?.attendantType === 'ai' &&
+          hasContent &&
+          (now - lastAttendantTypeChange) > DEBOUNCE_TIME) {
+        
+        console.log('[ChatArea] 🤖→👤 Humano enviou mensagem, alterando para atendimento humano');
+        
+        try {
+          await onAttendantTypeChange?.(conversation.id, 'human');
+          setLastAttendantTypeChange(now);
+          console.log('[ChatArea] ✅ Tipo de atendimento alterado para humano');
+        } catch (error) {
+          console.error('[ChatArea] ❌ Erro ao alterar tipo de atendimento:', error);
+          // Continuar mesmo com erro - a mensagem ainda deve ser enviada
+        }
+      }
+
+      // ✅ DETECTAR IMAGEM + TEXTO SIMULTÂNEO
+      const hasImage = imagePreview || selectedFile?.mediaType === 'image';
+      const hasText = messageText.trim();
+
+      // Se há imagem + texto, usar sendMedia com caption
+      if (hasImage && hasText) {
+        console.log('[ChatArea] 📷+📝 Detectado imagem + texto simultâneo, enviando com caption');
+        
+        if (imagePreview) {
+          // ✅ Limpar preview imediatamente (otimistic UI)
+          const imageToSend = imagePreview;
+          setImagePreview(null);
+          
+          await onSendMessage({
+            contentType: 'image',
+            imageUrl: imageToSend,
+            text: hasText, // Usar texto como caption
+            read: false,
+          });
+        } else if (selectedFile?.mediaType === 'image') {
+          // ✅ Enviar imagem do selectedFile com caption
+          const fileToSend = selectedFile;
+          setSelectedFile(null);
+          
+          console.log(`[ChatArea] Sending image with caption: ${fileToSend.fileName}`);
+          
+          await onSendMessage({
+            contentType: 'image',
+            mediaUrl: fileToSend.dataUrl,
+            fileName: fileToSend.fileName,
+            fileSize: fileToSend.fileSize,
+            mimeType: fileToSend.mimeType,
+            text: hasText, // Usar texto como caption
+            read: false,
+          });
+        }
+        
+        setMessageText(''); // Limpar texto após envio
+      } else if (imagePreview) {
+        // ✅ Apenas imagem - comportamento atual
         // ✅ Limpar preview imediatamente (otimistic UI)
         const imageToSend = imagePreview;
         setImagePreview(null);

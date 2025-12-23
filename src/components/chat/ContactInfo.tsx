@@ -236,13 +236,13 @@ function renderFieldValueCompact(fieldName: string, fieldValue: string, isDark: 
   return fieldValue || '-';
 }
 
-export function ContactInfo({ 
-  conversation, 
-  theme, 
+export function ContactInfo({
+  conversation,
+  theme,
   agents = [],
-  onStatusChange, 
-  onAssigneeChange, 
-  onTagsChange, 
+  onStatusChange,
+  onAssigneeChange,
+  onTagsChange,
   onAttendantTypeChange, // ✅ Novo callback
   onNavigateToPipeline,
   onNavigateToSettings,
@@ -254,6 +254,7 @@ export function ContactInfo({
   const [width, setWidth] = useState(400); // Largura inicial aumentada (era 320px)
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [autoSwitchedToHuman, setAutoSwitchedToHuman] = useState(false); // ✅ Feedback visual
   
   // ✅ Estado para armazenar dados reais do lead
   const [leadData, setLeadData] = useState<CRMLead | null>(null);
@@ -277,9 +278,23 @@ export function ContactInfo({
   // ✅ Sincronizar estado local com a conversa quando ela mudar de ID ou attendantType
   useEffect(() => {
     if (conversation) {
-      setIsHumanAttendant(conversation.attendantType !== 'ai'); // Default: human se não definido
+      const wasAI = !isHumanAttendant; // Estado anterior
+      const isNowHuman = conversation.attendantType !== 'ai'; // Estado atual
+      
+      // Detectar mudança automática: AI → Humano
+      if (wasAI && isNowHuman) {
+        console.log('[ContactInfo] 🤝 Mudança automática detectada: AI → Humano');
+        setAutoSwitchedToHuman(true);
+        
+        // Remover feedback após 3 segundos
+        setTimeout(() => {
+          setAutoSwitchedToHuman(false);
+        }, 3000);
+      }
+      
+      setIsHumanAttendant(isNowHuman); // Default: human se não definido
     }
-  }, [conversation?.id, conversation?.attendantType]); // ✅ Dependências específicas
+  }, [conversation?.id, conversation?.attendantType, isHumanAttendant]); // ✅ Dependências específicas
 
   // ✅ Buscar dados do lead quando leadId mudar
   useEffect(() => {
@@ -486,7 +501,7 @@ export function ContactInfo({
         </div>
 
         {/* Tipo de Atendimento */}
-        <div>
+        <div className="relative">
           <label
             className={`block text-xs mb-2 ${
               isDark ? 'text-white/50' : 'text-text-secondary-light'
@@ -528,6 +543,16 @@ export function ContactInfo({
               I.A
             </button>
           </div>
+          
+          {/* ✅ Feedback visual para mudança automática */}
+          {autoSwitchedToHuman && (
+            <div className={`absolute -top-10 left-0 right-0 flex items-center justify-center z-10 ${
+              isDark ? 'bg-green-500/90' : 'bg-green-500'
+            } text-white px-3 py-1 rounded-lg text-xs font-medium shadow-lg animate-pulse`}>
+              <span className="mr-1">🤝</span>
+              Atendimento transferido para humano
+            </div>
+          )}
         </div>
 
         {/* Status de Atendimento */}

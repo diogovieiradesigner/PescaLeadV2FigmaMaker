@@ -421,8 +421,11 @@ Deno.serve(async (req) => {
     );
 
     // 7. Verificar e respeitar start_time e end_time (considerando timezone)
-    const timezone = config.timezone || 'America/Sao_Paulo';
+    const timezone = config.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
     const now = new Date(); // Date atual (UTC)
+    
+    // ✅ CORREÇÃO: Log para debug de timezone e validação
+    console.log(`[ExecuteNow] Using timezone: ${timezone}, config.timezone: ${config.timezone}, user_tz: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
     
     // ✅ CORREÇÃO: Comparar horários usando apenas HH:MM no mesmo timezone (mais simples e confiável)
     const formatter = new Intl.DateTimeFormat('en-US', {
@@ -443,6 +446,23 @@ Deno.serve(async (req) => {
       const [endHour, endMin] = config.end_time.split(':').map(Number);
       endTimeMinutes = endHour * 60 + (endMin || 0);
     }
+    
+    // ✅ CORREÇÃO: Adicionar log de validação de cálculo de tempo
+    // ✅ CORREÇÃO: Adicionar log de validação de cálculo de tempo
+    await log(supabase, run.id, 'DEBUG_TIMEZONE', 'info', 
+      `Validação de timezone: agora ${currentTimeStr} (${currentTimeMinutes}min), fim ${config.end_time} (${endTimeMinutes}min), timezone: ${timezone}`,
+      { 
+        timezone_validation: {
+          user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          config_timezone: config.timezone,
+          effective_timezone: timezone,
+          current_time_formatted: currentTimeStr,
+          current_minutes: currentTimeMinutes,
+          end_time: config.end_time,
+          end_minutes: endTimeMinutes
+        }
+      }
+    );
     
     // ✅ CORREÇÃO: Para execução MANUAL ("Executar Agora"), não bloquear por start_time
     // Apenas verificar end_time. O start_time será respeitado no agendamento das mensagens.
@@ -524,37 +544,50 @@ Deno.serve(async (req) => {
     );
 
     // 8. Gerar horários aleatórios respeitando start_time e end_time
-    // ✅ CORREÇÃO: Para "Executar Agora", usar intervalo PADRÃO de 3 minutos (180s)
-    // O intervalo personalizado (config.min_interval_seconds) só se aplica ao scheduler automático
-    const DEFAULT_MIN_INTERVAL = 180; // 3 minutos - padrão interno para todos os workspaces
-    const DEFAULT_MAX_INTERVAL = 300; // 5 minutos - variação para parecer natural
-
-    let minInterval = DEFAULT_MIN_INTERVAL;
-    let maxInterval = DEFAULT_MAX_INTERVAL;
-
+    // ✅ CORREÇÃO: Cálculo 100% dinâmico baseado na janela de tempo disponível
+    // Não usar valores hardcoded - calcular automaticamente baseado em:
+    // - Janela disponível: max(now, start_time) até end_time
+    // - Quantidade de leads
+    // - Distribuição inteligente na janela
+    
+    let minInterval: number;
+    let maxInterval: number;
+    
     // Se tiver end_time definido, calcular intervalo ótimo para caber todos os leads
-    if (endTimeToday && leads.length > 1) {
+    if (endTimeToday && leads.length > 0) {
+      // Usar intervalo mínimo de 30 segundos como segurança absoluta
+      const SAFETY_MIN_INTERVAL = 30; // 30 segundos - mínimo de segurança
       const optimalIntervals = calculateOptimalInterval(
         actualStartTime,
         endTimeToday,
         leads.length,
-        DEFAULT_MIN_INTERVAL
+        SAFETY_MIN_INTERVAL
       );
 
-      // Usar intervalo otimizado se for menor que o padrão (para caber todos)
-      if (optimalIntervals.maxInterval < DEFAULT_MAX_INTERVAL) {
-        minInterval = Math.max(optimalIntervals.minInterval, 30); // mínimo absoluto: 30 segundos
-        maxInterval = Math.max(optimalIntervals.maxInterval, 45); // mínimo absoluto: 45 segundos
+      minInterval = Math.max(optimalIntervals.minInterval, 30); // mínimo absoluto: 30 segundos
+      maxInterval = Math.max(optimalIntervals.maxInterval, 45); // mínimo absoluto: 45 segundos
 
-        await log(supabase, run.id, 'AGENDAMENTO', 'info',
-          `📊 Intervalo ajustado automaticamente para caber ${leads.length} leads: ${minInterval}s - ${maxInterval}s`,
-          {
-            default_interval: `${DEFAULT_MIN_INTERVAL}s - ${DEFAULT_MAX_INTERVAL}s`,
-            optimized_interval: `${minInterval}s - ${maxInterval}s`,
-            reason: 'Ajustado para caber todos os leads na janela de horário'
-          }
-        );
-      }
+      await log(supabase, run.id, 'AGENDAMENTO', 'info',
+        `📊 Intervalo calculado dinamicamente para ${leads.length} leads: ${minInterval}s - ${maxInterval}s (janela: ${availableMinutes} min)`,
+        {
+          calculated_interval: `${minInterval}s - ${maxInterval}s`,
+          window_minutes: availableMinutes,
+          leads_count: leads.length,
+          reason: 'Calculado dinamicamente baseado na janela de tempo disponível'
+        }
+      );
+    } else {
+      // Fallback para casos sem end_time - usar intervalo conservador
+      minInterval = 120; // 2 minutos
+      maxInterval = 180; // 3 minutos
+      
+      await log(supabase, run.id, 'AGENDAMENTO', 'info',
+        `📊 Usando intervalo conservador (sem end_time definido): ${minInterval}s - ${maxInterval}s`,
+        {
+          interval: `${minInterval}s - ${maxInterval}s`,
+          reason: 'Sem end_time definido - usando intervalo conservador'
+        }
+      );
     }
 
     const { schedules, fitsAll, scheduledCount } = generateRandomScheduleWithLimit(
@@ -598,7 +631,7 @@ Deno.serve(async (req) => {
         actual_start_time: actualStartTime.toISOString(),
         respects_start_time: !!startTimeToday,
         respects_end_time: !!endTimeToday,
-        using_default_interval: minInterval === DEFAULT_MIN_INTERVAL
+        using_default_interval: minInterval === 180
       }
     );
 

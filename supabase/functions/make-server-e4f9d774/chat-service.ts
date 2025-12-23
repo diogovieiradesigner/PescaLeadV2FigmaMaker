@@ -161,6 +161,31 @@ export const processIncomingMessage = async (msg: UnifiedMessage) => {
     console.log('✅ [CHAT-SERVICE] Processing complete!');
     console.log('==============================================\n');
 
+    // ✅ NOVA FUNCIONALIDADE: Detecção automática de mensagens externas
+    // Se fromMe=true (mensagem do atendente via WhatsApp Web/celular) e conversa está em AI
+    if (msg.fromMe === true && result.attendant_type === 'ai') {
+      try {
+        console.log('🤖→👤 [CHAT-SERVICE] Mensagem do atendente detectada via WhatsApp Web/celular');
+        console.log(`🔄 [CHAT-SERVICE] Alterando tipo de atendimento de AI para humano na conversa ${result.conversation_id}...`);
+        
+        const { error: updateError } = await supabase
+          .from('conversations')
+          .update({ attendant_type: 'human' })
+          .eq('id', result.conversation_id);
+        
+        if (updateError) {
+          console.error('❌ [CHAT-SERVICE] Erro ao alterar tipo de atendimento:', updateError);
+        } else {
+          console.log('✅ [CHAT-SERVICE] Tipo de atendimento alterado para humano com sucesso');
+        }
+      } catch (error) {
+        console.error('❌ [CHAT-SERVICE] Erro ao processar detecção de mensagem externa:', error);
+        // Não bloquear o processamento da mensagem por causa deste erro
+      }
+    } else if (msg.fromMe === true && result.attendant_type === 'human') {
+      console.log(`ℹ️ [CHAT-SERVICE] Conversa ${result.conversation_id} já está em modo humano, não precisa alterar`);
+    }
+
     return { 
       status: 'success', 
       conversationId: result.conversation_id,

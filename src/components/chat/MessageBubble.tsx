@@ -144,7 +144,6 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
         <button
           onClick={() => onDeleteMessage && onDeleteMessage(message.id)}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-red-500/10 mr-2 self-end mb-1"
-          title="Deletar mensagem (até 1 hora)"
         >
           <Trash2 className="w-3.5 h-3.5 text-red-500" />
         </button>
@@ -191,7 +190,7 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
               <div>
                 <div className={`${isTextExpanded ? 'max-h-[400px] overflow-y-auto' : 'max-h-none'} overflow-x-hidden scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent hover:scrollbar-thumb-white/30`}>
                   <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
-                    {linkifyText(displayText, message.type === 'sent')}
+                    {linkifyText(displayText || '', message.type === 'sent')}
                   </p>
                 </div>
                 {isLongMessage && (
@@ -220,6 +219,20 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
                   onClick={() => onExpandImage(message.imageUrl!)}
                   loading="lazy"
                 />
+                {/* ✅ Exibir caption (texto) junto com a imagem */}
+                {message.text && (
+                  <div className={`mt-2 px-1 ${
+                    message.type === 'sent'
+                      ? 'text-white/90'
+                      : isDark
+                      ? 'text-white/80'
+                      : 'text-text-primary-light'
+                  }`}>
+                    <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
+                      {linkifyText(message.text, message.type === 'sent')}
+                    </p>
+                  </div>
+                )}
                 {/* ✅ Dropdown de Transcrição para Imagem */}
                 <TranscriptionDropdown 
                   message={message} 
@@ -341,17 +354,17 @@ const MessageBubble = memo(({ message, isDark, onDeleteMessage, onExpandImage, s
             {(message.type === 'sent' || isDeleted) && !isDeleted && (
               <>
                 {message.status === 'sending' && (
-                  <Clock className="w-3 h-3 animate-pulse" title="Enviando..." />
+                  <Clock className="w-3 h-3 animate-pulse" />
                 )}
                 {message.status === 'error' && (
-                  <AlertCircle className="w-3 h-3 text-red-400" title="Erro ao enviar" />
+                  <AlertCircle className="w-3 h-3 text-red-400" />
                 )}
                 {(!message.status || message.status === 'sent') && (
                   <>
                     {message.read ? (
-                      <CheckCheck className="w-3 h-3" title="Lida" />
+                      <CheckCheck className="w-3 h-3" />
                     ) : (
-                      <Check className="w-3 h-3" title="Enviada" />
+                      <Check className="w-3 h-3" />
                     )}
                   </>
                 )}

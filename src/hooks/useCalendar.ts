@@ -33,6 +33,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   const [selectedEvent, setSelectedEvent] = useState<InternalEventWithRelations | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(initialAssigneeFilter || null);
+  const [selectedDateForModal, setSelectedDateForModal] = useState<Date>(initialDate || new Date());
 
   // Calcular range do mês atual
   const dateRange = useMemo(() => {
@@ -185,21 +186,44 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
 
   // Retomar evento cancelado
   const resumeEventMutation = useMutation({
-    mutationFn: (eventId: string) =>
+    mutationFn: ({ eventId }: { eventId: string; closeModal?: boolean }) =>
       calendarService.updateEvent(eventId, {
         event_status: 'tentative',
         cancelled_at: undefined,
         cancelled_reason: undefined,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
       toast.success('Evento retomado!');
-      setIsEventModalOpen(false);
-      setSelectedEvent(null);
+      if (variables.closeModal !== false) {
+        setIsEventModalOpen(false);
+        setSelectedEvent(null);
+      }
     },
     onError: (error: any) => {
       console.error('[useCalendar] Error resuming event:', error);
       toast.error('Erro ao retomar evento');
+    },
+  });
+
+  // Concluir evento
+  const completeEventMutation = useMutation({
+    mutationFn: ({ eventId }: { eventId: string; closeModal?: boolean }) =>
+      calendarService.updateEvent(eventId, {
+        event_status: 'completed',
+        completed_at: new Date().toISOString(),
+      }),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
+      toast.success('Evento concluído!');
+      if (variables.closeModal !== false) {
+        setIsEventModalOpen(false);
+        setSelectedEvent(null);
+      }
+    },
+    onError: (error: any) => {
+      console.error('[useCalendar] Error completing event:', error);
+      toast.error('Erro ao concluir evento');
     },
   });
 
@@ -273,11 +297,13 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   // Abrir modal para criar evento
   const openCreateEventModal = useCallback((date?: Date) => {
     setSelectedEvent(null);
+    const dateToUse = date || currentDate;
+    setSelectedDateForModal(dateToUse);
     if (date) {
       setCurrentDate(date);
     }
     setIsEventModalOpen(true);
-  }, []);
+  }, [currentDate]);
 
   // Abrir modal para editar evento
   const openEditEventModal = useCallback((event: InternalEventWithRelations) => {
@@ -331,9 +357,14 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   }, [cancelEventMutation]);
 
   // Retomar evento cancelado
-  const resumeEvent = useCallback(async (eventId: string) => {
-    await resumeEventMutation.mutateAsync(eventId);
+  const resumeEvent = useCallback(async (eventId: string, closeModal: boolean = true) => {
+    await resumeEventMutation.mutateAsync({ eventId, closeModal });
   }, [resumeEventMutation]);
+
+  // Concluir evento
+  const completeEvent = useCallback(async (eventId: string, closeModal: boolean = true) => {
+    await completeEventMutation.mutateAsync({ eventId, closeModal });
+  }, [completeEventMutation]);
 
   // Confirmar evento
   const confirmEvent = useCallback(async (eventId: string, method: 'manual' | 'whatsapp' | 'email' | 'ai' = 'manual') => {
@@ -412,6 +443,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   const isMutating = createEventMutation.isPending ||
                      updateEventMutation.isPending ||
                      cancelEventMutation.isPending ||
+                     completeEventMutation.isPending ||
                      deleteEventMutation.isPending;
 
   return {
@@ -420,6 +452,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
     selectedEvent,
     isEventModalOpen,
     assigneeFilter,
+    selectedDateForModal,
 
     // Data
     calendars,
@@ -462,6 +495,7 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
     updateEvent,
     cancelEvent,
     resumeEvent,
+    completeEvent,
     confirmEvent,
     deleteEvent,
     checkAvailability,

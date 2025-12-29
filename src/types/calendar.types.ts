@@ -6,9 +6,9 @@
 // ============================================
 // EVENT TYPES
 // ============================================
-export type EventType = 'meeting' | 'call' | 'demo' | 'reminder';
+export type EventType = 'meeting' | 'call' | 'demo' | 'reminder' | 'action' | 'task';
 
-export type EventStatus = 'confirmed' | 'tentative' | 'cancelled';
+export type EventStatus = 'confirmed' | 'tentative' | 'cancelled' | 'completed';
 
 export type ShowAs = 'busy' | 'free';
 
@@ -81,6 +81,7 @@ export interface InternalEvent {
   cancelled_at: string | null;
   cancelled_reason: string | null;
   reminder_sent_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -115,25 +116,26 @@ export interface InternalEventCreate {
 
 export interface InternalEventUpdate {
   title?: string;
-  description?: string;
+  description?: string | null;
   start_time?: string;
   end_time?: string;
   event_type?: EventType;
-  organizer_email?: string;
+  organizer_email?: string | null;
   attendees?: EventAttendee[];
-  location?: string;
+  location?: string | null;
   event_status?: EventStatus;
   show_as?: ShowAs;
   is_meeting?: boolean;
-  lead_id?: string;
-  conversation_id?: string;
-  inbox_id?: string;
-  assigned_to?: string;
-  confirmed_at?: string;
-  confirmed_via?: ConfirmationMethod;
-  cancelled_at?: string;
-  cancelled_reason?: string;
-  reminder_sent_at?: string;
+  lead_id?: string | null;
+  conversation_id?: string | null;
+  inbox_id?: string | null;
+  assigned_to?: string | null;
+  confirmed_at?: string | null;
+  confirmed_via?: ConfirmationMethod | null;
+  cancelled_at?: string | null;
+  cancelled_reason?: string | null;
+  reminder_sent_at?: string | null;
+  completed_at?: string | null;
 }
 
 // ============================================
@@ -186,6 +188,8 @@ export interface DefaultDurations {
   call: number;
   demo: number;
   reminder: number;
+  action: number;
+  task: number;
 }
 
 export interface CalendarSettings {
@@ -293,6 +297,18 @@ export const EVENT_TYPE_CONFIG: Record<EventType, {
     icon: 'Bell',
     color: '#f59e0b', // amber
     defaultDuration: 15
+  },
+  action: {
+    label: 'Ação',
+    icon: 'Zap',
+    color: '#ec4899', // pink
+    defaultDuration: 30
+  },
+  task: {
+    label: 'Tarefa',
+    icon: 'CheckSquare',
+    color: '#14b8a6', // teal
+    defaultDuration: 60
   }
 };
 
@@ -311,6 +327,10 @@ export const EVENT_STATUS_CONFIG: Record<EventStatus, {
   cancelled: {
     label: 'Cancelado',
     color: '#ef4444'
+  },
+  completed: {
+    label: 'Concluído',
+    color: '#3b82f6'
   }
 };
 

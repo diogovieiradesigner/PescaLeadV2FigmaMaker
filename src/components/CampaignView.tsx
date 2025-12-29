@@ -630,9 +630,10 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       console.log('🆔 [EXECUTE NOW] Run ID:', data.run_id);
 
       toast.success(`${data.leads_scheduled} leads agendados!`);
-      
-      // Recarregar lista de execuções
+
+      // Resetar para página 1 e recarregar lista de execuções
       console.log('🔄 [EXECUTE NOW] Recarregando lista de execuções...');
+      setCurrentPage(1);
       await loadCampaignRuns();
 
       // Abrir detalhes da execução recém-criada
@@ -1400,7 +1401,8 @@ NUNCA:
                               isDark ? 'text-white/70' : 'text-text-primary-light'
                             }`}>
                               <div className="font-medium">
-                                {format(new Date(run.run_date), 'dd/MM/yyyy', { locale: ptBR })}
+                                {/* Parse run_date como string local (YYYY-MM-DD) sem conversão de timezone */}
+                                {run.run_date.split('-').reverse().join('/')}
                               </div>
                               <div className={`text-xs ${
                                 isDark ? 'text-white/40' : 'text-text-secondary-light'

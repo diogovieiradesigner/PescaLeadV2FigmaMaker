@@ -198,10 +198,17 @@ export function detectLocationLevel(location: string): 'neighborhood' | 'city' |
 
   // Se cidade e estado tem o mesmo nome (ex: "Rio de Janeiro, Rio de Janeiro")
   // devemos detectar como cidade, não bairro
+  // EXCEÇÃO: Se a palavra duplicada é um estado (ex: "Rondonia, Rondonia"), é estado
   if (partesRelevantes.length >= 2) {
     const first = removeAccents(partesRelevantes[0].toLowerCase());
     const second = removeAccents(partesRelevantes[1].toLowerCase());
     if (first === second) {
+      // Verificar se é um estado conhecido
+      const firstUpper = partesRelevantes[0].toUpperCase();
+      if (BRAZILIAN_STATES[firstUpper] || STATE_NAME_NORMALIZE[first]) {
+        return 'state';
+      }
+      // Se não for estado, é cidade com nome igual ao estado (Rio de Janeiro, etc)
       return 'city';
     }
   }
@@ -466,6 +473,19 @@ export function parseLocation(location: string): { city: string; state: string; 
 
   // Se tem 2 partes: cidade + estado
   if (filteredParts.length === 2) {
+    const first = removeAccents(filteredParts[0].toLowerCase());
+    const second = removeAccents(filteredParts[1].toLowerCase());
+
+    // BUGFIX: Se ambas as partes são iguais E é um estado conhecido, tratar como estado
+    if (first === second) {
+      const partUpper = filteredParts[0].toUpperCase();
+      const partLower = first;
+      if (BRAZILIAN_STATES[partUpper] || STATE_NAME_NORMALIZE[partLower]) {
+        // É um estado duplicado (ex: "Rondonia, Rondonia")
+        return { city: '', state: STATE_NAME_NORMALIZE[partLower] || BRAZILIAN_STATES[partUpper] };
+      }
+    }
+
     const statePart = filteredParts[1].toUpperCase();
     const stateNameLower = removeAccents(filteredParts[1].toLowerCase());
 

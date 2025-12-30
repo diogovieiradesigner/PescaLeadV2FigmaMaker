@@ -615,9 +615,9 @@ const UazapiProvider: IWhatsAppProvider = {
     };
 
     console.log('📤 [UAZAPI-PROVIDER] Request details:');
-    console.log(`   URL: ${baseUrl}/message/delete`);  // ✅ Endpoint correto
-    console.log(`   Method: POST`);  // ✅ UAZAPI usa POST, não DELETE
-    console.log(`   Instance Token: ${token?.substring(0, 10)}...`);  // ✅ Usa token da instância
+    console.log(`   URL: ${baseUrl}/message/delete`);
+    console.log(`   Method: POST`);
+    console.log(`   Token: [REDACTED]`);
     console.log(`   Payload:`, JSON.stringify(payload, null, 2));
 
     try {

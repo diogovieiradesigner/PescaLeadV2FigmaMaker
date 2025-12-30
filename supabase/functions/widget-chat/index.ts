@@ -1,9 +1,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-widget-token",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+
+// Rate limit: 20 requisições por minuto por IP
+const RATE_LIMIT_CONFIG = {
+  maxRequests: 20,
+  windowSeconds: 60,
+  prefix: "widget-chat",
 };
 
 // Gerar token simples para validação (não é segurança crítica, só dificulta uso indevido)
@@ -719,6 +727,12 @@ Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const rateLimitResult = checkRateLimit(req, RATE_LIMIT_CONFIG);
+  if (!rateLimitResult.allowed) {
+    return rateLimitExceededResponse(rateLimitResult, corsHeaders);
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

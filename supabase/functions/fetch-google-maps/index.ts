@@ -228,8 +228,8 @@ async function getApiKey(supabase: any, keyIndex: number): Promise<string | null
       console.warn(`[getApiKey] Key #${keyIndex} não encontrada ou vazia`);
       return null;
     }
-    // V19: Log parcial da chave para debug (primeiros 10 caracteres)
-    console.log(`[getApiKey] Key #${keyIndex} encontrada: ${data.substring(0, 10)}...`);
+    // V19: Log sem expor a chave
+    console.log(`[getApiKey] Key #${keyIndex} encontrada`);
     return data;
   } catch (e: any) {
     console.error(`[getApiKey] Exceção ao buscar key #${keyIndex}:`, e.message);

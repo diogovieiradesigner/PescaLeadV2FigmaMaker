@@ -431,7 +431,7 @@ const EvolutionProvider: IWhatsAppProvider = {
     console.log('📤 [EVOLUTION-PROVIDER] Request details:');
     console.log(`   URL: ${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`);
     console.log(`   Method: DELETE`);
-    console.log(`   Token: ${token.substring(0, 10)}...`);
+    console.log(`   Token: [REDACTED]`);
     console.log(`   Payload:`, JSON.stringify(payload, null, 2));
 
     try {

@@ -59,6 +59,7 @@ Deno.serve(async (req) => {
   try {
     // Headers do webhook do Google
     const channelId = req.headers.get("x-goog-channel-id");
+    const channelToken = req.headers.get("x-goog-channel-token");
     const resourceId = req.headers.get("x-goog-resource-id");
     const resourceState = req.headers.get("x-goog-resource-state");
     const resourceUri = req.headers.get("x-goog-resource-uri");
@@ -66,10 +67,18 @@ Deno.serve(async (req) => {
 
     console.log("Google webhook received:", {
       channelId,
+      hasToken: !!channelToken,
       resourceId,
       resourceState,
       messageNumber,
     });
+
+    // Validar channel token (configurado quando registramos o webhook)
+    const expectedToken = Deno.env.get("GOOGLE_WEBHOOK_SECRET");
+    if (expectedToken && channelToken !== expectedToken) {
+      console.error("Invalid webhook token");
+      return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+    }
 
     // Ignorar mensagem de sincronização inicial
     if (resourceState === "sync") {

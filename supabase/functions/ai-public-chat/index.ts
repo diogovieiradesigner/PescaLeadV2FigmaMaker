@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,10 +7,23 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Rate limit: 20 requisições por minuto por IP (chat com IA é mais pesado)
+const RATE_LIMIT_CONFIG = {
+  maxRequests: 20,
+  windowSeconds: 60,
+  prefix: "ai-public-chat",
+};
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const rateLimitResult = checkRateLimit(req, RATE_LIMIT_CONFIG);
+  if (!rateLimitResult.allowed) {
+    return rateLimitExceededResponse(rateLimitResult, corsHeaders);
   }
 
   try {

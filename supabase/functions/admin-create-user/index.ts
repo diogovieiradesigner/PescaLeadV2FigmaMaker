@@ -1,10 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { getAdminCorsHeaders } from '../_shared/cors.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -20,6 +15,8 @@ interface CreateUserRequest {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getAdminCorsHeaders(req);
+
   // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -75,7 +72,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[ADMIN-CREATE-USER] Creating user: ${email}`);
+    console.log(`[ADMIN-CREATE-USER] Creating user...`);
 
     // 1. Criar usuario no auth.users
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -147,7 +144,7 @@ Deno.serve(async (req) => {
       .eq('id', newUserId)
       .single();
 
-    console.log(`[ADMIN-CREATE-USER] Success: ${email}`);
+    console.log(`[ADMIN-CREATE-USER] Success: user created`);
 
     return new Response(
       JSON.stringify({

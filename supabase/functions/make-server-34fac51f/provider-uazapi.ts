@@ -602,7 +602,7 @@ const UazapiProvider: IWhatsAppProvider = {
     console.log('📤 [UAZAPI-PROVIDER] Request details:');
     console.log(`   URL: ${baseUrl}/message`);
     console.log(`   Method: DELETE`);
-    console.log(`   Token: ${token.substring(0, 10)}...`);
+    console.log(`   Token: [REDACTED]`);
     console.log(`   Payload:`, JSON.stringify(payload, null, 2));
 
     try {

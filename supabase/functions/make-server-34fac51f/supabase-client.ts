@@ -29,7 +29,7 @@ export function getSupabaseServiceClient() {
       throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
     }
 
-    console.log('🔑 [Supabase] Creating service client with key:', serviceRoleKey.substring(0, 20) + '...');
+    console.log('🔑 [Supabase] Creating service client...');
 
     supabaseServiceInstance = createClient(supabaseUrl, serviceRoleKey, {
       auth: {

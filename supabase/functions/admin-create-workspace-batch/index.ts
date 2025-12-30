@@ -1,10 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-};
+import { getAdminCorsHeaders } from '../_shared/cors.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -67,9 +62,16 @@ function generateSlug(name: string): string {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getAdminCorsHeaders(req);
+
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { autoRefreshToken: false, persistSession: false }
   });
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
   // GET - Listar templates disponíveis
   if (req.method === 'GET') {
@@ -316,7 +318,7 @@ Deno.serve(async (req) => {
           user_id: authData.user.id
         });
 
-        console.log(`[ADMIN-BATCH] Usuario criado: ${u.email} (${role})`);
+        console.log(`[ADMIN-BATCH] Usuario criado (${role})`);
 
       } catch (err: any) {
         results.push({

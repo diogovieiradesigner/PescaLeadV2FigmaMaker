@@ -1,10 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { getAdminCorsHeaders } from '../_shared/cors.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -29,6 +24,8 @@ function generateSlug(name: string): string {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getAdminCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -84,7 +81,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[ADMIN] Iniciando: ${email} / ${workspace_name}`);
+    console.log(`[ADMIN] Iniciando criacao de usuario com workspace...`);
 
     // Verificar se email ja existe
     const { data: existingUser } = await supabaseAdmin
@@ -241,7 +238,7 @@ Deno.serve(async (req) => {
         })));
     }
 
-    console.log(`[ADMIN] Sucesso: ${email} / ${workspace_name}`);
+    console.log(`[ADMIN] Sucesso: usuario e workspace criados`);
 
     return new Response(
       JSON.stringify({

@@ -3,6 +3,7 @@
 // Não requer autenticação
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { checkRateLimit, rateLimitExceededResponse, getRateLimitHeaders } from "../_shared/rate-limiter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,10 +11,23 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+// Rate limit: 30 requisições por minuto por IP
+const RATE_LIMIT_CONFIG = {
+  maxRequests: 30,
+  windowSeconds: 60,
+  prefix: "public-booking",
+};
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const rateLimitResult = checkRateLimit(req, RATE_LIMIT_CONFIG);
+  if (!rateLimitResult.allowed) {
+    return rateLimitExceededResponse(rateLimitResult, corsHeaders);
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

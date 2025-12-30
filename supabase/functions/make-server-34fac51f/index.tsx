@@ -1546,7 +1546,7 @@ app.delete('/make-server-e4f9d774/messages/:messageId/delete', validateAuth, val
           }
 
           console.log(`✅ [DELETE-MESSAGE] Provider loaded for instance: ${instance.name}`);
-          console.log(`✅ [DELETE-MESSAGE] Token found: ${token.substring(0, 10)}...`);
+          console.log(`✅ [DELETE-MESSAGE] Token found: [REDACTED]`);
 
           // ✅ CORRIGIDO: Usar provider_message_id do banco
           const deleteParams = {
@@ -2866,11 +2866,9 @@ app.post('/make-server-34fac51f/admin-delete-user', validateAuth, validateSuperA
     console.error('🗑️ [ADMIN-DELETE-USER] Error type:', error.constructor.name);
     console.error('🗑️ [ADMIN-DELETE-USER] Error message:', error.message);
     console.error('🗑️ [ADMIN-DELETE-USER] Error stack:', error.stack);
-    return c.json({ 
-      success: false, 
-      error: `Unexpected error: ${error.message}`,
-      type: error.constructor.name,
-      stack: error.stack
+    return c.json({
+      success: false,
+      error: `Unexpected error: ${error.message}`
     }, 500);
   }
 });
@@ -2978,11 +2976,9 @@ app.post('/admin-create-user', validateAuth, validateSuperAdmin, async (c) => {
     console.error('👤 [ADMIN-CREATE-USER] Error type:', error.constructor.name);
     console.error('👤 [ADMIN-CREATE-USER] Error message:', error.message);
     console.error('👤 [ADMIN-CREATE-USER] Error stack:', error.stack);
-    return c.json({ 
-      success: false, 
-      error: `Unexpected error: ${error.message}`,
-      type: error.constructor.name,
-      stack: error.stack
+    return c.json({
+      success: false,
+      error: `Unexpected error: ${error.message}`
     }, 500);
   }
 });
@@ -3087,11 +3083,9 @@ app.post('/admin-alterar-senha', validateAuth, validateSuperAdmin, async (c) => 
     console.error('🔑 [ADMIN-CHANGE-PASSWORD] Error type:', error.constructor.name);
     console.error('🔑 [ADMIN-CHANGE-PASSWORD] Error message:', error.message);
     console.error('🔑 [ADMIN-CHANGE-PASSWORD] Error stack:', error.stack);
-    return c.json({ 
-      success: false, 
-      error: `Unexpected error: ${error.message}`,
-      type: error.constructor.name,
-      stack: error.stack
+    return c.json({
+      success: false,
+      error: `Unexpected error: ${error.message}`
     }, 500);
   }
 });

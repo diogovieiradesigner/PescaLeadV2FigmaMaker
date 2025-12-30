@@ -4,13 +4,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // send-notification v9 - With Web Push Support (fixed column names)
 const FUNCTION_VERSION = "v9-push";
 
-// SMTP CONFIG - cPanel
+// SMTP CONFIG - cPanel (credentials from environment)
 const SMTP_CONFIG = {
-  host: "taurus.enduranceserver.com.br",
-  port: 465,
-  user: "contato@pescalead.com.br",
-  password: "@?Ng-4Nj.RHbYbuY",
-  from: "Pesca Lead <contato@pescalead.com.br>"
+  host: Deno.env.get("SMTP_HOST") || "taurus.enduranceserver.com.br",
+  port: parseInt(Deno.env.get("SMTP_PORT") || "465"),
+  user: Deno.env.get("SMTP_USER") || "contato@pescalead.com.br",
+  password: Deno.env.get("SMTP_PASSWORD") || "",
+  from: Deno.env.get("SMTP_FROM") || "Pesca Lead <contato@pescalead.com.br>"
 };
 
 const corsHeaders = {
@@ -191,7 +191,13 @@ async function sendEmailViaSMTP(
     `;
 
     console.log("[Email] Creating SMTP client...");
-    
+
+    // Validate SMTP password is configured
+    if (!SMTP_CONFIG.password) {
+      console.error("[Email] ❌ SMTP_PASSWORD environment variable not configured");
+      return { success: false, error: "SMTP not configured" };
+    }
+
     const client = new SMTPClient({
       user: SMTP_CONFIG.user,
       password: SMTP_CONFIG.password,
@@ -572,7 +578,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      console.log(`[User] ${user.name} | Email: ${user.email} | Phone: ${user.phone}`);
+      console.log(`[User] Processing notification for user ${user.id}`);
 
       const channelsSent: Record<string, any> = {};
       const channelsFailed: Record<string, string> = {};

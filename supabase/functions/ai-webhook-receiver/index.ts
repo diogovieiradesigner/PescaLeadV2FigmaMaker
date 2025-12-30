@@ -16,6 +16,20 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
 
   try {
+    // Validate webhook secret if configured
+    const webhookSecret = Deno.env.get("AI_WEBHOOK_SECRET");
+    const providedSecret = req.headers.get("x-webhook-secret");
+    if (webhookSecret && providedSecret !== webhookSecret) {
+      console.error("[ai-webhook-receiver] Invalid webhook secret");
+      return new Response(JSON.stringify({
+        status: "error",
+        reason: "unauthorized"
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

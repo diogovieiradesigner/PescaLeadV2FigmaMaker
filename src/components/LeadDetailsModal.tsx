@@ -37,13 +37,11 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
     
     setLoadingCustomFields(true);
     try {
-      console.log('[LEAD DETAILS MODAL] 🔄 Carregando custom fields para lead:', leadId);
       const { customFields: loadedFields, error } = await loadCustomFieldsForLead(leadId, currentWorkspace.id);
       
       if (error) {
         console.error('[LEAD DETAILS MODAL] ❌ Erro ao carregar custom fields:', error);
       } else {
-        console.log('[LEAD DETAILS MODAL] ✅ Custom fields carregados:', loadedFields.length);
         setCustomFields(loadedFields);
       }
     } catch (error) {
@@ -121,7 +119,7 @@ export function LeadDetailsModal({ lead, isOpen, onClose, onEdit, theme }: LeadD
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto scrollbar-thin">
           {/* Main Info Grid */}
           <div className="grid grid-cols-2 gap-4">
             {/* Deal Value - apenas se > 0 */}

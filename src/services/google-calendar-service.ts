@@ -35,7 +35,6 @@ async function fetchWithAuth(
   }
 
   const url = `${FUNCTIONS_URL}${endpoint}`;
-  console.log('[google-calendar-service] Calling:', url);
 
   // Extrair timeoutMs das options
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
@@ -112,12 +111,9 @@ export async function getGoogleAuthUrl(workspaceId: string): Promise<string> {
   }
 
   const data = await response.json();
-  console.log('[google-calendar-service] Auth URL response:', data);
 
   // Log debug info if available
   if (data.debug) {
-    console.log('[google-calendar-service] Redirect URI being used:', data.debug.redirect_uri);
-    console.log('[google-calendar-service] Client ID prefix:', data.debug.client_id_prefix);
   }
 
   return data.auth_url;

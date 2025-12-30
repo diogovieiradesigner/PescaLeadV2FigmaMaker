@@ -11,6 +11,8 @@ export type AppView =
   | 'pipeline'
   | 'chat'
   | 'calendar'
+  | 'documents'
+  | 'ai-assistant'
   | 'extraction'
   | 'campaign'
   | 'ai-service'
@@ -30,6 +32,7 @@ export interface NavigationParams {
   eventId?: string;
   campaignRunId?: string;
   extractionTab?: ExtractionTab;
+  aiConversationId?: string;
 }
 
 // Mapeamento de URL path para view
@@ -40,6 +43,8 @@ const PATH_TO_VIEW: Record<string, AppView> = {
   '/chat': 'chat',
   '/mensagens': 'chat', // Alias para chat com conversationId
   '/calendario': 'calendar',
+  '/documentos': 'documents',
+  '/assistente-ia': 'ai-assistant',
   '/extracao': 'extraction',
   '/extracao/google-maps': 'extraction',
   '/extracao/cnpj': 'extraction',
@@ -58,6 +63,8 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   'pipeline': '/pipeline',
   'chat': '/chat',
   'calendar': '/calendario',
+  'documents': '/documentos',
+  'ai-assistant': '/assistente-ia',
   'extraction': '/extracao',
   'campaign': '/campanhas',
   'ai-service': '/ia',
@@ -73,6 +80,8 @@ export const VIEW_LABELS: Record<AppView, string> = {
   'pipeline': 'Pipeline',
   'chat': 'Chat',
   'calendar': 'Calendário',
+  'documents': 'Documentos',
+  'ai-assistant': 'Assistente IA',
   'extraction': 'Extração',
   'campaign': 'Campanhas',
   'ai-service': 'IA Service',
@@ -180,6 +189,15 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     return match ? (match[1] as ExtractionTab) : null;
   });
 
+  // Estado para conversa IA aberta via URL (/assistente-ia/:aiConversationId)
+  const [aiConversationId, setAiConversationId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+
+    const pathname = window.location.pathname;
+    const match = pathname.match(/\/assistente-ia\/([^/]+)/);
+    return match ? match[1] : null;
+  });
+
   /**
    * Navega para uma view, atualizando URL e estado
    */
@@ -232,6 +250,14 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
       setExtractionTab(params.extractionTab);
     } else if (view !== 'extraction') {
       setExtractionTab(null);
+    }
+
+    // AI Conversation ID para assistente-ia
+    if (view === 'ai-assistant' && params?.aiConversationId) {
+      path = `/assistente-ia/${params.aiConversationId}`;
+      setAiConversationId(params.aiConversationId);
+    } else if (view !== 'ai-assistant') {
+      setAiConversationId(null);
     }
 
     // Atualiza URL sem recarregar página
@@ -292,6 +318,14 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
       setExtractionTab(null);
     }
 
+    // AI Conversation ID para assistente-ia
+    if (view === 'ai-assistant' && params?.aiConversationId) {
+      path = `/assistente-ia/${params.aiConversationId}`;
+      setAiConversationId(params.aiConversationId);
+    } else if (view !== 'ai-assistant') {
+      setAiConversationId(null);
+    }
+
     window.history.replaceState({ view, ...params }, '', path);
     setCurrentViewState(view);
   }, []);
@@ -344,6 +378,12 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         } else {
           setExtractionTab(null);
         }
+        // AI Conversation ID
+        if (event.state.aiConversationId) {
+          setAiConversationId(event.state.aiConversationId);
+        } else {
+          setAiConversationId(null);
+        }
       } else {
         // Fallback: extrai da URL
         const pathname = window.location.pathname;
@@ -373,6 +413,10 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         // Extraction Tab
         const extractionTabMatch = pathname.match(/\/extracao\/(google-maps|cnpj|instagram)$/);
         setExtractionTab(extractionTabMatch ? (extractionTabMatch[1] as ExtractionTab) : null);
+
+        // AI Conversation ID
+        const aiConversationMatch = pathname.match(/\/assistente-ia\/([^/]+)/);
+        setAiConversationId(aiConversationMatch ? aiConversationMatch[1] : null);
       }
     };
 
@@ -435,6 +479,16 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     }
   }, [currentView]);
 
+  /**
+   * Limpa o aiConversationId da URL (volta para /assistente-ia)
+   */
+  const clearAiConversationId = useCallback(() => {
+    if (currentView === 'ai-assistant') {
+      setAiConversationId(null);
+      window.history.replaceState({ view: 'ai-assistant' }, '', '/assistente-ia');
+    }
+  }, [currentView]);
+
   return {
     currentView,
     setCurrentView,
@@ -456,6 +510,9 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     clearCampaignRunId,
     extractionTab,
     setExtractionTab,
+    aiConversationId,
+    setAiConversationId,
+    clearAiConversationId,
     // Utilitários
     getPathForView: (view: AppView) => VIEW_TO_PATH[view],
     getLabelForView: (view: AppView) => VIEW_LABELS[view],

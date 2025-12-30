@@ -80,7 +80,6 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
 
       const { data: { session } } = await supabase.auth.getSession();
 
-      console.log('[useCNPJFilters] getStats - Sending filters:', JSON.stringify(filtersToCheck, null, 2));
 
       const response = await fetch(
         `${SUPABASE_URL}/functions/v1/cnpj-api/stats`,
@@ -117,7 +116,6 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
 
   // Buscar CNAEs do banco
   const searchCNAEs = useCallback(async (query: string = '') => {
-    console.log('[useCNPJFilters] searchCNAEs called with query:', query);
 
     try {
       setCnaesLoading(true);
@@ -127,7 +125,6 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
       params.set('limit', '100');
 
       const url = `${SUPABASE_URL}/functions/v1/cnpj-api/cnaes?${params.toString()}`;
-      console.log('[useCNPJFilters] Fetching CNAEs from:', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -137,7 +134,6 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
         },
       });
 
-      console.log('[useCNPJFilters] Response status:', response.status);
 
       if (!response.ok) {
         console.error('[useCNPJFilters] CNAEs error - status:', response.status);
@@ -147,24 +143,15 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
       }
 
       const data = await response.json();
-      console.log('[useCNPJFilters] CNAEs response:', {
-        success: data.success,
-        total: data.total,
-        cnaesCount: data.cnaes?.length || 0,
-        firstThree: data.cnaes?.slice(0, 3)
-      });
 
       if (data.success && data.cnaes) {
         setCnaes(data.cnaes);
-        console.log('[useCNPJFilters] CNAEs state updated with', data.cnaes.length, 'items');
       } else {
-        console.warn('[useCNPJFilters] API returned success=false or no cnaes:', data);
       }
     } catch (err) {
       console.error('[useCNPJFilters] CNAEs fetch error:', err);
     } finally {
       setCnaesLoading(false);
-      console.log('[useCNPJFilters] cnaesLoading set to false');
     }
   }, []);
 
@@ -208,7 +195,6 @@ export function useCNPJFilters(): UseCNPJFiltersResult {
 
   // Carregar CNAEs populares no início
   useEffect(() => {
-    console.log('[useCNPJFilters] Initial useEffect - loading CNAEs on mount');
     searchCNAEs('');
   }, [searchCNAEs]);
 

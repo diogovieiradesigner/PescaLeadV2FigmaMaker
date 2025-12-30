@@ -549,7 +549,7 @@ export function EventModal({
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin">
           {/* Event Type Selector */}
           <div>
             <label className={cn(
@@ -683,6 +683,7 @@ export function EventModal({
             <select
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
                 isDark
@@ -691,7 +692,7 @@ export function EventModal({
               )}
             >
               {DURATION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+                <option key={opt.value} value={opt.value} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                   {opt.label}
                 </option>
               ))}
@@ -814,7 +815,7 @@ export function EventModal({
                 {/* Dropdown Results */}
                 {showLeadDropdown && leadSearchResults.length > 0 && (
                   <div className={cn(
-                    'absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-48 overflow-y-auto',
+                    'absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-48 overflow-y-auto scrollbar-thin',
                     isDark ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-gray-200'
                   )}>
                     {leadSearchResults.map((lead) => (
@@ -921,6 +922,7 @@ export function EventModal({
                     setSelectedAssignee(member);
                   }
                 }}
+                style={isDark ? { colorScheme: 'dark' } : undefined}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
                   isDark
@@ -928,9 +930,9 @@ export function EventModal({
                     : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
                 )}
               >
-                <option value="">Selecionar responsável...</option>
+                <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecionar responsável...</option>
                 {members.map((member) => (
-                  <option key={member.id} value={member.id}>
+                  <option key={member.id} value={member.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                     {member.name}
                   </option>
                 ))}
@@ -993,6 +995,7 @@ export function EventModal({
                       value={selectedInboxId}
                       onChange={(e) => setSelectedInboxId(e.target.value)}
                       disabled={isLoadingInboxes || inboxes.length === 0}
+                      style={isDark ? { colorScheme: 'dark' } : undefined}
                       className={cn(
                         'w-full px-3 py-2 rounded-lg border text-sm transition-colors',
                         isDark
@@ -1002,12 +1005,12 @@ export function EventModal({
                       )}
                     >
                       {isLoadingInboxes ? (
-                        <option value="">Carregando...</option>
+                        <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Carregando...</option>
                       ) : inboxes.length === 0 ? (
-                        <option value="">Nenhuma caixa disponível</option>
+                        <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Nenhuma caixa disponível</option>
                       ) : (
                         inboxes.map((inbox) => (
-                          <option key={inbox.id} value={inbox.id}>
+                          <option key={inbox.id} value={inbox.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                             {inbox.name}
                           </option>
                         ))

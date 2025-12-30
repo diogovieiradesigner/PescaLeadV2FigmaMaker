@@ -40,12 +40,10 @@ export function CreateWorkspaceModal({ theme, isOpen, onClose, onSuccess }: Crea
       setIsLoading(true);
       setError('');
 
-      console.log('[CREATE WORKSPACE MODAL] Creating workspace:', name.trim());
       
       // Create workspace (it will be automatically set as current)
       await createWorkspace(name.trim());
       
-      console.log('[CREATE WORKSPACE MODAL] ✅ Success! Workspace created and active');
 
       setSuccess(true);
       

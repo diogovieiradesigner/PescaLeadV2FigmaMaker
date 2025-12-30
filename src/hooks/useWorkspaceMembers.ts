@@ -65,7 +65,6 @@ export function useWorkspaceMembers(workspaceId: string | null, accessToken: str
 
       // O RPC retorna diretamente um array de membros
       if (Array.isArray(members)) {
-        console.log('[WORKSPACE_MEMBERS] Members loaded:', members.length);
         setMembers(members);
       } else {
         console.error('[WORKSPACE_MEMBERS] Invalid response format:', members);

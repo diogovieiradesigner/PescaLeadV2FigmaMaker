@@ -13,7 +13,6 @@ export function StatsBar({ totalDeals, totalValue, activeLeads, conversionRate, 
   const isDark = theme === 'dark';
   
   // Debug log
-  console.log('[STATS BAR] Received props:', { totalDeals, totalValue, activeLeads, conversionRate });
   
   const stats = [
     {

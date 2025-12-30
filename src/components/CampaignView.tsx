@@ -492,7 +492,6 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       setValidationErrors(['Erro ao salvar configuração. Tente novamente.']);
       toast.error('Erro ao salvar configuração');
     } else {
-      console.log('Configuração salva com sucesso!');
       setValidationErrors([]);
       toast.success('Configuração salva com sucesso!');
       
@@ -519,9 +518,6 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
 
   // Função para executar campanha agora
   const executeNow = async () => {
-    console.log('🚀 [EXECUTE NOW] Iniciando execução da campanha...');
-    console.log('📊 [EXECUTE NOW] Workspace atual:', currentWorkspace);
-    console.log('⚙️ [EXECUTE NOW] Config ID:', configId);
 
     if (!currentWorkspace) {
       console.error('❌ [EXECUTE NOW] Workspace não encontrado');
@@ -536,10 +532,8 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
     }
 
     // Validar configuração primeiro
-    console.log('🔍 [EXECUTE NOW] Validando configuração...');
     const errors = validateConfig();
     setValidationErrors(errors);
-    console.log('📋 [EXECUTE NOW] Erros de validação:', errors);
 
     if (errors.length > 0) {
       console.error('❌ [EXECUTE NOW] Erros de validação encontrados:', errors);
@@ -559,20 +553,14 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
     }
 
     setExecuting(true);
-    console.log('⏳ [EXECUTE NOW] Estado de execução ativado');
 
     try {
       const requestBody = { config_id: configId };
-      console.log('📤 [EXECUTE NOW] Enviando requisição para edge function...');
-      console.log('📦 [EXECUTE NOW] Body da requisição:', JSON.stringify(requestBody, null, 2));
 
       const { data, error } = await supabase.functions.invoke('campaign-execute-now', {
         body: requestBody
       });
 
-      console.log('📥 [EXECUTE NOW] Resposta recebida da edge function');
-      console.log('✅ [EXECUTE NOW] Data:', JSON.stringify(data, null, 2));
-      console.log('⚠️ [EXECUTE NOW] Error:', error);
 
       if (error) {
         console.error('❌ [EXECUTE NOW] Erro no invoke da edge function:', error);
@@ -625,23 +613,18 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       }
 
       // Sucesso!
-      console.log('✅ [EXECUTE NOW] Campanha executada com sucesso!');
-      console.log('📊 [EXECUTE NOW] Leads agendados:', data.leads_scheduled);
-      console.log('🆔 [EXECUTE NOW] Run ID:', data.run_id);
 
       toast.success(`${data.leads_scheduled} leads agendados!`);
-      
-      // Recarregar lista de execuções
-      console.log('🔄 [EXECUTE NOW] Recarregando lista de execuções...');
+
+      // Resetar para página 1 e recarregar lista de execuções
+      setCurrentPage(1);
       await loadCampaignRuns();
 
       // Abrir detalhes da execução recém-criada
       if (data.run_id) {
-        console.log('📂 [EXECUTE NOW] Abrindo detalhes da execução:', data.run_id);
         handleOpenRunDetails(data.run_id);
       }
 
-      console.log('✅ [EXECUTE NOW] Processo concluído com sucesso!');
     } catch (error) {
       console.error('❌ [EXECUTE NOW] Exceção capturada no try/catch:', error);
       console.error('❌ [EXECUTE NOW] Tipo do erro:', typeof error);
@@ -649,7 +632,6 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       console.error('❌ [EXECUTE NOW] Stack trace:', error instanceof Error ? error.stack : 'N/A');
       toast.error('Erro ao executar campanha. Tente novamente.');
     } finally {
-      console.log('🏁 [EXECUTE NOW] Finalizando - desativando estado de execução');
       setExecuting(false);
     }
   };
@@ -737,7 +719,6 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
 
       // Chamar endpoint do backend
       const url = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/campaigns/${runId}?workspaceId=${currentWorkspace.id}`;
-      console.log('🗑️ Deletando campanha via backend:', url);
       
       const response = await fetch(url, {
         method: 'DELETE',
@@ -748,7 +729,6 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       });
 
       const data = await response.json();
-      console.log('📦 Resposta do backend:', data);
 
       if (!response.ok) {
         console.error('Erro ao deletar campanha:', data);
@@ -1000,14 +980,15 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                       <select
                         value={frequency}
                         onChange={(e) => setFrequency(e.target.value as any)}
+                        style={isDark ? { colorScheme: 'dark' } : undefined}
                         className={`w-full px-4 py-2 border-b transition-all ${
-                          isDark 
-                            ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' 
+                          isDark
+                            ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]'
                             : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
                         } focus:outline-none`}
                       >
-                        <option value="daily">Todos os dias</option>
-                        <option value="weekdays">Apenas dias úteis</option>
+                        <option value="daily" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Todos os dias</option>
+                        <option value="weekdays" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Apenas dias úteis</option>
                       </select>
                     </div>
 
@@ -1100,18 +1081,19 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 <select
                   value={inboxId}
                   onChange={(e) => setInboxId(e.target.value)}
+                  style={isDark ? { colorScheme: 'dark' } : undefined}
                   className={`w-full px-4 py-2 border-b transition-all ${
                     isDark
                       ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]'
                       : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
                   } focus:outline-none`}
                 >
-                  <option value="">Selecione uma caixa de entrada...</option>
+                  <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione uma caixa de entrada...</option>
                   {inboxes.map(inbox => {
                     const instanceStatus = inbox.inbox_instances?.[0]?.instances?.status;
                     const isConnected = instanceStatus === 'connected';
                     return (
-                      <option key={inbox.id} value={inbox.id}>
+                      <option key={inbox.id} value={inbox.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                         {isConnected ? '🟢' : '🔴'} {inbox.name}
                       </option>
                     );
@@ -1130,15 +1112,16 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 <select
                   value={funnelId}
                   onChange={(e) => handleFunnelChange(e.target.value)}
+                  style={isDark ? { colorScheme: 'dark' } : undefined}
                   className={`w-full px-4 py-2 border-b transition-all ${
-                    isDark 
-                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]' 
+                    isDark
+                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]'
                       : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
                   } focus:outline-none`}
                 >
-                  <option value="">Selecione um funil...</option>
+                  <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione um funil...</option>
                   {funnels.map(funnel => (
-                    <option key={funnel.id} value={funnel.id}>{funnel.name}</option>
+                    <option key={funnel.id} value={funnel.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>{funnel.name}</option>
                   ))}
                 </select>
                 <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
@@ -1157,15 +1140,16 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                     value={sourceColumnId}
                     onChange={(e) => setSourceColumnId(e.target.value)}
                     disabled={!funnelId || columns.length === 0}
+                    style={isDark ? { colorScheme: 'dark' } : undefined}
                     className={`w-full px-4 py-2 border-b transition-all ${
-                      isDark 
-                        ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] disabled:opacity-40' 
+                      isDark
+                        ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] disabled:opacity-40'
                         : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9] disabled:opacity-40'
                     } focus:outline-none`}
                   >
-                    <option value="">Selecione uma coluna...</option>
+                    <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione uma coluna...</option>
                     {columns.map(col => (
-                      <option key={col.id} value={col.id}>{col.title}</option>
+                      <option key={col.id} value={col.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>{col.title}</option>
                     ))}
                   </select>
                   <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
@@ -1182,15 +1166,16 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                     value={targetColumnId}
                     onChange={(e) => setTargetColumnId(e.target.value)}
                     disabled={!funnelId || columns.length === 0}
+                    style={isDark ? { colorScheme: 'dark' } : undefined}
                     className={`w-full px-4 py-2 border-b transition-all ${
-                      isDark 
-                        ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] disabled:opacity-40' 
+                      isDark
+                        ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] disabled:opacity-40'
                         : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9] disabled:opacity-40'
                     } focus:outline-none`}
                   >
-                    <option value="">Selecione uma coluna...</option>
+                    <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione uma coluna...</option>
                     {columns.filter(c => c.id !== sourceColumnId).map(col => (
-                      <option key={col.id} value={col.id}>{col.title}</option>
+                      <option key={col.id} value={col.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>{col.title}</option>
                     ))}
                   </select>
                   <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
@@ -1349,7 +1334,7 @@ NUNCA:
               </h2>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-thin">
                 <table className="w-full">
                   <thead className={`text-xs uppercase ${
                     isDark ? 'text-white/50 bg-white/[0.02]' : 'text-text-secondary-light bg-light-elevated'

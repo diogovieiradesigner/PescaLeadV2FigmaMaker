@@ -120,6 +120,33 @@ BEGIN
         -- ================================================================
         v_tags := ARRAY['google-maps-extraction'];
 
+        -- Adicionar tag de localização (estado) do run
+        IF run_record.location IS NOT NULL AND run_record.location != '' THEN
+          -- Extrair estado da localização (última parte antes de "Brazil")
+          -- Ex: "Centro, São Paulo, State of São Paulo, Brazil" -> "sao-paulo"
+          -- Ex: "Rondonia, State of Rondonia, Brazil" -> "rondonia"
+          DECLARE
+            v_location_parts TEXT[];
+            v_state TEXT;
+          BEGIN
+            -- Separar por vírgula e pegar penúltima parte (geralmente o estado)
+            v_location_parts := string_to_array(run_record.location, ',');
+            IF array_length(v_location_parts, 1) >= 2 THEN
+              v_state := trim(v_location_parts[array_length(v_location_parts, 1) - 1]);
+              -- Remover "State of " se presente
+              v_state := regexp_replace(v_state, '^State of\s+', '', 'i');
+              -- Normalizar: lowercase, remover acentos, trocar espaços por hífen
+              v_state := lower(unaccent(regexp_replace(v_state, '\s+', '-', 'g')));
+              IF v_state != '' AND v_state != 'brazil' AND v_state != 'brasil' THEN
+                v_tags := array_append(v_tags, v_state);
+              END IF;
+            END IF;
+          EXCEPTION WHEN OTHERS THEN
+            -- Ignorar erros de parsing de localização
+            NULL;
+          END;
+        END IF;
+
         -- Adicionar categoria do negócio como tag (se existir)
         v_category := staging_record.extracted_data->>'category';
         IF v_category IS NOT NULL AND v_category != '' THEN
@@ -204,4 +231,4 @@ END;
 $function$;
 
 -- Adicionar comentário explicativo
-COMMENT ON FUNCTION public.migrate_staging_to_leads() IS 'Migra leads do staging para a tabela leads. Inclui tags: google-maps-extraction, categoria, alta-avaliacao (4.5+), popular (50+ reviews)';
+COMMENT ON FUNCTION public.migrate_staging_to_leads() IS 'Migra leads do staging para a tabela leads. Tags: google-maps-extraction (obrigatória), estado (ex: sao-paulo, rondonia), categoria (ex: restaurante, clinica), alta-avaliacao (rating ≥4.5), popular (≥50 reviews)';

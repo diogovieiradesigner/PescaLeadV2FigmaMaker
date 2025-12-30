@@ -150,7 +150,6 @@ export function useSettingsData(workspaceId: string | null) {
         .eq('workspace_id', workspaceId);
 
       if (error) {
-        console.warn('[useSettingsData] Direct SQL fetch failed, checking error:', error);
         // Se der erro de permissão (42501) ou tabela não existir, falha silenciosamente ou mostra erro
         throw error;
       }
@@ -179,14 +178,12 @@ export function useSettingsData(workspaceId: string | null) {
     
     // Prevenção de chamadas duplicadas (Race Condition)
     if (creatingRef.current) {
-      console.warn('[createInstance] Criação já em andamento, ignorando chamada duplicada.');
       return;
     }
 
     creatingRef.current = true;
 
     try {
-      console.log('[createInstance] Iniciando criação via Gateway:', { name: instance.name, provider: instance.provider });
       
       const headers = await getAuthHeaders();
 

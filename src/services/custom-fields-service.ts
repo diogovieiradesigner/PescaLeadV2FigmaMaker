@@ -97,7 +97,6 @@ export async function saveCustomFieldValues(
 ): Promise<{ error: Error | null }> {
   try {
     if (!customFields || customFields.length === 0) {
-      console.log('[CUSTOM FIELDS] Nenhum campo personalizado para salvar');
       return { error: null };
     }
 
@@ -176,7 +175,6 @@ export async function saveCustomFieldValues(
         return { error: upsertError };
       }
 
-      console.log(`[CUSTOM FIELDS] ${valuesToUpsert.length} valor(es) salvos com sucesso`);
     }
 
     return { error: null };
@@ -205,7 +203,6 @@ export async function deleteCustomFieldValuesByLead(leadId: string): Promise<{
       return { error: deleteError };
     }
 
-    console.log('[CUSTOM FIELDS] Valores deletados com sucesso');
     return { error: null };
 
   } catch (error) {
@@ -234,7 +231,6 @@ export async function deleteCustomFieldValue(
       return { error: deleteError };
     }
 
-    console.log('[CUSTOM FIELDS] Valor do campo deletado com sucesso:', customFieldId);
     return { error: null };
 
   } catch (error) {
@@ -278,7 +274,6 @@ export async function loadCustomFieldsForLead(
       return { customFields: [], error: valuesError };
     }
 
-    console.log('[CUSTOM FIELDS] Valores carregados para lead', leadId, ':', values);
 
     // 2. Converter para formato frontend
     const customFields: CustomField[] = (values || []).map((v: any) => ({
@@ -288,7 +283,6 @@ export async function loadCustomFieldsForLead(
       fieldValue: v.value || '',
     }));
 
-    console.log('[CUSTOM FIELDS] Custom fields convertidos:', customFields);
 
     return { customFields, error: null };
 

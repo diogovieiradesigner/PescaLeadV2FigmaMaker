@@ -58,7 +58,6 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
 
       // Se não houver calendário, criar o padrão
       if (existing.length === 0) {
-        console.log('[useCalendar] No calendar found, creating default...');
         const defaultCalendar = await calendarService.ensureDefaultCalendar(workspaceId);
         return [defaultCalendar];
       }
@@ -110,27 +109,14 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   } = useQuery({
     queryKey: ['calendar-settings', workspaceId],
     queryFn: async () => {
-      console.log('[useCalendar] Fetching calendar settings for workspace:', workspaceId);
       // Buscar settings do workspace (sem filtro de calendário específico)
       const result = await calendarService.fetchCalendarSettings(workspaceId);
-      console.log('[useCalendar] Calendar settings fetched:', {
-        hasResult: !!result,
-        resultId: result?.id,
-        availability: result?.availability,
-        buffer_between_events: result?.buffer_between_events,
-      });
       return result;
     },
     enabled: !!workspaceId,
   });
 
   // DEBUG: Log quando settings muda
-  console.log('[useCalendar] Current settings state:', {
-    hasSettings: !!settings,
-    settingsId: settings?.id,
-    dataUpdatedAt,
-    isLoadingSettings,
-  });
 
   // ============================================
   // MUTATIONS

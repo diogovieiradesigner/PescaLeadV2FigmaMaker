@@ -246,7 +246,7 @@ function isValidResult(result: any): boolean {
   });
 }
 
-// V19: Função para buscar página com rotação de chaves
+// V20: Função para buscar página com rotação de chaves
 async function fetchGoogleMapsPage(
   searchTerm: string,
   location: string,
@@ -254,11 +254,14 @@ async function fetchGoogleMapsPage(
   apiKey: string,
   coordinates?: {lat: number, lng: number}, // V16: Coordenadas opcionais (não usadas na API, apenas para logs)
   supabase?: any, // V19: Supabase client para rotação de chaves
-  currentKeyIndex?: number // V19: Índice da chave atual para rotação
+  currentKeyIndex?: number, // V19: Índice da chave atual para rotação
+  run_id?: string // V20: Run ID para criar logs no frontend
 ): Promise<{ places: any[], apiEmpty: boolean, usedKeyIndex?: number }> {
-  const maxRetries = 3;
+  // V20: Tentar TODAS as chaves disponíveis antes de desistir
+  const maxRetries = TOTAL_API_KEYS;
   let currentApiKey = apiKey;
   let keyIndex = currentKeyIndex || 1;
+  const triedKeys = new Set<number>([keyIndex]);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -301,14 +304,38 @@ async function fetchGoogleMapsPage(
         const errorText = await response.text();
         console.error(`[API] ❌ HTTP 400 - Bad Request: ${errorText}`);
 
-        // V19: Tentar rotacionar para próxima chave
+        // V20: Detectar falta de créditos e logar no frontend
+        const isCreditsError = errorText.toLowerCase().includes('credits');
+        if (isCreditsError && run_id && supabase) {
+          await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'warning',
+            `💳 Chave API #${keyIndex} sem créditos - Rotacionando (${triedKeys.size}/${TOTAL_API_KEYS} tentadas)`,
+            { key_index: keyIndex, error_type: 'no_credits', tried_keys: triedKeys.size, total_keys: TOTAL_API_KEYS }
+          );
+        }
+
+        // V20: Tentar próxima chave que ainda não foi testada
         if (supabase && attempt < maxRetries) {
-          const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
-          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+          let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+          // V20: Pular chaves já tentadas
+          while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
+            nextKeyIndex = (nextKeyIndex % TOTAL_API_KEYS) + 1;
+          }
+          if (triedKeys.has(nextKeyIndex)) {
+            // V20: Log final quando todas as chaves falharam
+            if (isCreditsError && run_id) {
+              await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'error',
+                `❌ TODAS as ${TOTAL_API_KEYS} chaves API estão sem créditos - Extração pausada`,
+                { tried_keys: TOTAL_API_KEYS, error_type: 'all_keys_no_credits' }
+              );
+            }
+            throw new Error(`HTTP 400: Todas as ${TOTAL_API_KEYS} chaves foram tentadas - ${errorText}`);
+          }
+          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
           const nextKey = await getApiKey(supabase, nextKeyIndex);
           if (nextKey) {
             currentApiKey = nextKey;
             keyIndex = nextKeyIndex;
+            triedKeys.add(keyIndex);
             await new Promise(r => setTimeout(r, 1000));
             continue;
           }
@@ -321,12 +348,19 @@ async function fetchGoogleMapsPage(
         console.error(`[API] ❌ HTTP ${response.status} - Chave #${keyIndex} inválida ou sem créditos`);
 
         if (supabase && attempt < maxRetries) {
-          const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
-          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+          let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+          while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
+            nextKeyIndex = (nextKeyIndex % TOTAL_API_KEYS) + 1;
+          }
+          if (triedKeys.has(nextKeyIndex)) {
+            throw new Error(`HTTP ${response.status}: Todas as ${TOTAL_API_KEYS} chaves inválidas ou sem créditos`);
+          }
+          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
           const nextKey = await getApiKey(supabase, nextKeyIndex);
           if (nextKey) {
             currentApiKey = nextKey;
             keyIndex = nextKeyIndex;
+            triedKeys.add(keyIndex);
             await new Promise(r => setTimeout(r, 1000));
             continue;
           }
@@ -339,12 +373,19 @@ async function fetchGoogleMapsPage(
         console.log(`[API] ⏳ Rate limit na chave #${keyIndex}, aguardando...`);
 
         if (supabase && attempt < maxRetries) {
-          const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
-          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+          let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+          while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
+            nextKeyIndex = (nextKeyIndex % TOTAL_API_KEYS) + 1;
+          }
+          if (triedKeys.has(nextKeyIndex)) {
+            throw new Error(`HTTP 429: Todas as ${TOTAL_API_KEYS} chaves com rate limit`);
+          }
+          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
           const nextKey = await getApiKey(supabase, nextKeyIndex);
           if (nextKey) {
             currentApiKey = nextKey;
             keyIndex = nextKeyIndex;
+            triedKeys.add(keyIndex);
             await new Promise(r => setTimeout(r, 2000));
             continue;
           }
@@ -370,18 +411,26 @@ async function fetchGoogleMapsPage(
     } catch (error: any) {
       console.error(`[API] ❌ Tentativa ${attempt} (Key #${keyIndex}):`, error.message);
 
-      // V19: Rotacionar chave em caso de erro
+      // V20: Rotacionar para próxima chave não testada
       if (supabase && attempt < maxRetries) {
-        const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
-        console.log(`[API] 🔄 Erro - Rotacionando chave: #${keyIndex} -> #${nextKeyIndex}`);
+        let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+        while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
+          nextKeyIndex = (nextKeyIndex % TOTAL_API_KEYS) + 1;
+        }
+        if (triedKeys.has(nextKeyIndex)) {
+          console.error(`[API] ❌ Todas as ${TOTAL_API_KEYS} chaves falharam para página ${page}`);
+          return { places: [], apiEmpty: true, usedKeyIndex: keyIndex };
+        }
+        console.log(`[API] 🔄 Erro - Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
         const nextKey = await getApiKey(supabase, nextKeyIndex);
         if (nextKey) {
           currentApiKey = nextKey;
           keyIndex = nextKeyIndex;
+          triedKeys.add(keyIndex);
         }
         await new Promise(r => setTimeout(r, 3000));
       } else if (attempt >= maxRetries) {
-        console.error(`[API] ❌ Todas as tentativas falharam para página ${page}`);
+        console.error(`[API] ❌ Todas as ${TOTAL_API_KEYS} chaves tentadas para página ${page}`);
         return { places: [], apiEmpty: true, usedKeyIndex: keyIndex };
       }
     }
@@ -1105,17 +1154,20 @@ async function enqueueSegmentedSearches(
   console.log(`[V17 EXPANSION] Localizações a usar: ${locationsToUse}`);
   console.log(`[V17 EXPANSION] Páginas por localização: ${pagesPerLocation}`);
   
-  // Log da estratégia
+  // Log da estratégia com detalhes completos
+  const estimatedLeads = locationsToUse * pagesPerLocation * 10; // ~10 leads por página
   await createExtractionLog(supabase, runId, 4, 'Segmentação', 'info',
-    `📊 V17 ESTRATÉGIA DE EXPANSÃO (rodada ${aiRound})`,
+    `📊 V19 ESTRATÉGIA DE EXPANSÃO (rodada ${aiRound}) | ${locationsToUse} locais x ${pagesPerLocation} pág = ${locationsToUse * pagesPerLocation} páginas | Estimativa: ~${estimatedLeads} leads`,
     {
+      ai_round: aiRound,
       leads_needed: leadsNeeded,
       pages_needed: pagesNeeded,
       locations_available: locations.length,
       locations_to_use: locationsToUse,
       pages_per_location: pagesPerLocation,
-      estimated_total_pages: locationsToUse * pagesPerLocation,
-      ai_round: aiRound
+      total_pages: locationsToUse * pagesPerLocation,
+      estimated_leads: estimatedLeads,
+      leads_per_page_estimate: 10
     }
   );
   
@@ -1617,12 +1669,24 @@ serve(async (req) => {
       }
     }
 
+    // Buscar progresso atual para exibir contexto (X de Y páginas)
+    const { data: currentProgress } = await supabase
+      .from('lead_extraction_runs')
+      .select('pages_consumed, created_quantity, target_quantity, progress_data')
+      .eq('id', run_id)
+      .single();
+
+    const pagesConsumed = (currentProgress?.pages_consumed || 0) + 1;
+    const totalPagesTarget = currentProgress?.progress_data?.last_page_target || '?';
+    const createdSoFar = currentProgress?.created_quantity || 0;
+    const targetQty = currentProgress?.target_quantity || target_quantity;
+
     await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'info',
-      `📄 V16 Worker buscando página ${page} (key #${keyIndex})${is_compensation ? ' (compensação)' : ''}${is_segmented ? ` (segmentado: ${segment_neighborhood})` : ''}${expandState ? ' (estado expandido)' : ''}`,
-      { page, location: normalizedLocation, workspace_id, is_compensation, is_segmented, segment_neighborhood, expand_state: expandState, api_key_index: keyIndex }
+      `📄 V19 Processando página ${page}/${totalPagesTarget} (key #${keyIndex})${is_compensation ? ' (compensação)' : ''}${is_segmented ? ` (segmentado: ${segment_neighborhood})` : ''}${expandState ? ' (estado expandido)' : ''} | Leads: ${createdSoFar}/${targetQty} | Loc: "${normalizedLocation}"`,
+      { page, page_progress: `${pagesConsumed}/${totalPagesTarget}`, location_original: location, location_normalized: normalizedLocation, workspace_id, is_compensation, is_segmented, segment_neighborhood, expand_state: expandState, api_key_index: keyIndex, created_so_far: createdSoFar, target: targetQty }
     );
 
-    // V19: Buscar página com rotação de chaves (coordenadas não são mais usadas - SerpDev recebe apenas location)
+    // V20: Buscar página com rotação de chaves (coordenadas não são mais usadas - SerpDev recebe apenas location)
     const { places: rawResults, apiEmpty, usedKeyIndex } = await fetchGoogleMapsPage(
       search_term,
       normalizedLocation,
@@ -1630,7 +1694,8 @@ serve(async (req) => {
       apiKey,
       undefined, // coordinates - não usadas
       supabase,  // V19: Passar supabase para rotação de chaves
-      keyIndex   // V19: Passar índice da chave atual
+      keyIndex,  // V19: Passar índice da chave atual
+      run_id     // V20: Passar run_id para logs
     );
     console.log(`\n📥 Página ${page}: ${rawResults.length} resultados brutos, API esgotou: ${apiEmpty}, Key usada: #${usedKeyIndex || keyIndex}`);
 
@@ -1790,19 +1855,34 @@ serve(async (req) => {
       p_filtered: invalidResults + filteredByBusiness  // V18: Inclui filtrados por negócio
     });
 
+    // Atualizar progresso para o próximo log
+    const { data: updatedProgress } = await supabase
+      .from('lead_extraction_runs')
+      .select('pages_consumed, created_quantity, progress_data')
+      .eq('id', run_id)
+      .single();
+
+    const currentPageNum = updatedProgress?.pages_consumed || pagesConsumed;
+    const totalCreatedNow = updatedProgress?.created_quantity || 0;
+    const progressPercent = totalPagesTarget !== '?' ? Math.round((currentPageNum / totalPagesTarget) * 100) : 0;
+
     await createExtractionLog(supabase, run_id, 3, 'Google Maps', actuallyCreated > 0 ? 'success' : (apiEmpty ? 'warning' : 'info'),
-      `${actuallyCreated > 0 ? '✅' : (apiEmpty ? '⚠️' : '📄')} V18 Página ${page}: ${actuallyCreated} leads criados, ${filteredByBusiness} filtrados, ${totalDuplicates} duplicatas${apiEmpty ? ' (API esgotou)' : ''}${is_compensation ? ' (compensação)' : ''}${is_segmented ? ` (segmentado: ${segment_neighborhood})` : ''}`,
-      { 
-        page, 
-        raw: rawResults.length, 
-        valid: validResults.length, 
-        created: actuallyCreated, 
+      `${actuallyCreated > 0 ? '✅' : (apiEmpty ? '⚠️' : '📄')} V19 Página ${page}/${totalPagesTarget} (${progressPercent}%): ${actuallyCreated} criados, ${filteredByBusiness} filtrados, ${totalDuplicates} duplicatas${apiEmpty ? ' (API esgotou)' : ''}${is_compensation ? ' (compensação)' : ''}${is_segmented ? ` (${segment_neighborhood})` : ''} | Total: ${totalCreatedNow}/${targetQty}`,
+      {
+        page,
+        page_progress: `${currentPageNum}/${totalPagesTarget}`,
+        progress_percent: progressPercent,
+        raw: rawResults.length,
+        valid: validResults.length,
+        created: actuallyCreated,
         filtered_business: filteredByBusiness,
-        duplicates_memory: preFilterDuplicates, 
-        duplicates_db: dbDuplicates, 
-        duplicates_total: totalDuplicates, 
-        invalid: invalidResults, 
+        duplicates_memory: preFilterDuplicates,
+        duplicates_db: dbDuplicates,
+        duplicates_total: totalDuplicates,
+        invalid: invalidResults,
         api_empty: apiEmpty,
+        total_created_so_far: totalCreatedNow,
+        target_quantity: targetQty,
         filters_applied: { min_rating: minRating, min_reviews: minReviews, require_email: requireEmail, require_phone: requirePhone, require_website: requireWebsite }
       }
     );
@@ -2565,11 +2645,15 @@ serve(async (req) => {
             })
             .eq('id', run_id);
           
-          await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'info',
-            `📤 V16 Compensação: Enfileiradas ${pagesToQueue} páginas (${nextStartPage} a ${nextStartPage + pagesToQueue - 1}) - ${percentage.toFixed(1)}% < 90%`,
-            { 
-              current_total: totalCreated, 
-              target: targetQty, 
+          await createExtractionLog(supabase, run_id, 3, 'Compensação', 'info',
+            `📤 V19 Compensação INICIADA: ${pagesToQueue} páginas extras (${nextStartPage} a ${nextStartPage + pagesToQueue - 1}) | Faltam: ${leadsNeeded} leads | Progresso: ${percentage.toFixed(1)}%`,
+            {
+              pages_queued: pagesToQueue,
+              start_page: nextStartPage,
+              end_page: nextStartPage + pagesToQueue - 1,
+              current_total: totalCreated,
+              target: targetQty,
+              leads_needed: leadsNeeded, 
               percentage, 
               leads_needed: leadsNeeded,
               pages_queued: pagesToQueue,
@@ -2587,14 +2671,17 @@ serve(async (req) => {
           else if (hasLostMessages) compensationReason = 'mensagens_perdidas';
           
           await createExtractionLog(supabase, run_id, 3, 'Compensação', 'info',
-            `ℹ️ Compensação não necessária: ${compensationReason === 'meta_atingida' ? 'Meta atingida' : compensationReason === 'api_esgotou' ? 'API esgotou' : compensationReason === 'limite_atingido' ? 'Limite atingido' : 'Mensagens perdidas'}`,
-            { 
-              percentage, 
+            `ℹ️ Compensação não necessária: ${compensationReason === 'meta_atingida' ? `Meta atingida (${totalCreated}/${targetQty})` : compensationReason === 'api_esgotou' ? 'API esgotou' : compensationReason === 'limite_atingido' ? `Limite atingido (${compensationCount}/${MAX_COMPENSATION_PAGES})` : 'Mensagens perdidas'} | Progresso: ${percentage.toFixed(1)}%`,
+            {
+              percentage: Math.round(percentage * 10) / 10,
+              total_created: totalCreated,
+              target_quantity: targetQty,
               api_exhausted: apiExhausted,
               compensation_count: compensationCount,
               max_compensation_pages: MAX_COMPENSATION_PAGES,
               has_lost_messages: hasLostMessages,
-              reason: compensationReason
+              reason: compensationReason,
+              pages_consumed: runData.pages_consumed || 0
             }
           );
           
@@ -2633,11 +2720,12 @@ serve(async (req) => {
             console.log(`   Expansão habilitada: ${segmentationEnabled}`);
             
             await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'info',
-              `🌍 V16 LIMITE PADRÃO ATINGIDO - Iniciando expansão por bairros`,
-              { 
-                current_total: totalCreated, 
-                target: targetQty, 
-                percentage: percentage.toFixed(1),
+              `🌍 V19 LIMITE PADRÃO ATINGIDO - Iniciando expansão por bairros | Atual: ${totalCreated}/${targetQty} (${percentage.toFixed(1)}%) | Páginas consumidas: ${runData.pages_consumed || 0}`,
+              {
+                current_total: totalCreated,
+                target: targetQty,
+                percentage: Math.round(percentage * 10) / 10,
+                pages_consumed: runData.pages_consumed || 0,
                 api_exhausted: apiExhausted,
                 compensation_count: compensationCount,
                 compensation_attempted: compensationCount > 0,
@@ -2795,11 +2883,14 @@ serve(async (req) => {
                 .eq('id', run_id);
               
               await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'success',
-                `✅ V17 Expansão pronta: ${segmentationResult.enqueued} páginas em ${segmentationResult.locations.length} localizações`,
-                { 
+                `✅ V19 Expansão pronta: ${segmentationResult.enqueued} páginas em ${segmentationResult.locations.length} localizações | Estimativa: ~${segmentationResult.enqueued * 10} leads | Bairros: ${segmentationResult.locations.slice(0, 5).join(', ')}${segmentationResult.locations.length > 5 ? '...' : ''}`,
+                {
                   locations_count: segmentationResult.locations.length,
                   pages_enqueued: segmentationResult.enqueued,
-                  locations: segmentationResult.locations.slice(0, 10)
+                  estimated_leads: segmentationResult.enqueued * 10,
+                  locations_sample: segmentationResult.locations.slice(0, 10),
+                  all_locations: segmentationResult.locations,
+                  has_more_available: hasMore
                 }
               );
               

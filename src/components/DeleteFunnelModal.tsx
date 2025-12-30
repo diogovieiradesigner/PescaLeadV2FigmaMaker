@@ -45,7 +45,6 @@ export function DeleteFunnelModal({
   const checkCanDelete = async () => {
     try {
       setIsChecking(true);
-      console.log('[DELETE FUNNEL MODAL] Verificando se pode deletar funil:', funnelId);
 
       const { data, error } = await supabase.rpc('can_delete_funnel', {
         p_funnel_id: funnelId,
@@ -60,7 +59,6 @@ export function DeleteFunnelModal({
         return;
       }
 
-      console.log('[DELETE FUNNEL MODAL] Resultado da verificação:', data);
       setCheckResult(data as DeleteCheckResult);
     } catch (error) {
       console.error('[DELETE FUNNEL MODAL] Erro na verificação:', error);

@@ -67,7 +67,7 @@ export function EngagementHeatmap({ data, isLoading, isDark = true }: Engagement
 
       <CardContent className="pb-6">
         {/* Grid do Heatmap */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scrollbar-thin">
           <div className="min-w-[600px]">
             {/* Header com horas */}
             <div className="flex">

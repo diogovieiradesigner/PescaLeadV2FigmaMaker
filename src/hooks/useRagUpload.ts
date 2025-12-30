@@ -80,7 +80,6 @@ export function useRagUpload(agentId: string | null, storeName: string) {
     setUploadProgress(10);
 
     try {
-      console.log('[useRagUpload] Starting upload:', file.name);
       
       // Converter para base64
       setUploadProgress(30);
@@ -110,7 +109,6 @@ export function useRagUpload(agentId: string | null, storeName: string) {
         throw new Error(result.error || 'Falha no upload');
       }
 
-      console.log('[useRagUpload] Upload successful:', file.name);
       setUploadProgress(100);
 
       return {

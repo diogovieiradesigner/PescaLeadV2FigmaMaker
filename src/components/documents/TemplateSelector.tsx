@@ -135,7 +135,7 @@ export function TemplateSelector({
               }`}>
                 Templates ({templates.length})
               </div>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
                 {templates.map(template => (
                   <button
                     key={template.id}

@@ -101,6 +101,18 @@ export const router = createBrowserRouter([
     element: <App />,
   },
   {
+    path: '/documentos',
+    element: <App />,
+  },
+  {
+    path: '/assistente-ia',
+    element: <App />,
+  },
+  {
+    path: '/assistente-ia/:aiConversationId',
+    element: <App />,
+  },
+  {
     path: '/ia',
     element: <App />,
   },

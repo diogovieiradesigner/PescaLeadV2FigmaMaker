@@ -25,6 +25,8 @@ import { CampaignView } from './components/CampaignView';
 import { AIServiceView } from './components/AIServiceView';
 import { AgentLogsView } from './components/AgentLogsView';
 import { CalendarView } from './components/CalendarView';
+import { DocumentsView } from './components/DocumentsView';
+import { AIAssistantView } from './components/AIAssistantView';
 import { MoveColumnLeadsModal } from './components/MoveColumnLeadsModal';
 import { ViewMode, CRMLead } from './types/crm';
 import { useTheme } from './hooks/useTheme';
@@ -54,7 +56,7 @@ function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
 
   // ✅ Navegação baseada em URL (sem hash #)
-  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab } = useNavigation('dashboard');
+  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab, aiConversationId, setAiConversationId } = useNavigation('dashboard');
 
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
@@ -143,10 +145,6 @@ function AppContent() {
       prevFiltersRef.current.searchQuery !== hookFilters.searchQuery;
     
     if (filtersChanged) {
-      console.log('[APP] 🔍 Filtros mudaram, recarregando leads:', { 
-        antes: prevFiltersRef.current, 
-        depois: hookFilters 
-      });
       prevFiltersRef.current = hookFilters;
       
       // ✅ Mostrar loading ao aplicar filtros
@@ -175,7 +173,6 @@ function AppContent() {
                              previousWorkspaceIdRef.current !== currentWorkspace?.id;
 
     if (workspaceChanged) {
-      console.log('[APP] 🔄 Workspace mudou:', previousWorkspaceIdRef.current, '->', currentWorkspace?.id);
       // Apenas resetar estados locais - useKanbanData cuida do carregamento
       setCurrentFunnelId(null);
       setSelectedLead(null);
@@ -223,7 +220,6 @@ function AppContent() {
   useEffect(() => {
     // Se não há funil selecionado mas existem funis, selecionar o primeiro
     if (funnels.length > 0 && !currentFunnelId) {
-      console.log('[APP] 📌 Nenhum funil selecionado, selecionando primeiro:', funnels[0].id);
       setCurrentFunnelId(funnels[0].id);
       return;
     }
@@ -232,7 +228,6 @@ function AppContent() {
     if (currentFunnelId && funnels.length > 0) {
       const funnelExists = funnels.some(f => f.id === currentFunnelId);
       if (!funnelExists) {
-        console.log('[APP] ⚠️ Funil atual não existe mais, selecionando primeiro:', funnels[0].id);
         setCurrentFunnelId(funnels[0].id);
         return;
       }
@@ -240,7 +235,6 @@ function AppContent() {
 
     // Se não há mais funis, limpar seleção
     if (funnels.length === 0 && currentFunnelId) {
-      console.log('[APP] ❌ Não há mais funis, limpando seleção');
       setCurrentFunnelId(null);
     }
   }, [funnels, currentFunnelId]);
@@ -248,7 +242,6 @@ function AppContent() {
   // ✅ Listener para navegação customizada (ex: botão "Ir para Configurações" do AgentConfigForm)
   useEffect(() => {
     const handleNavigateToSettings = () => {
-      console.log('[APP] 📡 Evento navigate-to-settings recebido');
       setCurrentView('settings');
     };
 
@@ -261,7 +254,6 @@ function AppContent() {
   // ✅ Abrir lead automaticamente quando há leadId na URL (/pipeline/lead/:leadId)
   useEffect(() => {
     if (leadId && currentView === 'pipeline' && !isEditLeadModalOpen) {
-      console.log('[APP] 🔗 Lead ID na URL detectado:', leadId);
 
       // Buscar lead do banco e abrir modal
       const openLeadFromUrl = async () => {
@@ -276,7 +268,6 @@ function AppContent() {
             return;
           }
 
-          console.log('[APP] ✅ Lead carregado da URL:', lead.name || lead.clientName);
           setSelectedLead(lead);
           setSelectedLeadColumnId(lead.columnId || lead.status);
           setModalMode('edit');
@@ -302,7 +293,6 @@ function AppContent() {
                                 currentView === 'pipeline';
 
     if (returningToPipeline && currentFunnelId) {
-      console.log('[APP] 🔄 Voltou para tela Pipeline de:', previousViewRef.current);
       refetchFunnel();
     }
 
@@ -312,7 +302,6 @@ function AppContent() {
   // ✅ NOVO: Recarregar dados quando voltar para a tela de Dashboard
   useEffect(() => {
     if (currentView === 'dashboard') {
-      console.log('[APP] 🔄 Voltou para tela Dashboard, invalidando cache...');
       // Invalidar queries do dashboard para forçar refetch
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -320,20 +309,9 @@ function AppContent() {
   }, [currentView]);
 
   // Log workspace status
-  console.log('[APP CONTENT] Workspace status:', {
-    hasCurrentWorkspace: !!currentWorkspace,
-    workspaceId: currentWorkspace?.id,
-    workspaceName: currentWorkspace?.name,
-    totalWorkspaces: workspaces.length,
-  });
 
   // Calculate stats from backend data - MUST be before conditional returns
   const stats = useMemo(() => {
-    console.log('[APP STATS] Calculating stats:', { 
-      hasBackendStats: !!backendStats, 
-      backendStats,
-      columnsCount: columns.length 
-    });
     
     if (backendStats) {
       // 🚀 OTIMIZADO: Usar valores da Stored Procedure (100% corretos)
@@ -344,12 +322,10 @@ function AppContent() {
         conversionRate: backendStats.conversionRate || 0, // ✅ Agora vem do SQL
       };
       
-      console.log('[APP STATS] Using backend stats:', calculatedStats);
       return calculatedStats;
     }
     
     // Fallback: calcular manualmente se não tem backend stats
-    console.log('[APP STATS] Calculating manually from columns');
     const allLeads: CRMLead[] = [];
     columns.forEach(col => {
       const leads = columnLeadsState[col.id];
@@ -377,7 +353,6 @@ function AppContent() {
       conversionRate,
     };
     
-    console.log('[APP STATS] Manual calculation result:', calculatedStats);
     return calculatedStats;
   }, [backendStats]); // ✅ OTIMIZAÇÃO: Removido columns e columnLeadsState - stats só recalcula quando backend retorna novos valores
 
@@ -427,7 +402,6 @@ function AppContent() {
         return;
       }
 
-      console.log('[APP] Lead deletado com sucesso');
       toast.success('Lead deletado com sucesso!');
 
       // Recarregar o funil após deletar
@@ -488,7 +462,6 @@ function AppContent() {
       const loadingToast = toast.loading(`Deletando ${totalLeads} lead${totalLeads > 1 ? 's' : ''}...`);
 
       // Buscar TODOS os IDs dos leads da coluna (não apenas os carregados)
-      console.log('[APP] 📋 Buscando todos os leads da coluna:', columnId);
       const { getLeadsByColumn } = await import('./services/leads-service');
       const { leads: allLeadsInColumn, error: fetchError } = await getLeadsByColumn(columnId);
 
@@ -500,17 +473,14 @@ function AppContent() {
       }
 
       const leadIds = allLeadsInColumn.map(lead => lead.id);
-      console.log(`[APP] 🗑️ Deletando ${leadIds.length} leads da coluna ${column.title}:`, leadIds);
 
       // Deletar todos os leads em paralelo
       const { hardDeleteLead } = await import('./services/leads-service');
       const deletePromises = leadIds.map(async (leadId) => {
-        console.log(`[APP] 🔥 Deletando lead: ${leadId}`);
         const result = await hardDeleteLead(leadId);
         if (result.error) {
           console.error(`[APP] ❌ Erro ao deletar lead ${leadId}:`, result.error);
         } else {
-          console.log(`[APP] ✅ Lead deletado: ${leadId}`);
         }
         return result;
       });
@@ -535,17 +505,13 @@ function AppContent() {
       toast.dismiss(loadingToast);
 
       if (failureCount > 0) {
-        console.warn(`[APP] ⚠️ ${failureCount} leads falharam ao deletar, ${successCount} deletados com sucesso`);
         toast.warning(`${successCount} leads deletados. ${failureCount} falharam.`);
       } else {
-        console.log(`[APP] ✅ Todos os ${successCount} leads deletados com sucesso`);
         toast.success(`${successCount} lead${successCount > 1 ? 's' : ''} deletado${successCount > 1 ? 's' : ''} com sucesso!`);
       }
 
       // Recarregar o funil após deletar
-      console.log('[APP] 🔄 Recarregando funil...');
       await refetchFunnel();
-      console.log('[APP] ✅ Funil recarregado');
     } catch (error) {
       console.error('[APP] ❌ Erro inesperado ao deletar leads da coluna:', error);
       toast.error('Erro ao deletar leads. Tente novamente.');
@@ -561,12 +527,6 @@ function AppContent() {
 
   const handleSaveLead = useCallback(async (lead: CRMLead) => {
     try {
-      console.log('[APP] handleSaveLead called:', { 
-        lead, 
-        modalMode, 
-        selectedColumnId, 
-        firstColumnId: columns[0]?.id 
-      });
 
       if (modalMode === 'create') {
         // Create new lead
@@ -575,7 +535,6 @@ function AppContent() {
           columnId: selectedColumnId || columns[0]?.id,
         };
         
-        console.log('[APP] Creating lead with data:', dataToCreate);
         await createLeadBackend(dataToCreate);
         
         // Fechar modal após criar
@@ -583,29 +542,17 @@ function AppContent() {
         setIsEditLeadModalOpen(false);
       } else {
         // Update existing lead - NÃO fecha o modal para permitir múltiplas edições
-        console.log('[APP] Updating lead with id:', lead.id);
-        console.log('[APP] Lead data being sent:', {
-          clientName: lead.clientName,
-          company: lead.company,
-          dealValue: lead.dealValue,
-          dueDate: lead.dueDate,
-          notes: lead.notes,
-          priority: lead.priority
-        });
         
         await updateLeadBackend(lead.id, lead);
         
-        console.log('[APP] Lead updated successfully, fetching updated lead...');
         
         // ✅ Buscar o lead atualizado do backend para garantir sincronização
         const { getLeadById } = await import('./services/leads-service');
         const { lead: updatedLead, error: fetchError } = await getLeadById(lead.id);
         
         if (fetchError || !updatedLead) {
-          console.warn('[APP] Não foi possível buscar lead atualizado, usando dados locais:', fetchError);
           setSelectedLead(lead);
         } else {
-          console.log('[APP] Lead atualizado recebido do backend:', updatedLead);
           setSelectedLead(updatedLead);
         }
       }
@@ -624,7 +571,6 @@ function AppContent() {
   }, [clearLeadId]);
 
   const handleLeadClick = useCallback((lead: CRMLead) => {
-    console.log('[APP] handleLeadClick chamado:', { leadId: lead.id, leadName: lead.name, status: lead.status, columnId: lead.columnId });
     setSelectedLead(lead);
     setIsEditLeadModalOpen(true);
     setModalMode('edit');
@@ -684,7 +630,6 @@ function AppContent() {
 
     // Se não encontrou a coluna pelo ID armazenado, tentar encontrar onde o lead está
     if (!currentColumn) {
-      console.log('[APP] Navigation: Coluna não encontrada pelo ID, procurando lead nas colunas...');
       for (const col of columns) {
         // ✅ FIX: Usar leads da coluna (array) diretamente
         if (col.leads && col.leads.some(l => l.id === selectedLead.id)) {
@@ -696,7 +641,6 @@ function AppContent() {
     }
     
     if (!currentColumn || !targetColumnId) {
-      console.log('[APP] Navigation: Coluna não encontrada para o lead:', selectedLead.id);
       return { hasPrev: false, hasNext: false, currentIndex: -1, total: 0 };
     }
     
@@ -716,13 +660,6 @@ function AppContent() {
 
   const handleSaveFunnel = useCallback(async (funnelName: string, cols: { id: string; name: string }[]) => {
     try {
-      console.log('[APP] handleSaveFunnel called:', {
-        funnelName,
-        cols: cols.length,
-        colsData: cols, // ✅ Log completo das colunas
-        workspaceId: currentWorkspace?.id,
-        hasCurrentWorkspace: !!currentWorkspace,
-      });
 
       if (!currentWorkspace?.id) {
         console.error('[APP] ❌ Workspace não disponível ao criar funil');
@@ -741,7 +678,6 @@ function AppContent() {
       const newFunnel = await createFunnel(funnelName, undefined, columns);
 
       if (newFunnel) {
-        console.log('[APP] ✅ Funil criado com sucesso:', newFunnel.id);
         setCurrentFunnelId(newFunnel.id);
       }
       setIsAddFunnelModalOpen(false);
@@ -760,7 +696,6 @@ function AppContent() {
         return;
       }
 
-      console.log('[APP] Atualizando funil:', currentFunnelId, { funnelName, cols });
 
       await updateFunnel(currentFunnelId, {
         name: funnelName,
@@ -772,7 +707,6 @@ function AppContent() {
       });
 
       // Recarregar funil para refletir mudanças
-      console.log('[APP] Recarregando funil após atualização...');
       await refetchFunnel();
       
       // Recarregar lista de funis também
@@ -795,14 +729,12 @@ function AppContent() {
         return;
       }
 
-      console.log('[APP] Deletando funil:', currentFunnelId);
 
       // ✅ ANTES de deletar, mudar para outro funil se este for o ativo
       if (funnels.length > 1) {
         // Encontrar outro funil que não seja o atual
         const otherFunnel = funnels.find(f => f.id !== currentFunnelId);
         if (otherFunnel) {
-          console.log('[APP] Mudando para outro funil antes de deletar:', otherFunnel.id);
           setCurrentFunnelId(otherFunnel.id);
           // Aguardar um pouco para o estado atualizar
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -834,7 +766,6 @@ function AppContent() {
   // ✅ Callback para quando usuário clica em lead do chat (navega para o pipeline)
   const handleLeadClickFromChat = useCallback(async (leadId: string) => {
     try {
-      console.log('[APP] Opening lead from chat:', leadId);
       
       // Mudar para view pipeline
       setCurrentView('pipeline');
@@ -865,7 +796,6 @@ function AppContent() {
   // ✅ Callback para recarregar funil atual (após adicionar lead do chat)
   const reloadCurrentFunnel = useCallback(async () => {
     if (currentFunnelId) {
-      console.log('[APP] Recarregando funil atual:', currentFunnelId);
       await refetchFunnel();
     }
   }, [currentFunnelId, refetchFunnel]);
@@ -1015,8 +945,6 @@ function AppContent() {
               </p>
               <button
                 onClick={() => {
-                  console.log('[APP] 🔘 Botão "Criar Primeiro Funil" clicado');
-                  console.log('[APP] Estado atual:', { isAddFunnelModalOpen, currentView, funnels: funnels.length });
                   setIsAddFunnelModalOpen(true);
                 }}
                 className="px-6 py-3 bg-[#0169D9] text-white rounded-lg hover:bg-[#0169D9]/90 transition-colors font-medium"
@@ -1039,13 +967,6 @@ function AppContent() {
   }
 
   // Log current funnel info - AFTER ALL HOOKS
-  console.log('[APP] Rendering with funnel:', {
-    currentView,
-    loading,
-    hasFunnels: funnels.length > 0,
-    currentFunnelId,
-    currentFunnel: currentFunnel?.name,
-  });
 
   return (
     <div className={`h-screen flex overflow-hidden transition-colors ${
@@ -1194,6 +1115,39 @@ function AppContent() {
               }
             }}
           />
+        ) : currentView === 'documents' ? (
+          <DocumentsView
+            theme={theme}
+            workspaceId={currentWorkspace?.id || ''}
+            userId={user?.id || ''}
+            leads={allLeads}
+            onNavigateToLead={(leadId) => {
+              // Navigate to pipeline view and open lead modal
+              setCurrentView('pipeline');
+              const lead = allLeads.find(l => l.id === leadId);
+              if (lead) {
+                handleLeadClick(lead, lead.column_id);
+              }
+            }}
+          />
+        ) : currentView === 'ai-assistant' ? (
+          <AIAssistantView
+            theme={theme}
+            workspaceId={currentWorkspace?.id || ''}
+            userId={user?.id || ''}
+            onThemeToggle={toggleTheme}
+            onNavigateToSettings={() => setCurrentView('account-settings')}
+            onManageMembersClick={() => setIsWorkspaceMembersOpen(true)}
+            onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
+            initialConversationId={aiConversationId}
+            onConversationChange={(conversationId) => {
+              if (conversationId) {
+                navigate('ai-assistant', { aiConversationId: conversationId });
+              } else {
+                navigate('ai-assistant');
+              }
+            }}
+          />
         ) : (
           <>
             {/* Header */}
@@ -1283,13 +1237,6 @@ function AppContent() {
 
       {/* Edit Lead Modal / Lead Full View */}
       {(() => {
-        console.log('[APP] Renderizando modal:', {
-          modalMode,
-          isEditLeadModalOpen,
-          hasSelectedLead: !!selectedLead,
-          selectedLeadId: selectedLead?.id,
-          willRenderLeadFullView: modalMode !== 'create'
-        });
         
         return modalMode === 'create' ? (
           <EditLeadModal

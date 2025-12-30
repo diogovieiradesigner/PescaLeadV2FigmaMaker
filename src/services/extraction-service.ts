@@ -421,10 +421,6 @@ export async function executeExtraction(extractionId: string): Promise<LeadExtra
     const supabaseUrl = `https://${projectId}.supabase.co`;
     const endpoint = `${supabaseUrl}/functions/v1/start-extraction`;
 
-    console.log('🚀 [executeExtraction] Iniciando chamada para Edge Function');
-    console.log('🔗 [executeExtraction] URL:', endpoint);
-    console.log('🆔 [executeExtraction] Run ID:', run.id);
-    console.log('🔑 [executeExtraction] Authorization:', accessToken ? 'Com token' : 'Usando anon key');
 
     const response = await fetch(
       endpoint,
@@ -438,7 +434,6 @@ export async function executeExtraction(extractionId: string): Promise<LeadExtra
       }
     );
 
-    console.log('📡 [executeExtraction] Response status:', response.status);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -447,7 +442,6 @@ export async function executeExtraction(extractionId: string): Promise<LeadExtra
     }
 
     const result = await response.json();
-    console.log('✅ [executeExtraction] Extração iniciada com sucesso:', result);
     
   } catch (error) {
     console.error('❌ [executeExtraction] Erro ao chamar Edge Function:', error);
@@ -578,7 +572,6 @@ export async function getExtractionAnalytics(params?: {
 
   // Se ainda não tiver runId, retornar estrutura vazia
   if (!runId) {
-    console.log('⚠️ [getExtractionAnalytics] No runId provided, returning empty structure');
     return {
       run: null,
       contatos: {},
@@ -604,7 +597,6 @@ export async function getExtractionAnalytics(params?: {
     }
 
     const source = runData?.source || 'google_maps';
-    console.log(`🔍 [getExtractionAnalytics] Detected source: ${source}`);
 
     // 3. Usar a RPC correta baseada na fonte
     let rpcName: string;
@@ -615,7 +607,6 @@ export async function getExtractionAnalytics(params?: {
       rpcName = 'get_extraction_analytics';
     }
 
-    console.log(`🚀 [getExtractionAnalytics] Calling RPC ${rpcName} with runId:`, runId);
     const { data: rpcData, error: rpcError } = await supabase.rpc(rpcName, { run_id: runId });
 
     if (rpcError) {
@@ -628,7 +619,6 @@ export async function getExtractionAnalytics(params?: {
       throw new Error('Analytics não encontrado para este run');
     }
 
-    console.log(`✅ [getExtractionAnalytics] RPC ${rpcName} data received successfully`);
     return rpcData;
 
   } catch (error) {

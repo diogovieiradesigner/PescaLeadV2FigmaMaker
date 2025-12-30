@@ -33,7 +33,6 @@ export async function getFilteredLeadCounts(
   error: Error | null;
 }> {
   try {
-    console.log('[FILTERED-COUNTS] 🔍 Buscando contadores filtrados:', params);
 
     const { data, error } = await supabase.rpc('get_filtered_lead_counts', {
       p_funnel_id: params.funnelId,
@@ -47,7 +46,6 @@ export async function getFilteredLeadCounts(
     }
 
     if (!data) {
-      console.warn('[FILTERED-COUNTS] ⚠️ Nenhum dado retornado');
       return { counts: new Map(), error: null };
     }
 
@@ -56,10 +54,6 @@ export async function getFilteredLeadCounts(
       (data as ColumnCount[]).map(c => [c.column_id, c.total_count])
     );
 
-    console.log('[FILTERED-COUNTS] ✅ Contadores carregados:', {
-      columns: countsMap.size,
-      totals: Array.from(countsMap.entries()),
-    });
 
     return { counts: countsMap, error: null };
 

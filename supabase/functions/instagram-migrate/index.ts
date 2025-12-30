@@ -411,6 +411,29 @@ serve(async (req) => {
 
           // Construir tags para o lead
           const leadTags: string[] = ['instagram-extraction'];
+
+          // Adicionar tag de localização (estado) do run
+          if (runData.location) {
+            try {
+              // Extrair estado da localização
+              const locationParts = runData.location.split(',').map((p: string) => p.trim());
+              if (locationParts.length >= 2) {
+                let state = locationParts[locationParts.length - 2]; // Penúltima parte (antes de "Brazil")
+                // Remover "State of " se presente
+                state = state.replace(/^State of\s+/i, '');
+                // Normalizar: lowercase, trocar espaços por hífen
+                state = state.toLowerCase().replace(/\s+/g, '-');
+                // Remover acentos manualmente (comum: ão->ao, ã->a, etc)
+                state = state.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                if (state && state !== 'brazil' && state !== 'brasil') {
+                  leadTags.push(state);
+                }
+              }
+            } catch (e) {
+              console.warn(`Erro ao extrair estado da localização: ${runData.location}`, e);
+            }
+          }
+
           if (profile.is_business_account) {
             leadTags.push('business');
           }

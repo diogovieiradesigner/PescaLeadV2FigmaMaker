@@ -86,26 +86,17 @@ const MarkdownPaste = Extension.create({
               ? localStorage.getItem(MARKDOWN_PASTE_KEY) !== 'false'
               : isMarkdownPasteEnabled;
 
-            console.log('[MarkdownPaste] handlePaste triggered');
-            console.log('[MarkdownPaste] Global enabled:', isMarkdownPasteEnabled);
-            console.log('[MarkdownPaste] LocalStorage enabled:', currentEnabled);
 
             // Check if markdown paste is enabled (read directly from localStorage for accuracy)
             if (!currentEnabled) {
-              console.log('[MarkdownPaste] Feature disabled, skipping');
               return false;
             }
 
             // Get both plain text and HTML to debug
             const text = event.clipboardData?.getData('text/plain');
             const html = event.clipboardData?.getData('text/html');
-            console.log('[MarkdownPaste] Clipboard types:', event.clipboardData?.types);
-            console.log('[MarkdownPaste] Pasted text (plain):', text?.substring(0, 200));
-            console.log('[MarkdownPaste] Pasted text char codes (first 30):', text?.substring(0, 30).split('').map(c => c.charCodeAt(0)));
-            console.log('[MarkdownPaste] Pasted HTML:', html?.substring(0, 200));
 
             if (!text) {
-              console.log('[MarkdownPaste] No text found');
               return false;
             }
 
@@ -120,24 +111,12 @@ const MarkdownPaste = Extension.create({
             const hasStyleTag = text.includes('<style');
             const hasScriptTag = text.includes('<script');
 
-            console.log('[MarkdownPaste] Code detection:', {
-              hasHtmlTags,
-              hasJsImports,
-              hasJsDeclarations,
-              hasFunctions,
-              hasJsonLike,
-              hasHtmlDoctype,
-              hasHtmlTag,
-              hasStyleTag,
-              hasScriptTag
-            });
 
             const looksLikeCode =
               hasHtmlTags || hasJsImports || hasJsDeclarations || hasFunctions ||
               hasJsonLike || hasHtmlDoctype || hasHtmlTag || hasStyleTag || hasScriptTag;
 
             if (looksLikeCode) {
-              console.log('[MarkdownPaste] Skipping - looks like code/HTML');
               return false; // Let default paste handle it
             }
 
@@ -150,37 +129,24 @@ const MarkdownPaste = Extension.create({
             const hasStrike = /~~[^~]+~~/.test(text);
             const hasHr = /^---$/m.test(text);
 
-            console.log('[MarkdownPaste] Pattern detection:', {
-              hasHeader,
-              hasBulletList,
-              hasOrderedList,
-              hasBlockquote,
-              hasBold,
-              hasStrike,
-              hasHr
-            });
 
             const hasMarkdown = hasHeader || hasBulletList || hasOrderedList ||
                                hasBlockquote || hasBold || hasStrike || hasHr;
 
             if (!hasMarkdown) {
-              console.log('[MarkdownPaste] Skipping - no markdown patterns found');
               return false; // Let default paste handle it
             }
 
-            console.log('[MarkdownPaste] Converting markdown to TipTap JSON');
 
             // Convert markdown to TipTap JSON and insert
             const editor = extensionThis.editor;
             if (editor) {
               event.preventDefault();
               const content = convertMarkdownToTipTap(text);
-              console.log('[MarkdownPaste] Converted content:', JSON.stringify(content, null, 2));
               editor.chain().focus().insertContent(content).run();
               return true;
             }
 
-            console.log('[MarkdownPaste] No editor found');
             return false;
           },
         },
@@ -883,7 +849,7 @@ export function DocumentEditor({
           {/* Expanded Mode Content - A4 Paper Style */}
           <div
             ref={editorContentRef}
-            className={`flex-1 overflow-auto ${
+            className={`flex-1 overflow-auto scrollbar-thin ${
               isDark ? 'bg-[#2a2a2a]' : 'bg-gray-100'
             }`}
           >
@@ -915,7 +881,7 @@ export function DocumentEditor({
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className={`flex items-center gap-1 px-4 py-2 border-b overflow-x-auto ${
+      <div className={`flex items-center gap-1 px-4 py-2 border-b overflow-x-auto scrollbar-thin ${
         isDark ? 'border-white/[0.08] bg-white/[0.02]' : 'border-gray-200 bg-gray-50'
       }`}>
         {/* Text Formatting */}
@@ -1164,7 +1130,7 @@ export function DocumentEditor({
       {/* Editor Content */}
       <div
         ref={editorContentRef}
-        className={`flex-1 overflow-y-auto p-4 line-spacing-${lineSpacing} ${
+        className={`flex-1 overflow-y-auto scrollbar-thin p-4 line-spacing-${lineSpacing} ${
           isDark ? 'bg-elevated' : 'bg-white'
         }`}
       >
@@ -1467,7 +1433,7 @@ export function DocumentEditor({
           </div>
 
           {/* Expanded Mode Content - A4 Paper Style */}
-          <div className={`flex-1 overflow-auto ${
+          <div className={`flex-1 overflow-auto scrollbar-thin ${
             isDark ? 'bg-[#2a2a2a]' : 'bg-gray-100'
           }`}>
             <div className="flex justify-center py-8 px-4 min-h-full">

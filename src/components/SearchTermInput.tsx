@@ -153,7 +153,6 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
         // Se tem source mas não tem extractionId, salvar no localStorage
         if (source && !extractionId) {
           if (saveToLocalStorage(value)) {
-            console.debug('Termo salvo no localStorage com sucesso!');
             setRefreshKey(prev => prev + 1);
           }
           return;
@@ -204,12 +203,10 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
 
         if (updateError) throw updateError;
 
-        console.debug('Termo salvo no histórico com sucesso!');
 
         // Atualizar lista de sugestões
         setRefreshKey(prev => prev + 1);
       } catch (error) {
-        console.debug('Não foi possível salvar termo no histórico:', error);
       } finally {
         setSaving(false);
       }
@@ -462,7 +459,7 @@ export const SearchTermInput = forwardRef<SearchTermInputRef, SearchTermInputPro
               <div className={`px-3 py-2 text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
                 Termos usados anteriormente
               </div>
-              <div className="max-h-64 overflow-y-auto">
+              <div className="max-h-64 overflow-y-auto scrollbar-thin">
                 {filteredSuggestions.map((item, index) => (
                   <div
                     key={item.term}

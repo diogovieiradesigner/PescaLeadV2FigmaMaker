@@ -274,7 +274,7 @@ export function DashboardView({ theme, onThemeToggle, onNavigateToSettings, onMa
           {/* Tabs Navigation */}
           <div className="px-3 md:px-6 pt-4 md:pt-6 pb-3 md:pb-4 mb-2 md:mb-4">
             <TabsList className={cn(
-              "inline-flex justify-start rounded-lg p-1 h-auto gap-1 md:gap-2 overflow-x-auto w-full md:w-auto",
+              "inline-flex justify-start rounded-lg p-1 h-auto gap-1 md:gap-2 overflow-x-auto scrollbar-thin w-full md:w-auto",
               isDark ? "bg-white/[0.05]" : "bg-zinc-100"
             )}>
               <TabsTrigger value="overview" className="gap-1.5 md:gap-2 px-3 md:px-4 py-2 text-xs md:text-sm dark:data-[state=active]:border-transparent whitespace-nowrap">

@@ -299,6 +299,42 @@ async function selectCategoryWithAI(
   }
 }
 
+/**
+ * Sanitiza mensagem de template removendo aspas extras
+ * PROBLEMA: Templates armazenados como "Olá {nome}" são enviados com aspas
+ * SOLUÇÃO: Remove aspas do início/fim E aspas internas extras
+ */
+function sanitizeTemplateMessage(message: string): string {
+  if (!message) return message;
+
+  let sanitized = message.trim();
+
+  // Remove aspas duplas do início e fim (caso template tenha sido salvo com aspas)
+  // Ex: "Olá {nome}, tudo bem?" -> Olá {nome}, tudo bem?
+  if (sanitized.startsWith('"') && sanitized.endsWith('"')) {
+    sanitized = sanitized.slice(1, -1);
+  }
+
+  // Remove aspas simples do início e fim
+  // Ex: 'Olá {nome}, tudo bem?' -> Olá {nome}, tudo bem?
+  if (sanitized.startsWith("'") && sanitized.endsWith("'")) {
+    sanitized = sanitized.slice(1, -1);
+  }
+
+  // Remove múltiplas aspas duplas consecutivas (escape mal formatado)
+  // Ex: ""Olá"" -> "Olá"
+  sanitized = sanitized.replace(/""+/g, '"');
+
+  // Remove aspas que foram escapadas incorretamente
+  // Ex: \"Olá\" -> "Olá"
+  sanitized = sanitized.replace(/\\"/g, '"');
+
+  // Remove backslashes extras
+  sanitized = sanitized.replace(/\\\\/g, '\\');
+
+  return sanitized.trim();
+}
+
 async function sendFollowUpMessage(
   conversationId: string,
   messageText: string
@@ -524,9 +560,12 @@ Deno.serve(async (req) => {
 
         console.log(`📝 [FOLLOW-UP] Modelo: ${model.model_name} (espera: ${model.wait_seconds}s)`);
 
+        // ✅ SANITIZAR mensagem antes de enviar
+        const sanitizedMessage = sanitizeTemplateMessage(model.message);
+
         const sendResult = await sendFollowUpMessage(
           job.conversation_id,
-          model.message
+          sanitizedMessage
         );
 
         if (!sendResult.success) {
@@ -543,6 +582,7 @@ Deno.serve(async (req) => {
         const messageId = sendResult.messageId;
         console.log(`✉️ [FOLLOW-UP] Mensagem enviada: ${messageId}`);
 
+        // ✅ Salvar mensagem SANITIZADA no histórico (não a original com aspas)
         await supabase
           .from('follow_up_history')
           .insert({
@@ -550,7 +590,7 @@ Deno.serve(async (req) => {
             model_id: model.model_id,
             category_id: categoryId,
             conversation_id: job.conversation_id,
-            message_sent: model.message,
+            message_sent: sanitizedMessage,
             message_id: messageId,
             sequence_number: job.current_model_index + 1,
             status: 'sent'

@@ -47,7 +47,6 @@ export function useRagStore(agentId: string | null): UseRagStoreReturn {
           throw fetchError;
         }
 
-        console.log('[useRagStore] Collection loaded:', data?.name || 'None');
         setCollection(data);
       } catch (err: any) {
         console.error('[useRagStore] Error:', err);
@@ -68,7 +67,6 @@ export function useRagStore(agentId: string | null): UseRagStoreReturn {
       throw new Error('Agent ID is required');
     }
 
-    console.log('[useRagStore] Creating new store for agent:', agentId);
     setIsLoading(true);
     
     try {
@@ -87,7 +85,6 @@ export function useRagStore(agentId: string | null): UseRagStoreReturn {
         throw new Error(result.error || 'Falha ao criar store');
       }
 
-      console.log('[useRagStore] Store created successfully');
 
       // Buscar collection criada
       const { data, error: fetchError } = await supabase

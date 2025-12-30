@@ -211,14 +211,25 @@ export function detectLocationLevel(location: string): 'neighborhood' | 'city' |
     return 'neighborhood';
   }
 
-  // Se tem 2 partes relevantes e a segunda é sigla de estado (2 letras), é cidade
+  // Se tem 2 partes relevantes, verificar se é cidade+estado ou estado duplicado
   if (partesRelevantes.length === 2) {
-    const secondPart = partesRelevantes[1].toUpperCase();
-    if (secondPart.length === 2 && BRAZILIAN_STATES[secondPart]) {
+    const firstUpper = partesRelevantes[0].toUpperCase();
+    const secondUpper = partesRelevantes[1].toUpperCase();
+    const firstLower = removeAccents(partesRelevantes[0].toLowerCase());
+    const secondLower = removeAccents(partesRelevantes[1].toLowerCase());
+
+    // Se segunda parte é sigla de estado (2 letras) OU nome de estado → é cidade + estado
+    if (BRAZILIAN_STATES[secondUpper] || STATE_NAME_NORMALIZE[secondLower]) {
       return 'city';
     }
-    // Se segunda parte não é sigla, pode ser estado completo (ex: "Paraíba")
-    return 'state';
+
+    // Se primeira parte é um estado conhecido → pode ser estado sozinho ou duplicado
+    if (BRAZILIAN_STATES[firstUpper] || STATE_NAME_NORMALIZE[firstLower]) {
+      return 'state';
+    }
+
+    // Se nenhuma parte é estado conhecido, assumir cidade + região desconhecida
+    return 'city';
   }
 
   // Se tem apenas 1 parte relevante, verificar se é estado conhecido

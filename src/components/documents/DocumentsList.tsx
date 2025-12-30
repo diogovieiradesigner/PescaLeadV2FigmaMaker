@@ -251,7 +251,7 @@ export function DocumentsList({
       </div>
 
       {/* Documents List */}
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
         {/* Pinned Documents */}
         {pinnedDocuments.length > 0 && (
           <div className="mb-3">
@@ -318,25 +318,56 @@ export function DocumentsList({
                   {folder.name}
                 </span>
               )}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onCreateDocument(folder.id);
+                  }}
+                  className={`p-1.5 rounded transition-all ${
+                    isDark
+                      ? 'hover:bg-[#0066FF]/30 text-white/40 hover:text-white'
+                      : 'hover:bg-blue-100 text-gray-400 hover:text-blue-600'
+                  }`}
+                  title="Novo documento nesta pasta"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    startEditingFolder(folder.id, folder.name);
+                  }}
+                  className={`p-1.5 rounded transition-all ${
+                    isDark
+                      ? 'hover:bg-white/[0.08] text-white/40 hover:text-white'
+                      : 'hover:bg-gray-200 text-gray-400 hover:text-gray-700'
+                  }`}
+                  title="Renomear pasta"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onDeleteFolder(folder.id);
+                  }}
+                  className={`p-1.5 rounded transition-all ${
+                    isDark
+                      ? 'hover:bg-red-500/10 text-white/40 hover:text-red-400'
+                      : 'hover:bg-red-50 text-gray-400 hover:text-red-600'
+                  }`}
+                  title="Deletar pasta"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <span className={`text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
                 {documentsByFolder[folder.id]?.length || 0}
               </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  console.log('[DocumentsList] Criando documento na pasta:', folder.id, folder.name);
-                  onCreateDocument(folder.id);
-                }}
-                className={`p-1.5 rounded transition-all ${
-                  isDark
-                    ? 'hover:bg-[#0066FF]/30 text-white/40 hover:text-white'
-                    : 'hover:bg-blue-100 text-gray-400 hover:text-blue-600'
-                }`}
-                title="Novo documento nesta pasta"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
 
             {/* Folder Documents */}

@@ -71,7 +71,6 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
   useEffect(() => {
     if (!conversationId || !workspaceId) return;
 
-    console.log(`🔌 [useSingleConversation] Subscribing to conversation: ${conversationId}`);
 
     // ✅ CORREÇÃO: Variável local para garantir cleanup do canal correto
     let channelToCleanup: RealtimeChannel | null = null;
@@ -87,7 +86,6 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           filter: `conversation_id=eq.${conversationId}`,
         },
         async (payload) => {
-          console.log('✅ [REALTIME] New message inserted');
           
           // ✅ OTIMIZAÇÃO: Update otimista - adicionar mensagem diretamente sem re-fetch completo
           setConversation(prev => {
@@ -133,7 +131,6 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           filter: `conversation_id=eq.${conversationId}`,
         },
         async (payload) => {
-          console.log('✅ [REALTIME] Message updated:', payload.new.id, 'type:', payload.new.message_type);
 
           // ✅ OTIMIZAÇÃO: Atualizar mensagem específica sem re-fetch
           setConversation(prev => {
@@ -167,7 +164,6 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
           filter: `id=eq.${conversationId}`,
         },
         async (payload) => {
-          console.log('✅ [REALTIME] Conversation updated');
           
           // ✅ OTIMIZAÇÃO: Atualizar apenas metadados da conversa
           setConversation(prev => {
@@ -187,7 +183,6 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
     channelToCleanup = channel;
 
     return () => {
-      console.log(`🔌 [useSingleConversation] Unsubscribing from conversation: ${conversationId}`);
       
       // ✅ CORREÇÃO: Garantir que o canal correto seja removido
       if (channelToCleanup) {
@@ -355,12 +350,10 @@ export function useSingleConversation(leadId: string | null, workspaceId: string
       // ✅ OTIMIZAÇÃO: Evitar refresh muito frequente (debounce manual)
       const now = Date.now();
       if (now - lastFetchRef.current < 1000) {
-        console.log('[useSingleConversation] Skipping refresh - too soon');
         return;
       }
       
       if (isFetchingRef.current) {
-        console.log('[useSingleConversation] Skipping refresh - already fetching');
         return;
       }
       

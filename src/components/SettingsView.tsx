@@ -145,12 +145,10 @@ export function SettingsView({
                 
                 // ✅ NÃO ATUALIZAR SE ESTIVER "connecting" (aguardando QR code)
                 if (data.status === 'connecting') {
-                  console.log(`[SettingsView] ${instance.name} is connecting, not updating status in database`);
                   return;
                 }
                 
                 if (newStatus !== instance.status) {
-                  console.log(`[SettingsView] Updating ${instance.name} status: ${instance.status} → ${newStatus}`);
                   updateInstance(instance.id, { status: newStatus });
                 }
               }
@@ -237,22 +235,14 @@ export function SettingsView({
   const handleConnect = async (instance: Instance) => {
     if (!getInstanceQRCode) return;
 
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔌 [FRONTEND] CONNECT BUTTON CLICKED');
-    console.log('   Instance:', instance.name);
-    console.log('   Provider:', instance.settings?.provider_type || instance.provider);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     setConnectingInstanceId(instance.id);
     try {
-       console.log('📡 [FRONTEND] Calling getInstanceQRCode API...');
        const data = await getInstanceQRCode(instance.id);
        
-       console.log('📥 [FRONTEND] Response received:', data);
        
        // Se estiver conectado
        if (data.connected) {
-          console.log('✅ [FRONTEND] Instance already connected');
           if (updateInstance) {
              updateInstance(instance.id, { status: 'connected' });
           }
@@ -263,16 +253,10 @@ export function SettingsView({
        // Se retornar QR Code
        let code = data.base64 || data.qrcode || data.pairingCode;
        
-       console.log('🔍 [FRONTEND] Looking for QR code...');
-       console.log('   data.base64:', data.base64 ? 'present' : 'missing');
-       console.log('   data.qrcode:', data.qrcode ? 'present' : 'missing');
-       console.log('   data.pairingCode:', data.pairingCode ? 'present' : 'missing');
        
        // ✅ NOVO: Também procurar em data.raw.instance (formato Uazapi)
        if (!code && data.raw?.instance) {
           code = data.raw.instance.qrcode || data.raw.instance.paircode;
-          console.log('   data.raw.instance.qrcode:', data.raw.instance.qrcode ? 'present' : 'missing');
-          console.log('   data.raw.instance.paircode:', data.raw.instance.paircode ? 'present' : 'missing');
        }
        
        // Garantir que é string se vier objeto
@@ -281,11 +265,9 @@ export function SettingsView({
        }
 
        if (code && typeof code === 'string') {
-          console.log('✅ [FRONTEND] QR Code found! Opening modal...');
           
           // ⚠️ NOVO: Se houver mensagem de aviso da API, mostrar ao usuário
           if (data.message) {
-            console.warn('⚠️ [FRONTEND] API Warning:', data.message);
             alert(
               `⚠️ Aviso da API:\n\n${data.message}\n\n💡 Dica: Crie sua instância novamente caso queira conectar mais rápido.`
             );
@@ -377,7 +359,6 @@ export function SettingsView({
         setCheckingStatus(prev => ({ ...prev, [instance.id]: true }));
         try {
            const data = await checkInstanceStatus(instance.id);
-           console.log(`Status check result for ${instance.name}:`, data);
            
            const connected = data.status === 'connected' || data.raw?.instance?.state === 'open';
            
@@ -409,7 +390,6 @@ export function SettingsView({
       const data = await response.json();
       
       if (response.ok) {
-        console.log('Webhook config:', data);
         alert(`✅ Configuração do Webhook:\n\n` +
               `Nome da Instância: ${data.instance.name}\n` +
               `Status: ${data.instance.status}\n` +
@@ -444,7 +424,6 @@ export function SettingsView({
       const data = await response.json();
       
       if (response.ok) {
-        console.log('Webhook updated:', data);
         alert(`✅ Webhook atualizado com sucesso!\n\n` +
               `URL: ${data.webhook_url}\n\n` +
               `Agora envie uma mensagem de teste para a instância.`);
@@ -623,7 +602,7 @@ export function SettingsView({
             </div>
           </div>
 
-          <div className="grid gap-4 overflow-y-auto max-h-[calc(100vh-280px)]">
+          <div className="grid gap-4 overflow-y-auto scrollbar-thin max-h-[calc(100vh-280px)]">
             {instances.length === 0 ? (
               <p className={`text-center py-8 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
                 Nenhuma instância configurada.
@@ -761,7 +740,7 @@ export function SettingsView({
             </button>
           </div>
 
-          <div className="grid gap-4 overflow-y-auto max-h-[calc(100vh-280px)]">
+          <div className="grid gap-4 overflow-y-auto scrollbar-thin max-h-[calc(100vh-280px)]">
             {inboxes.length === 0 ? (
               <p className={`text-center py-8 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
                 Nenhuma caixa de entrada configurada.
@@ -871,7 +850,6 @@ export function SettingsView({
           onComplete={async () => {
             // ✅ NOVO: Ao clicar em "Concluído", marcar como conectado
             if (connectingInstanceId && updateInstance) {
-              console.log('[QrCodeModal] User clicked "Concluído", marking instance as connected...');
               await updateInstance(connectingInstanceId, { status: 'connected' });
               alert('Instância marcada como conectada!');
             }

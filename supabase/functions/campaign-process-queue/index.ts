@@ -817,6 +817,8 @@ async function processSingleMessage(
       
       return { processed: false, failed: false, paused: false, error: err };
     } else {
+      const errorMessage = `Max retries (${MAX_RETRIES}) exceeded: ${err.message?.substring(0, 200) || 'Erro desconhecido'}`;
+
       await supabase.rpc('complete_campaign_message_atomic', {
         p_message_id: msg.id,
         p_run_id: runId,
@@ -826,15 +828,104 @@ async function processSingleMessage(
         p_provider_message_id: null,
         p_success: false
       });
-      
+
       await supabase
         .from('campaign_messages')
         .update({
-          error_message: `Max retries (${MAX_RETRIES}) exceeded: ${err.message?.substring(0, 200) || 'Erro desconhecido'}`,
+          error_message: errorMessage,
           retry_count: currentRetryCount
         })
         .eq('id', msg.id);
-      
+
+      // ✅ Registrar erro nos logs da campanha para visibilidade na UI
+      // Detectar tipos específicos de erro para mensagens mais úteis
+      const errorMsg = err.message || '';
+      const isInsufficientCredits = errorMsg.includes('Insufficient credits') || errorMsg.includes('402');
+      const isInvalidApiKey = errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('Invalid API key');
+      const isAccountSuspended = errorMsg.includes('403') || errorMsg.includes('Forbidden') || errorMsg.includes('suspended') || errorMsg.includes('banned');
+      const isModelNotFound = errorMsg.includes('404') || errorMsg.includes('model not found') || errorMsg.includes('Model not available');
+      const isServerError = errorMsg.includes('500') || errorMsg.includes('502') || errorMsg.includes('503') || errorMsg.includes('Internal Server Error');
+      const isRateLimit = errorMsg.includes('429') || errorMsg.includes('Rate limit');
+      const isTimeout = errorMsg.includes('timeout') || errorMsg.includes('Timeout');
+
+      // Erros críticos que justificam pausar a campanha (todos os leads vão falhar)
+      const isCriticalError = isInsufficientCredits || isInvalidApiKey || isAccountSuspended || isModelNotFound || isServerError;
+
+      let stepName = 'ENVIO_FALHOU';
+      let logMessage = `❌ Falha no envio após ${MAX_RETRIES} tentativas`;
+      let errorType = 'unknown';
+      let pauseReason = '';
+
+      if (isInsufficientCredits) {
+        stepName = 'CREDITOS_INSUFICIENTES';
+        logMessage = '💳 Créditos insuficientes na API de IA - adicione mais créditos para continuar';
+        errorType = 'insufficient_credits';
+        pauseReason = 'Créditos insuficientes na API de IA';
+      } else if (isInvalidApiKey) {
+        stepName = 'API_KEY_INVALIDA';
+        logMessage = '🔑 Chave de API inválida - verifique a configuração da API de IA';
+        errorType = 'invalid_api_key';
+        pauseReason = 'Chave de API inválida';
+      } else if (isAccountSuspended) {
+        stepName = 'CONTA_SUSPENSA';
+        logMessage = '🚫 Conta suspensa ou sem permissão - verifique sua conta na API de IA';
+        errorType = 'account_suspended';
+        pauseReason = 'Conta suspensa ou sem permissão';
+      } else if (isModelNotFound) {
+        stepName = 'MODELO_INDISPONIVEL';
+        logMessage = '🤖 Modelo de IA não disponível - selecione outro modelo nas configurações';
+        errorType = 'model_not_found';
+        pauseReason = 'Modelo de IA não disponível';
+      } else if (isServerError) {
+        stepName = 'ERRO_SERVIDOR_IA';
+        logMessage = '🔥 Servidor da API de IA fora do ar - tente novamente mais tarde';
+        errorType = 'server_error';
+        pauseReason = 'Servidor da API de IA fora do ar';
+      } else if (isRateLimit) {
+        stepName = 'RATE_LIMIT';
+        logMessage = '⚠️ Limite de requisições excedido na API de IA';
+        errorType = 'rate_limit';
+      } else if (isTimeout) {
+        stepName = 'TIMEOUT';
+        logMessage = '⏱️ Timeout na geração de mensagem - API de IA demorou muito para responder';
+        errorType = 'timeout';
+      }
+
+      // Pausar campanha se for erro crítico
+      if (isCriticalError) {
+        await pauseRun(supabase, runId, pauseReason);
+
+        await log(supabase, runId, stepName, 'error',
+          logMessage,
+          {
+            error: errorMsg.substring(0, 500) || 'Erro desconhecido',
+            phone: msg.phone_normalized,
+            lead_id: msg.lead_id,
+            retry_count: currentRetryCount,
+            error_type: errorType,
+            action: 'campaign_paused'
+          },
+          msg.lead_id,
+          msg.id
+        );
+
+        return { processed: false, failed: true, paused: true, error: err };
+      }
+
+      // Erros não críticos - apenas logar sem pausar
+      await log(supabase, runId, stepName, 'error',
+        logMessage,
+        {
+          error: errorMsg.substring(0, 500) || 'Erro desconhecido',
+          phone: msg.phone_normalized,
+          lead_id: msg.lead_id,
+          retry_count: currentRetryCount,
+          error_type: errorType
+        },
+        msg.lead_id,
+        msg.id
+      );
+
       return { processed: false, failed: true, paused: false, error: err };
     }
   }

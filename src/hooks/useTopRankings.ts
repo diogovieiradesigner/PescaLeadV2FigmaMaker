@@ -25,7 +25,6 @@ export function useTopRankings(
       let result = data as any;
       
       if (!result || typeof result !== 'object') {
-        console.warn('[useTopRankings] Dados inválidos recebidos do RPC:', data);
         return {
           leads_engaged: [],
           attendants: [],
@@ -55,7 +54,6 @@ export function useTopRankings(
         
         // Garantir que seja um array
         if (!Array.isArray(result[field])) {
-          console.warn(`[useTopRankings] ${field} não é um array:`, result[field]);
           result[field] = [];
         }
       }

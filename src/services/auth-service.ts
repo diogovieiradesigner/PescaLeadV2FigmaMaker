@@ -34,6 +34,53 @@ export interface AuthResponse {
   error: Error | null;
 }
 
+export interface RateLimitResponse {
+  allowed: boolean;
+  attempts_remaining: number;
+  blocked_until: string | null;
+  message?: string;
+}
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+/**
+ * Verifica se o usuário está bloqueado por rate limiting
+ */
+export async function checkRateLimit(identifier: string): Promise<RateLimitResponse> {
+  try {
+    const { data, error } = await supabase.rpc('check_login_rate_limit', {
+      p_identifier: identifier.toLowerCase(),
+      p_identifier_type: 'email'
+    });
+
+    if (error) {
+      // Se falhar, permitir (fail open para não bloquear usuários legítimos)
+      return { allowed: true, attempts_remaining: 5, blocked_until: null };
+    }
+
+    return data as RateLimitResponse;
+  } catch {
+    return { allowed: true, attempts_remaining: 5, blocked_until: null };
+  }
+}
+
+/**
+ * Registra uma tentativa de login
+ */
+export async function recordLoginAttempt(identifier: string, success: boolean): Promise<void> {
+  try {
+    await supabase.rpc('record_login_attempt', {
+      p_identifier: identifier.toLowerCase(),
+      p_identifier_type: 'email',
+      p_success: success
+    });
+  } catch {
+    // Falha silenciosa - não bloquear login por erro no rate limiting
+  }
+}
+
 // ============================================
 // SIGN UP (Cadastro)
 // ============================================
@@ -68,26 +115,14 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
     });
 
     if (authError) {
-      console.error('[AUTH] Erro ao criar usuário:', authError);
-      console.error('[AUTH] Mensagem completa:', authError.message);
-      
-      // Traduzir erros comuns para mensagens amigáveis
-      let friendlyMessage = authError.message;
-      
-      // Detectar email duplicado ou inválido
-      // Supabase às vezes retorna "Email address X is invalid" para emails duplicados!
-      if (authError.message.includes('User already registered') || 
-          authError.message.includes('already registered') ||
-          authError.message.includes('already been registered') ||
-          authError.message.includes('is invalid')) {
-        friendlyMessage = 'Este email já está cadastrado ou é inválido. Tente fazer login ou use outro email.';
-      } else if (authError.message.includes('Email not confirmed')) {
-        friendlyMessage = 'Você precisa desabilitar a confirmação de email no Supabase Dashboard (Authentication > Settings).';
-      } else if (authError.message.includes('Password should be at least')) {
+      // Mensagens genéricas para evitar enumeração de usuários
+      let friendlyMessage = 'Não foi possível criar a conta. Verifique os dados e tente novamente.';
+
+      // Apenas erros técnicos que não revelam informação sensível
+      if (authError.message.includes('Password should be at least')) {
         friendlyMessage = 'A senha deve ter no mínimo 6 caracteres.';
       }
-      
-      console.error('[AUTH] Mensagem traduzida:', friendlyMessage);
+
       return { user: null, error: new Error(friendlyMessage) };
     }
 
@@ -95,7 +130,7 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
       return { user: null, error: new Error('Usuário não foi criado') };
     }
 
-    console.log('[AUTH] Usuário criado no Auth:', authData.user.id);
+    // Usuário criado com sucesso no Auth
 
     // 2. Aguardar trigger criar perfil
     await new Promise(resolve => setTimeout(resolve, 1500));
@@ -111,19 +146,16 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
 
       if (!profileError && profileData) {
         profile = profileData;
-        console.log('[AUTH] Perfil encontrado após', i + 1, 'tentativas');
         break;
       }
 
       if (i < 4) {
-        console.log('[AUTH] Tentativa', i + 1, 'falhou, aguardando trigger...');
         await new Promise(resolve => setTimeout(resolve, 800));
       }
     }
 
     // 4. Se o trigger não criou, criar manualmente
     if (!profile) {
-      console.log('[AUTH] Trigger não criou perfil, criando manualmente...');
       
       const { data: rpcResult, error: createError } = await supabase.rpc('create_user_profile', {
         p_user_id: authData.user.id,
@@ -132,7 +164,6 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
       });
 
       if (createError) {
-        console.error('[AUTH] ❌ Erro RPC ao criar perfil:', createError);
         // Continuar mesmo se falhar, retornar fallback
       } else if (rpcResult?.success) {
         // Buscar perfil criado
@@ -143,9 +174,6 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
           .single();
         
         profile = fetchedProfile;
-        console.log('[AUTH] ✅ Perfil criado via RPC com sucesso');
-      } else {
-        console.error('[AUTH] ❌ RPC retornou erro:', rpcResult?.error);
       }
     }
 
@@ -157,7 +185,6 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
       lastWorkspaceId: null,
     };
 
-    console.log('[AUTH] Usuário criado com sucesso:', frontendUser.email);
     return { user: frontendUser, error: null };
 
   } catch (error) {
@@ -175,6 +202,14 @@ export async function signUp(data: SignUpData): Promise<AuthResponse> {
  */
 export async function signIn(data: SignInData): Promise<AuthResponse> {
   try {
+    // 0. Verificar rate limiting ANTES de tentar login
+    const rateLimit = await checkRateLimit(data.email);
+
+    if (!rateLimit.allowed) {
+      const message = rateLimit.message || 'Muitas tentativas de login. Tente novamente mais tarde.';
+      return { user: null, error: new Error(message) };
+    }
+
     // 1. Login no Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: data.email,
@@ -182,12 +217,16 @@ export async function signIn(data: SignInData): Promise<AuthResponse> {
     });
 
     if (authError) {
-      console.error('❌ [AUTH] Erro ao fazer login:', authError);
-      // ✅ Mensagem amigável para erro de credenciais inválidas
-      if (authError.message.includes('Invalid login credentials')) {
-        return { user: null, error: new Error('Email ou senha incorretos. Por favor, verifique suas credenciais e tente novamente.') };
-      }
-      return { user: null, error: authError };
+      // Registrar tentativa falha
+      await recordLoginAttempt(data.email, false);
+
+      // Mensagem genérica para evitar enumeração de usuários
+      // Incluir tentativas restantes se disponível
+      const attemptsMsg = rateLimit.attempts_remaining > 1
+        ? ` (${rateLimit.attempts_remaining - 1} tentativas restantes)`
+        : ' (última tentativa antes do bloqueio)';
+
+      return { user: null, error: new Error('Email ou senha incorretos.' + attemptsMsg) };
     }
 
     if (!authData.user) {
@@ -210,12 +249,14 @@ export async function signIn(data: SignInData): Promise<AuthResponse> {
       }
 
       if (i < 2) {
-        console.log('[AUTH] Tentativa', i + 1, 'de buscar perfil falhou, tentando novamente...');
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
-    // 3. Fallback se não encontrou perfil
+    // 3. Login bem-sucedido - limpar tentativas
+    await recordLoginAttempt(data.email, true);
+
+    // 4. Fallback se não encontrou perfil
     if (!profile) {
       const frontendUser: FrontendUser = {
         id: authData.user.id,
@@ -224,13 +265,11 @@ export async function signIn(data: SignInData): Promise<AuthResponse> {
         avatar: null,
         lastWorkspaceId: null,
       };
-      
-      console.log('[AUTH] Perfil não encontrado, usando fallback:', frontendUser.email);
+
       return { user: frontendUser, error: null };
     }
 
     const frontendUser = dbUserToFrontend(profile as DbUser);
-    console.log('[AUTH] Login realizado com sucesso:', frontendUser.email);
     return { user: frontendUser, error: null };
 
   } catch (error) {
@@ -251,11 +290,9 @@ export async function signOut(): Promise<{ error: Error | null }> {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      console.error('[AUTH] Erro ao fazer logout:', error);
       return { error };
     }
 
-    console.log('[AUTH] Logout realizado com sucesso');
     return { error: null };
 
   } catch (error) {
@@ -277,7 +314,6 @@ export async function getCurrentUser(): Promise<AuthResponse> {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError) {
-      console.error('[AUTH] Erro ao verificar sessão:', sessionError);
       return { user: null, error: sessionError };
     }
 
@@ -301,14 +337,12 @@ export async function getCurrentUser(): Promise<AuthResponse> {
       }
 
       if (i < 2) {
-        console.log('[AUTH] Tentativa', i + 1, 'de buscar perfil falhou, tentando novamente...');
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
     // 3. Se não encontrou perfil, criar manualmente
     if (!profile) {
-      console.log('[AUTH] Perfil não encontrado, criando...');
       
       const { data: rpcResult, error: createError } = await supabase.rpc('create_user_profile', {
         p_user_id: session.user.id,
@@ -317,8 +351,6 @@ export async function getCurrentUser(): Promise<AuthResponse> {
       });
 
       if (createError) {
-        console.error('[AUTH] ❌ Erro RPC ao criar perfil:', createError);
-        
         // Fallback se criação falhar
         const frontendUser: FrontendUser = {
           id: session.user.id,
@@ -327,8 +359,7 @@ export async function getCurrentUser(): Promise<AuthResponse> {
           avatar: null,
           lastWorkspaceId: null,
         };
-        
-        console.log('[AUTH] Usando fallback para perfil:', frontendUser.email);
+
         return { user: frontendUser, error: null };
       }
 
@@ -341,10 +372,7 @@ export async function getCurrentUser(): Promise<AuthResponse> {
           .single();
         
         profile = fetchedProfile;
-        console.log('[AUTH] ✅ Perfil criado via RPC com sucesso');
       } else {
-        console.error('[AUTH] ❌ RPC retornou erro:', rpcResult?.error);
-        
         // Fallback
         const frontendUser: FrontendUser = {
           id: session.user.id,
@@ -353,8 +381,7 @@ export async function getCurrentUser(): Promise<AuthResponse> {
           avatar: null,
           lastWorkspaceId: null,
         };
-        
-        console.log('[AUTH] Usando fallback após erro RPC:', frontendUser.email);
+
         return { user: frontendUser, error: null };
       }
     }
@@ -381,7 +408,6 @@ export async function updateProfile(data: UpdateProfileData): Promise<AuthRespon
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !authUser) {
-      console.error('[AUTH] Usuário não autenticado:', authError);
       return { user: null, error: authError || new Error('Não autenticado') };
     }
 
@@ -394,12 +420,10 @@ export async function updateProfile(data: UpdateProfileData): Promise<AuthRespon
       .single();
 
     if (updateError) {
-      console.error('[AUTH] Erro ao atualizar perfil:', updateError);
       return { user: null, error: updateError };
     }
 
     const frontendUser = dbUserToFrontend(updatedProfile as DbUser);
-    console.log('[AUTH] Perfil atualizado com sucesso');
     return { user: frontendUser, error: null };
 
   } catch (error) {
@@ -429,7 +453,6 @@ export async function updateLastWorkspace(workspaceId: string): Promise<{ error:
       .eq('id', authUser.id);
 
     if (updateError) {
-      console.error('[AUTH] Erro ao atualizar last_workspace_id:', updateError);
       return { error: updateError };
     }
 
@@ -450,7 +473,6 @@ export async function updateLastWorkspace(workspaceId: string): Promise<{ error:
  */
 export function onAuthStateChange(callback: (user: FrontendUser | null) => void) {
   const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log('[AUTH] Estado de autenticação mudou:', event);
 
     if (session?.user) {
       // Buscar perfil completo

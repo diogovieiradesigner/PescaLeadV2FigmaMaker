@@ -37,6 +37,49 @@ export default {
         'card': '0 2px 8px rgba(0, 0, 0, 0.5)',
         'light': '0 2px 8px rgba(0, 0, 0, 0.08)',
       },
+      animation: {
+        'gradient-shift': 'gradient-shift 8s ease infinite',
+        'float-slow': 'float-slow 8s ease-in-out infinite',
+        'float-slower': 'float-slower 10s ease-in-out infinite',
+      },
+      keyframes: {
+        'gradient-shift': {
+          '0%, 100%': {
+            'background-position': '0% 50%',
+          },
+          '50%': {
+            'background-position': '100% 50%',
+          },
+        },
+        'float-slow': {
+          '0%, 100%': {
+            transform: 'translate(0px, 0px) scale(1)',
+          },
+          '25%': {
+            transform: 'translate(250px, -200px) scale(1.4)',
+          },
+          '50%': {
+            transform: 'translate(-180px, 280px) scale(0.8)',
+          },
+          '75%': {
+            transform: 'translate(200px, 150px) scale(1.2)',
+          },
+        },
+        'float-slower': {
+          '0%, 100%': {
+            transform: 'translate(0px, 0px) scale(1)',
+          },
+          '25%': {
+            transform: 'translate(-300px, 250px) scale(1.3)',
+          },
+          '50%': {
+            transform: 'translate(220px, -180px) scale(0.7)',
+          },
+          '75%': {
+            transform: 'translate(-150px, -220px) scale(1.15)',
+          },
+        },
+      },
     },
   },
   plugins: [],

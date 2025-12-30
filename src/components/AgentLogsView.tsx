@@ -56,16 +56,10 @@ export function AgentLogsView({ theme, onBack, onThemeToggle, onNavigateToSettin
 
       // ✅ Usar workspace do contexto de autenticação
       if (!currentWorkspace?.id) {
-        console.log('[AgentLogsView] ⚠️ No current workspace in context');
         return;
       }
 
       const workspaceId = currentWorkspace.id;
-      console.log('[AgentLogsView] ✅ Using workspace from context:', {
-        id: workspaceId,
-        name: currentWorkspace.name,
-        role: currentWorkspace.role
-      });
       
       const currentFilters = { ...filters, workspace_id: workspaceId };
 
@@ -139,21 +133,22 @@ export function AgentLogsView({ theme, onBack, onThemeToggle, onNavigateToSettin
         <div className="flex items-center gap-4">
            <div className="flex items-center gap-2">
              <div className="relative">
-               <select 
-                 value={filters.status} 
+               <select
+                 value={filters.status}
                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as any, offset: 0 }))}
+                 style={isDark ? { colorScheme: 'dark' } : undefined}
                  className={cn(
                    "w-[140px] h-9 text-xs appearance-none rounded-md border px-3 pr-8 font-medium transition-colors focus:outline-none",
-                   isDark 
-                     ? "bg-black border-white/[0.1] text-white hover:border-white/[0.2] focus:border-white/[0.2]" 
+                   isDark
+                     ? "bg-black border-white/[0.1] text-white hover:border-white/[0.2] focus:border-white/[0.2]"
                      : "bg-white border-zinc-200 text-zinc-900"
                  )}
                >
-                 <option value="all">Todos os Status</option>
-                 <option value="success">Sucesso</option>
-                 <option value="error">Erro</option>
-                 <option value="blocked">Bloqueado</option>
-                 <option value="running">Em andamento</option>
+                 <option value="all" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Todos os Status</option>
+                 <option value="success" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Sucesso</option>
+                 <option value="error" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Erro</option>
+                 <option value="blocked" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Bloqueado</option>
+                 <option value="running" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Em andamento</option>
                </select>
                <ChevronDown className={cn(
                  "absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none opacity-50",
@@ -162,20 +157,21 @@ export function AgentLogsView({ theme, onBack, onThemeToggle, onNavigateToSettin
              </div>
 
              <div className="relative">
-               <select 
-                 value={filters.limit?.toString()} 
+               <select
+                 value={filters.limit?.toString()}
                  onChange={(e) => setFilters(prev => ({ ...prev, limit: parseInt(e.target.value), offset: 0 }))}
+                 style={isDark ? { colorScheme: 'dark' } : undefined}
                  className={cn(
                    "w-[100px] h-9 text-xs appearance-none rounded-md border px-3 pr-8 font-medium transition-colors focus:outline-none",
-                   isDark 
-                     ? "bg-black border-white/[0.1] text-white hover:border-white/[0.2] focus:border-white/[0.2]" 
+                   isDark
+                     ? "bg-black border-white/[0.1] text-white hover:border-white/[0.2] focus:border-white/[0.2]"
                      : "bg-white border-zinc-200 text-zinc-900"
                  )}
                >
-                 <option value="10">10 itens</option>
-                 <option value="20">20 itens</option>
-                 <option value="50">50 itens</option>
-                 <option value="100">100 itens</option>
+                 <option value="10" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>10 itens</option>
+                 <option value="20" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>20 itens</option>
+                 <option value="50" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>50 itens</option>
+                 <option value="100" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>100 itens</option>
                </select>
                <ChevronDown className={cn(
                  "absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none opacity-50",
@@ -224,7 +220,7 @@ export function AgentLogsView({ theme, onBack, onThemeToggle, onNavigateToSettin
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-6 overflow-y-auto">
+      <div className="flex-1 p-6 overflow-y-auto scrollbar-thin">
         <div className="max-w-7xl mx-auto space-y-6">
            {/* Stats Widget */}
            <PipelineStatsWidget stats={stats} loading={loading && !stats} isDark={isDark} />

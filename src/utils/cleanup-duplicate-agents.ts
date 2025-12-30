@@ -30,7 +30,6 @@ export async function cleanupDuplicateAgents() {
     }
 
     const workspaceId = memberData.workspace_id;
-    console.log('🔍 Workspace ID:', workspaceId);
 
     // Buscar todos os agentes deste workspace
     const { data: agents, error: fetchError } = await supabase
@@ -45,15 +44,12 @@ export async function cleanupDuplicateAgents() {
     }
 
     if (!agents || agents.length === 0) {
-      console.log('✅ Nenhum agente encontrado');
       return;
     }
 
-    console.log(`📊 Total de agentes encontrados: ${agents.length}`);
     console.table(agents);
 
     if (agents.length === 1) {
-      console.log('✅ Apenas 1 agente. Nada a fazer.');
       return;
     }
 
@@ -61,11 +57,8 @@ export async function cleanupDuplicateAgents() {
     const keepAgent = agents[0];
     const duplicates = agents.slice(1);
 
-    console.log(`\n🎯 Mantendo agente: ${keepAgent.name} (${keepAgent.id})`);
-    console.log(`🗑️  Removendo ${duplicates.length} duplicados:\n`);
     
     duplicates.forEach((dup, index) => {
-      console.log(`   ${index + 1}. ${dup.name} - ${dup.id} - ${dup.created_at}`);
     });
 
     const confirmation = confirm(
@@ -78,7 +71,6 @@ export async function cleanupDuplicateAgents() {
     );
 
     if (!confirmation) {
-      console.log('❌ Operação cancelada pelo usuário');
       return;
     }
 
@@ -95,9 +87,6 @@ export async function cleanupDuplicateAgents() {
       return;
     }
 
-    console.log(`\n✅ Sucesso! ${duplicates.length} agente(s) duplicado(s) removido(s).`);
-    console.log(`✅ Agente mantido: ${keepAgent.name} (${keepAgent.id})`);
-    console.log('\n🔄 Recarregue a página para ver as mudanças.');
     
   } catch (error) {
     console.error('❌ Erro inesperado:', error);
@@ -132,7 +121,6 @@ export async function listAgents() {
       .eq('workspace_id', memberData.workspace_id)
       .order('created_at', { ascending: true });
 
-    console.log(`📊 Total de agentes: ${agents?.length || 0}`);
     console.table(agents);
 
   } catch (error) {

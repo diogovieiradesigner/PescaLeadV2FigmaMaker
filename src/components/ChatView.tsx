@@ -113,7 +113,6 @@ export function ChatView({
   // ✅ Sincronizar com conversationId da URL
   useEffect(() => {
     if (urlConversationId && urlConversationId !== selectedConversationId) {
-      console.log('[ChatView] 🔗 Conversa na URL:', urlConversationId);
       setSelectedConversationIdState(urlConversationId);
     }
   }, [urlConversationId]);
@@ -238,7 +237,6 @@ export function ChatView({
 
   const handleAttendantTypeChange = async (conversationId: string, attendantType: 'human' | 'ai') => {
     try {
-      console.log(`[ChatView] Updating attendant type: ${conversationId} → ${attendantType}`);
       await updateAttendantType(conversationId, attendantType);
     } catch (error) {
       console.error('[ChatView] Error updating attendant type:', error);
@@ -332,7 +330,6 @@ export function ChatView({
       throw new Error('Erro ao criar conversa: ' + createError.message);
     }
 
-    console.log('[ChatView] Conversation created:', newConversation);
     
     // Selecionar a nova conversa
     setSelectedConversationId(newConversation.id);

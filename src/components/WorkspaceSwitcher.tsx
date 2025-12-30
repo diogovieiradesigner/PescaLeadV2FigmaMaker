@@ -101,7 +101,7 @@ export function WorkspaceSwitcher({ theme }: WorkspaceSwitcherProps) {
           </div>
 
           {/* Workspace List */}
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto scrollbar-thin">
             {workspaces.map((workspace) => (
               <button
                 key={workspace.id}

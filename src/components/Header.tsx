@@ -96,6 +96,7 @@ export function Header({
           <select
             value={currentFunnel}
             onChange={(e) => handleFunnelChange(e.target.value)}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             className={`appearance-none border text-sm px-3 py-1.5 pr-9 rounded-lg cursor-pointer transition-colors focus:outline-none focus:border-[#0169D9] ${
               isDark
                 ? 'bg-elevated border-white/[0.08] text-white hover:border-white/[0.15]'
@@ -103,11 +104,11 @@ export function Header({
             }`}
           >
             {funnels.map((funnel) => (
-              <option key={funnel.id} value={funnel.id}>
+              <option key={funnel.id} value={funnel.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                 {funnel.name}
               </option>
             ))}
-            <option value="__new__">+ Novo Funil</option>
+            <option value="__new__" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>+ Novo Funil</option>
           </select>
           <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${
             isDark ? 'text-white/70' : 'text-text-secondary-light'

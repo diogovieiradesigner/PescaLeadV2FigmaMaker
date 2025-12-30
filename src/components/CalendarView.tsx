@@ -160,13 +160,10 @@ export function CalendarView({
   // ✅ Abrir evento automaticamente quando há eventId na URL (/calendario/evento/:eventId)
   useEffect(() => {
     if (urlEventId && events.length > 0 && !isEventModalOpen) {
-      console.log('[CalendarView] 🔗 Evento na URL:', urlEventId);
       const eventFromUrl = events.find(e => e.id === urlEventId);
       if (eventFromUrl) {
-        console.log('[CalendarView] ✅ Evento encontrado:', eventFromUrl.title);
         openEditEventModal(eventFromUrl);
       } else {
-        console.warn('[CalendarView] ⚠️ Evento não encontrado:', urlEventId);
         // Limpa a URL se o evento não existir
         onEventChange?.(null);
       }
@@ -675,7 +672,7 @@ export function CalendarView({
                       onClick={() => setIsFilterOpen(false)}
                     />
                     <div className={cn(
-                      'absolute top-full left-0 mt-1 w-56 rounded-lg border shadow-lg z-20 max-h-64 overflow-y-auto',
+                      'absolute top-full left-0 mt-1 w-56 rounded-lg border shadow-lg z-20 max-h-64 overflow-y-auto scrollbar-thin',
                       isDark
                         ? 'bg-zinc-900 border-white/10'
                         : 'bg-white border-gray-200'
@@ -940,7 +937,7 @@ export function CalendarView({
           </div>
 
           {/* Events List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-3">
             {isLoading ? (
               <div className={cn(
                 'text-center py-8',

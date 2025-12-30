@@ -100,7 +100,6 @@ export async function createDocument(input: CreateDocumentInput): Promise<{
       return { document: null, error };
     }
 
-    console.log('[DOCUMENTS] Document created:', data?.id);
     return { document: data, error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -115,6 +114,7 @@ export async function updateDocument(
   try {
     const updateData: Record<string, unknown> = {};
 
+    if (input.lead_id !== undefined) updateData.lead_id = input.lead_id;
     if (input.folder_id !== undefined) updateData.folder_id = input.folder_id;
     if (input.title !== undefined) updateData.title = input.title;
     if (input.content !== undefined) updateData.content = input.content;
@@ -134,7 +134,6 @@ export async function updateDocument(
       return { document: null, error };
     }
 
-    console.log('[DOCUMENTS] Document updated:', documentId);
     return { document: data, error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -154,7 +153,6 @@ export async function deleteDocument(documentId: string): Promise<{ error: Error
       return { error };
     }
 
-    console.log('[DOCUMENTS] Document deleted:', documentId);
     return { error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -211,7 +209,6 @@ export async function createFolder(input: CreateFolderInput): Promise<{
       return { folder: null, error };
     }
 
-    console.log('[DOCUMENTS] Folder created:', data?.id);
     return { folder: data, error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -222,23 +219,24 @@ export async function createFolder(input: CreateFolderInput): Promise<{
 export async function updateFolder(
   folderId: string,
   input: UpdateFolderInput
-): Promise<{ error: Error | null }> {
+): Promise<{ folder: LeadDocumentFolder | null; error: Error | null }> {
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('lead_document_folders')
       .update(input)
-      .eq('id', folderId);
+      .eq('id', folderId)
+      .select()
+      .single();
 
     if (error) {
       console.error('[DOCUMENTS] Error updating folder:', error);
-      return { error };
+      return { folder: null, error };
     }
 
-    console.log('[DOCUMENTS] Folder updated:', folderId);
-    return { error: null };
+    return { folder: data, error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
-    return { error: error as Error };
+    return { folder: null, error: error as Error };
   }
 }
 
@@ -255,7 +253,6 @@ export async function deleteFolder(folderId: string): Promise<{ error: Error | n
       return { error };
     }
 
-    console.log('[DOCUMENTS] Folder deleted:', folderId);
     return { error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -313,7 +310,6 @@ export async function createTemplate(input: CreateTemplateInput): Promise<{
       return { template: null, error };
     }
 
-    console.log('[DOCUMENTS] Template created:', data?.id);
     return { template: data, error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -336,7 +332,6 @@ export async function updateTemplate(
       return { error };
     }
 
-    console.log('[DOCUMENTS] Template updated:', templateId);
     return { error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -356,7 +351,6 @@ export async function deleteTemplate(templateId: string): Promise<{ error: Error
       return { error };
     }
 
-    console.log('[DOCUMENTS] Template deleted:', templateId);
     return { error: null };
   } catch (error) {
     console.error('[DOCUMENTS] Unexpected error:', error);
@@ -416,11 +410,9 @@ export async function createVersion(input: CreateVersionInput): Promise<{
       return { version: null, error };
     }
 
-    console.log('[DOCUMENTS] Version created:', data?.id);
 
     // Cleanup old versions - keep only the latest MAX_VERSIONS_PER_DOCUMENT
     cleanupOldVersions(input.document_id).catch(err => {
-      console.warn('[DOCUMENTS] Error cleaning up old versions (non-blocking):', err);
     });
 
     return { version: data, error: null };
@@ -452,7 +444,6 @@ async function cleanupOldVersions(documentId: string): Promise<void> {
       const versionsToDelete = versions.slice(MAX_VERSIONS_PER_DOCUMENT);
       const idsToDelete = versionsToDelete.map(v => v.id);
 
-      console.log(`[DOCUMENTS] Cleaning up ${idsToDelete.length} old versions for document ${documentId}`);
 
       const { error: deleteError } = await supabase
         .from('lead_document_versions')
@@ -462,7 +453,6 @@ async function cleanupOldVersions(documentId: string): Promise<void> {
       if (deleteError) {
         console.error('[DOCUMENTS] Error deleting old versions:', deleteError);
       } else {
-        console.log(`[DOCUMENTS] Successfully deleted ${idsToDelete.length} old versions`);
       }
     }
   } catch (error) {
@@ -636,4 +626,133 @@ export function contentToMarkdown(content: unknown): string {
   };
 
   return convertNode(content as Record<string, unknown>);
+}
+
+// ============================================
+// WORKSPACE-WIDE QUERIES
+// ============================================
+
+/**
+ * Get all documents across all leads in a workspace
+ * Includes lead name and folder information for display
+ */
+export async function getDocumentsByWorkspace(workspaceId: string): Promise<any[]> {
+  try {
+
+    // Fetch documents without joins first
+    const { data: docsData, error: docsError } = await supabase
+      .from('lead_documents')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('is_pinned', { ascending: false })
+      .order('updated_at', { ascending: false });
+
+    if (docsError) {
+      console.error('[DOCUMENTS] Error fetching documents:', docsError);
+      return [];
+    }
+
+    if (!docsData || docsData.length === 0) {
+      return [];
+    }
+
+
+    // Get unique lead IDs and folder IDs
+    const leadIds = [...new Set(docsData.map(d => d.lead_id).filter(Boolean))];
+    const folderIds = [...new Set(docsData.map(d => d.folder_id).filter(Boolean))];
+
+
+    // Fetch leads data (only if there are lead IDs)
+    let leadsData: any[] = [];
+    if (leadIds.length > 0) {
+      const { data, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, client_name')
+        .in('id', leadIds);
+
+      if (leadsError) {
+        console.error('[DOCUMENTS] Error fetching leads:', leadsError);
+      } else {
+        leadsData = data || [];
+      }
+    }
+
+    // Fetch folders data (only if there are folder IDs)
+    let foldersData: any[] = [];
+    if (folderIds.length > 0) {
+      const { data, error: foldersError } = await supabase
+        .from('lead_document_folders')
+        .select('id, name, color')
+        .in('id', folderIds);
+
+      if (foldersError) {
+        console.error('[DOCUMENTS] Error fetching folders:', foldersError);
+      } else {
+        foldersData = data || [];
+      }
+    }
+
+    // Create lookup maps
+    const leadsMap = new Map(leadsData.map(l => [l.id, l]));
+    const foldersMap = new Map(foldersData.map(f => [f.id, f]));
+
+    // Transform data to include lead_name and folder_name
+    return docsData.map(doc => ({
+      ...doc,
+      lead_name: leadsMap.get(doc.lead_id)?.client_name || 'Lead não encontrado',
+      folder_name: foldersMap.get(doc.folder_id)?.name,
+      folder_color: foldersMap.get(doc.folder_id)?.color
+    }));
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return [];
+  }
+}
+
+/**
+ * Get all folders across all leads in a workspace
+ */
+export async function getFoldersByWorkspace(workspaceId: string): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from('lead_document_folders')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('position');
+
+    if (error) {
+      console.error('[DOCUMENTS] Error fetching workspace folders:', error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Get unique lead IDs
+    const leadIds = [...new Set(data.map(f => f.lead_id).filter(Boolean))];
+
+    // Fetch leads data
+    let leadsData: any[] = [];
+    if (leadIds.length > 0) {
+      const { data: leads } = await supabase
+        .from('leads')
+        .select('id, client_name')
+        .in('id', leadIds);
+
+      leadsData = leads || [];
+    }
+
+    // Create lookup map
+    const leadsMap = new Map(leadsData.map(l => [l.id, l]));
+
+    // Add lead_name to folders
+    return data.map(folder => ({
+      ...folder,
+      lead_name: leadsMap.get(folder.lead_id)?.client_name || 'Lead não encontrado'
+    }));
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return [];
+  }
 }

@@ -22,7 +22,6 @@ export function useDashboardSummary(
       let result = data as any;
       
       if (!result || typeof result !== 'object') {
-        console.warn('[useDashboardSummary] Dados inválidos recebidos do RPC:', data);
         return {
           period: {
             start: filters.startDate.toISOString(),

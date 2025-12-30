@@ -283,7 +283,6 @@ export function ContactInfo({
       
       // Detectar mudança automática: AI → Humano
       if (wasAI && isNowHuman) {
-        console.log('[ContactInfo] 🤝 Mudança automática detectada: AI → Humano');
         setAutoSwitchedToHuman(true);
         
         // Remover feedback após 3 segundos
@@ -308,12 +307,6 @@ export function ContactInfo({
       try {
         const { lead, error } = await getLeadById(conversation.leadId);
         if (lead && !error) {
-          console.log('[ContactInfo] Lead carregado com sucesso:', {
-            leadId: lead.id,
-            clientName: lead.clientName,
-            customFieldsCount: lead.customFields?.length || 0,
-            customFields: lead.customFields
-          });
           setLeadData(lead);
         } else {
           console.error('[ContactInfo] Erro ao buscar lead:', error);
@@ -333,7 +326,6 @@ export function ContactInfo({
   // ✅ Handler para vincular o lead à conversa após criação
   const handleLeadCreated = async (leadId: string) => {
     try {
-      console.log('[ContactInfo] Vinculando lead à conversa:', leadId);
       await updateConversation(conversation.id, { lead_id: leadId });
       
       // Atualizar o leadId localmente (forçar re-busca dos dados)
@@ -346,7 +338,6 @@ export function ContactInfo({
         }
       }
       
-      console.log('[ContactInfo] Lead vinculado com sucesso!');
       // ✅ Refresh do kanban após adicionar lead
       onKanbanRefresh && onKanbanRefresh();
     } catch (err) {
@@ -570,12 +561,13 @@ export function ContactInfo({
                 ? 'bg-elevated border-white/[0.08] text-white'
                 : 'bg-light-elevated border-border-light text-text-primary-light'
             }`}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             value={conversation.status}
             onChange={(e) => onStatusChange && onStatusChange(conversation.id, e.target.value)}
           >
-            <option value="waiting">Aguardando</option>
-            <option value="in-progress">Em Atendimento</option>
-            <option value="resolved">Resolvido</option>
+            <option value="waiting" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Aguardando</option>
+            <option value="in-progress" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Em Atendimento</option>
+            <option value="resolved" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Resolvido</option>
           </select>
         </div>
 
@@ -594,12 +586,13 @@ export function ContactInfo({
                 ? 'bg-elevated border-white/[0.08] text-white'
                 : 'bg-light-elevated border-border-light text-text-primary-light'
             }`}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             value={conversation.assignedTo || ""}
             onChange={(e) => onAssigneeChange && onAssigneeChange(conversation.id, e.target.value)}
           >
-            <option value="">Não atribuído</option>
+            <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Não atribuído</option>
             {agents.map(agent => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
+              <option key={agent.id} value={agent.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>{agent.name}</option>
             ))}
           </select>
         </div>

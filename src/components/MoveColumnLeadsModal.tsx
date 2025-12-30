@@ -166,16 +166,6 @@ export function MoveColumnLeadsModal({
     setProcessing(true);
 
     try {
-      console.log('[MoveColumnLeadsModal] Iniciando movimentação:', {
-        sourceColumnId,
-        sourceColumnTitle,
-        sourceFunnelId,
-        sourceFunnelName,
-        targetFunnelId: selectedFunnelId,
-        targetColumnId: selectedColumnId,
-        leadCount,
-        filters: filters || 'sem filtros'
-      });
 
       // Verificar autenticação
       const { data: { session } } = await supabase.auth.getSession();
@@ -183,7 +173,6 @@ export function MoveColumnLeadsModal({
         throw new Error('Usuário não autenticado');
       }
 
-      console.log('[MoveColumnLeadsModal] Chamando RPC queue_column_leads_migration...');
 
       // Preparar parâmetros da RPC incluindo filtros
       const rpcParams: Record<string, any> = {
@@ -197,12 +186,10 @@ export function MoveColumnLeadsModal({
         p_filter_search_query: filters?.searchQuery || null,
       };
 
-      console.log('[MoveColumnLeadsModal] Parâmetros RPC:', rpcParams);
 
       // Chamar função RPC do Supabase
       const { data, error } = await supabase.rpc('queue_column_leads_migration', rpcParams);
 
-      console.log('[MoveColumnLeadsModal] Resposta RPC:', { data, error });
 
       if (error) {
         console.error('[MoveColumnLeadsModal] Erro na chamada RPC:', error);
@@ -214,10 +201,8 @@ export function MoveColumnLeadsModal({
         throw new Error(data?.error || 'Erro desconhecido ao processar movimentação');
       }
 
-      console.log('[MoveColumnLeadsModal] ✅ Movimentação enfileirada com sucesso:', data);
       
       // Processar a fila até completar todos os leads
-      console.log('[MoveColumnLeadsModal] 🚀 Processando fila até completar...');
       let totalMoved = 0;
       let attempts = 0;
       const BATCH_SIZE = 25;
@@ -264,7 +249,6 @@ export function MoveColumnLeadsModal({
             if (finished || attempts >= maxAttempts) return;
 
             attempts++;
-            console.log(`[MoveColumnLeadsModal] 📦 Rodada ${attempts} - ${PARALLEL_CALLS} batches em paralelo...`);
 
             // Executar múltiplos batches em paralelo
             const results = await Promise.all(
@@ -279,7 +263,6 @@ export function MoveColumnLeadsModal({
             }
 
             totalMoved += roundMoved;
-            console.log(`[MoveColumnLeadsModal] ✅ Rodada ${attempts}: +${roundMoved} leads (total: ${totalMoved})`);
 
             // Se não moveu nada nesta rodada, provavelmente terminou
             if (roundMoved === 0) {
@@ -328,7 +311,6 @@ export function MoveColumnLeadsModal({
           toast.success(`✅ Movimentação concluída!`);
         }
       } catch (processError) {
-        console.warn('[MoveColumnLeadsModal] ⚠️ Erro ao processar fila:', processError);
         if (onSuccess) onSuccess();
         toast.success(`✅ Movimentação em andamento...`);
       }

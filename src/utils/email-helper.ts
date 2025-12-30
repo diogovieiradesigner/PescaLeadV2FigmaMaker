@@ -16,17 +16,14 @@ let isOpening = false;
 export function openEmailCompose(email: string, subject?: string, body?: string): void {
   // ✅ Prevenir execução dupla
   if (isOpening) {
-    console.log('[EMAIL HELPER] ⚠️ Já está abrindo, ignorando chamada duplicada');
     return;
   }
 
   if (!email || !email.includes('@')) {
-    console.warn('[EMAIL HELPER] E-mail inválido:', email);
     return;
   }
 
   isOpening = true;
-  console.log('[EMAIL HELPER] 🚀 Iniciando abertura de e-mail para:', email);
 
   // Construir URL do Gmail
   const params = new URLSearchParams({
@@ -47,14 +44,12 @@ export function openEmailCompose(email: string, subject?: string, body?: string)
   
   // Tentar abrir Gmail em nova aba
   try {
-    console.log('[EMAIL HELPER] 📧 Tentando abrir Gmail...');
     const gmailWindow = window.open(gmailUrl, '_blank', 'noopener,noreferrer');
     
     // ✅ CORREÇÃO: Verificar se popup foi bloqueado apenas se window.open retornar null
     // Se window.open retornar null, significa que o popup foi bloqueado
     if (!gmailWindow) {
       // Popup foi bloqueado - usar fallback mailto:
-      console.log('[EMAIL HELPER] ⚠️ Popup bloqueado, usando mailto: como fallback');
       openMailto(email, subject, body);
       // Resetar flag imediatamente após usar fallback
       setTimeout(() => {
@@ -62,11 +57,9 @@ export function openEmailCompose(email: string, subject?: string, body?: string)
       }, 500);
     } else {
       // ✅ Gmail foi aberto com sucesso - NÃO executar fallback
-      console.log('[EMAIL HELPER] ✅ Gmail aberto com sucesso, NÃO executando fallback');
       // Resetar flag após um tempo para permitir nova abertura
       setTimeout(() => {
         isOpening = false;
-        console.log('[EMAIL HELPER] 🔓 Flag resetada, pode abrir novamente');
       }, 1000);
     }
   } catch (error) {
@@ -87,7 +80,6 @@ export function openEmailCompose(email: string, subject?: string, body?: string)
  * @param body - Corpo do e-mail (opcional)
  */
 function openMailto(email: string, subject?: string, body?: string): void {
-  console.log('[EMAIL HELPER] 📮 Abrindo mailto: para:', email);
   
   let mailtoUrl = `mailto:${encodeURIComponent(email)}`;
   
@@ -109,11 +101,9 @@ function openMailto(email: string, subject?: string, body?: string): void {
   
   // Se window.open falhar (pouco provável com mailto:), usar location.href como último recurso
   if (!mailtoWindow) {
-    console.log('[EMAIL HELPER] ⚠️ window.open falhou, usando location.href como fallback');
     // Apenas como último recurso
     window.location.href = mailtoUrl;
   } else {
-    console.log('[EMAIL HELPER] ✅ mailto: aberto com sucesso');
   }
 }
 

@@ -100,13 +100,7 @@ export function useCampaignsTab({
       }
       
       if (!data) {
-        console.warn('⚠️ Nenhum dado retornado pela RPC');
       } else {
-        console.log('✅ Dados de campanhas carregados:', {
-          hasStatsCards: !!data.stats_cards,
-          hasRanking: !!data.ranking,
-          hasHeatmap: !!data.response_heatmap
-        });
       }
       
       return data;

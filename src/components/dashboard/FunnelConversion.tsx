@@ -15,15 +15,6 @@ export function FunnelConversion({ data, isLoading, isDark = true }: FunnelConve
   const columns = Array.isArray(data?.columns) ? data.columns : [];
   
   // DEBUG: Log completo dos dados recebidos
-  console.log('🔍 [FunnelConversion] Props recebidas:', { 
-    data, 
-    isLoading, 
-    isDark,
-    hasData: !!data,
-    columnsLength: columns.length,
-    columns,
-    totalCounts: columns.reduce((sum, col) => sum + col.count, 0)
-  });
 
   if (isLoading) {
     return <div className="animate-pulse bg-zinc-800 h-96 rounded-xl" />;

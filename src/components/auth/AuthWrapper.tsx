@@ -37,14 +37,6 @@ export function AuthWrapper({ theme, children }: AuthWrapperProps) {
   }
 
   // Log para debug
-  console.log('[AUTH WRAPPER] Estado atual:', {
-    isAuthenticated,
-    isLoading,
-    hasCurrentWorkspace: !!currentWorkspace,
-    workspaceId: currentWorkspace?.id,
-    workspaceName: currentWorkspace?.name,
-    totalWorkspaces: workspaces.length,
-  });
 
   // If authenticated, show the app (mesmo sem workspace)
   // A aplicação vai lidar com o caso de não ter workspace

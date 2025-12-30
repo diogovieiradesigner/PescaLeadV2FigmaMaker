@@ -102,24 +102,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
     
     // Setup auth state change listener for token refresh
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AUTH] Auth state changed:', event);
-      
+      // Ignorar eventos durante operações de login/signup (gerenciados manualmente)
       if (event === 'TOKEN_REFRESHED' && session) {
-        console.log('[AUTH] Token refreshed automatically');
         setAccessToken(session.access_token);
         localStorage.setItem('supabase_auth_token', session.access_token);
       } else if (event === 'SIGNED_OUT') {
-        console.log('[AUTH] User signed out');
-        setAccessToken(null);
-        setUser(null);
-        setCurrentWorkspace(null);
-        setWorkspaces([]);
-        localStorage.removeItem('supabase_auth_token');
-      } else if (event === 'SIGNED_IN' && session) {
-        console.log('[AUTH] User signed in');
-        setAccessToken(session.access_token);
-        localStorage.setItem('supabase_auth_token', session.access_token);
+        // Só limpar se realmente não tiver sessão
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) {
+          setAccessToken(null);
+          setUser(null);
+          setCurrentWorkspace(null);
+          setWorkspaces([]);
+          localStorage.removeItem('supabase_auth_token');
+        }
       }
+      // Removido SIGNED_IN - gerenciado manualmente na função login()
     });
 
     return () => {
@@ -134,7 +132,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error || !session) {
-        console.log('[AUTH] Nenhuma sessão ativa encontrada');
         // Clear any stale tokens
         setAccessToken(null);
         localStorage.removeItem('supabase_auth_token');
@@ -147,11 +144,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Verify token is not expired
       const expiresAt = session.expires_at;
       if (expiresAt && expiresAt * 1000 < Date.now()) {
-        console.log('[AUTH] Token expirado, fazendo refresh...');
         const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-        
+
         if (refreshError || !refreshData.session) {
-          console.error('[AUTH] Erro ao fazer refresh do token:', refreshError);
           setAccessToken(null);
           localStorage.removeItem('supabase_auth_token');
           setIsLoading(false);
@@ -169,7 +164,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await loadUserData();
 
     } catch (error) {
-      console.error('[AUTH] Erro ao verificar sessão:', error);
       setAccessToken(null);
       localStorage.removeItem('supabase_auth_token');
     } finally {
@@ -182,29 +176,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // ============================================
   async function loadUserData() {
     try {
-      console.log('[AUTH] 🔄 Iniciando carregamento de dados do usuário...');
-      
       // 1. Get user profile
       const { user: userData, error: userError } = await authService.getCurrentUser();
-      
+
       if (userError || !userData) {
-        console.error('[AUTH] ❌ Erro ao carregar perfil:', userError);
         return;
       }
 
-      console.log('[AUTH] ✅ Perfil carregado:', userData.email);
       setUser(userData as User);
 
       // 2. Get user workspaces
-      const { workspaces: workspacesData, error: workspacesError } = 
+      const { workspaces: workspacesData, error: workspacesError } =
         await workspacesService.getMyWorkspaces();
-      
+
       if (workspacesError) {
-        console.error('[AUTH] ❌ Erro ao carregar workspaces:', workspacesError);
         return;
       }
 
-      console.log('[AUTH] ✅ Workspaces carregados:', workspacesData.length);
       setWorkspaces(workspacesData as Workspace[]);
 
       // 3. Set current workspace (last used or first available)
@@ -220,11 +208,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setCurrentWorkspace(activeWorkspace);
 
-      console.log('[AUTH] ✅ Dados do usuário carregados com sucesso');
-      console.log('[AUTH] ✅ Current workspace:', activeWorkspace?.name, activeWorkspace?.id);
-
     } catch (error) {
-      console.error('[AUTH] ❌ Erro ao carregar dados do usuário:', error);
+      // Erro silencioso ao carregar dados
     }
   }
 
@@ -244,14 +229,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (signupError || !newUser) {
-        console.error('[AUTH] ❌ Erro ao criar usuário:', signupError);
-        
-        // ✅ CORREÇÃO: Lançar erro formatado para o frontend capturar
         const errorMessage = signupError?.message || 'Erro ao criar usuário';
         throw new Error(errorMessage);
       }
-
-      console.log('[AUTH] Usuário criado:', newUser.email);
 
       // 2. Login to get session
       await login(email, password);
@@ -262,22 +242,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (workspaceError) {
-        console.error('[AUTH] ❌ Erro ao criar workspace inicial:', workspaceError);
-        // ⚠️ IMPORTANTE: Mostrar erro ao usuário!
+        // Mostrar erro ao usuario
         throw new Error(`Workspace não criado: ${workspaceError.message}`);
       } else if (workspace) {
-        console.log('[AUTH] ✅ Workspace criado:', workspace.name);
         setWorkspaces([workspace as Workspace]);
         setCurrentWorkspace(workspace as Workspace);
       } else {
-        console.error('[AUTH] ❌ Workspace não foi criado (null response)');
         throw new Error('Workspace não foi criado');
       }
 
-      console.log('[AUTH] Cadastro completo!');
-
     } catch (error) {
-      console.error('[AUTH] Erro no cadastro:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -299,14 +273,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (signupError || !newUser) {
-        console.error('[AUTH] ❌ Erro ao criar usuário:', signupError);
-        
-        // ✅ CORREÇÃO: Lançar erro formatado para o frontend capturar
+        // Lancar erro formatado para o frontend capturar
         const errorMessage = signupError?.message || 'Erro ao criar usuário';
         throw new Error(errorMessage);
       }
-
-      console.log('[AUTH] Usuário criado:', newUser.email);
 
       // 2. Login to get session
       await login(email, password);
@@ -315,18 +285,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const { workspaceId, error: inviteError } = await workspacesService.acceptInvite(inviteCode);
 
       if (inviteError) {
-        console.error('[AUTH] ❌ Erro ao aceitar convite:', inviteError);
-        // ⚠️ IMPORTANTE: Mostrar erro ao usuário!
+        // Mostrar erro ao usuario
         throw new Error(`Convite não aceito: ${inviteError.message}`);
       }
 
       // 4. Refresh workspaces to get the new workspace
       await refreshWorkspaces();
 
-      console.log('[AUTH] ✅ Cadastro com convite completo!');
-
     } catch (error) {
-      console.error('[AUTH] Erro no cadastro:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -346,9 +312,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (error || !userData) {
-        console.error('[AUTH] ❌ Erro ao fazer login:', error);
-        
-        // ✅ CORREÇÃO: Lançar erro formatado para o frontend capturar
+        // Lancar erro formatado para o frontend capturar
         const errorMessage = error?.message || 'Credenciais inválidas';
         throw new Error(errorMessage);
       }
@@ -376,10 +340,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       setCurrentWorkspace(activeWorkspace);
 
-      console.log('[AUTH] Login realizado com sucesso');
-
     } catch (error) {
-      console.error('[AUTH] Erro no login:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -402,10 +363,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setAccessToken(null);
       localStorage.removeItem('supabase_auth_token');
 
-      console.log('[AUTH] Logout realizado com sucesso');
-
     } catch (error) {
-      console.error('[AUTH] Erro no logout:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -430,10 +388,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       }
 
-      console.log('[AUTH] Workspace alterado:', workspaceId);
-
     } catch (error) {
-      console.error('[AUTH] Erro ao trocar workspace:', error);
       throw error;
     }
   }
@@ -459,10 +414,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       }
 
-      console.log('[AUTH] Workspaces atualizados');
-
     } catch (error) {
-      console.error('[AUTH] Erro ao atualizar workspaces:', error);
       throw error;
     }
   }
@@ -490,12 +442,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await authService.updateLastWorkspace(newWorkspace.id);
       }
 
-      console.log('[AUTH] Workspace criado e selecionado:', newWorkspace.name);
-
       return newWorkspace;
 
     } catch (error) {
-      console.error('[AUTH] Erro ao criar workspace:', error);
       throw error;
     }
   }
@@ -518,10 +467,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setUser(updatedUser as User);
 
-      console.log('[AUTH] Perfil atualizado');
-
     } catch (error) {
-      console.error('[AUTH] Erro ao atualizar perfil:', error);
       throw error;
     }
   }
@@ -531,6 +477,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // ============================================
   async function updatePassword(currentPassword: string, newPassword: string) {
     try {
+      // 1. Verificar se usuário está autenticado
+      if (!user?.email) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // 2. Verificar senha atual fazendo login em background
+      // Usamos um cliente separado para não afetar a sessão atual
+      const { createClient } = await import('@supabase/supabase-js');
+      const tempClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co',
+        import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sYmN3YXhrZWFkZGZvY2lnd3VrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NjkyNDksImV4cCI6MjA3OTE0NTI0OX0.BoTSbJgFVb2XWNBVOcNv75JAKrwwMlNGJWETQYyMNFg',
+        { auth: { persistSession: false } }
+      );
+
+      const { error: authError } = await tempClient.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (authError) {
+        throw new Error('Senha atual incorreta');
+      }
+
+      // 3. Agora sim, atualizar para a nova senha usando o cliente principal
       const { error } = await supabase.auth.updateUser({
         password: newPassword
       });
@@ -539,10 +509,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error(error.message || 'Erro ao atualizar senha');
       }
 
-      console.log('[AUTH] Senha atualizada com sucesso');
-
     } catch (error) {
-      console.error('[AUTH] Erro ao atualizar senha:', error);
       throw error;
     }
   }
@@ -565,7 +532,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return members;
 
     } catch (error) {
-      console.error('[AUTH] Erro ao buscar membros:', error);
       throw error;
     }
   }
@@ -589,12 +555,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error || new Error('Erro ao criar convite');
       }
 
-      console.log('[AUTH] Convite criado');
-
       return inviteCode;
 
     } catch (error) {
-      console.error('[AUTH] Erro ao convidar membro:', error);
       throw error;
     }
   }
@@ -618,10 +581,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
 
-      console.log('[AUTH] Role do membro atualizada');
-
     } catch (error) {
-      console.error('[AUTH] Erro ao atualizar role:', error);
       throw error;
     }
   }
@@ -641,10 +601,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
 
-      console.log('[AUTH] Membro removido');
-
     } catch (error) {
-      console.error('[AUTH] Erro ao remover membro:', error);
       throw error;
     }
   }

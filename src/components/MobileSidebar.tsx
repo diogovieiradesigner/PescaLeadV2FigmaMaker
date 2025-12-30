@@ -1,4 +1,4 @@
-import { Home, Target, MessageSquare, Download, Megaphone, Bot, X, Calendar } from 'lucide-react';
+import { Home, Target, MessageSquare, Download, Megaphone, Bot, X, Calendar, FileText, BrainCircuit } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import IconografiaPescaLead from '../imports/IconografiaPescaLead';
@@ -17,10 +17,12 @@ const navItems = [
   { icon: Home, label: 'Dashboard', view: 'dashboard' },
   { icon: Target, label: 'Pipeline', view: 'pipeline' },
   { icon: MessageSquare, label: 'Chat', view: 'chat' },
-  { icon: Calendar, label: 'Calendário', view: 'calendar' },
   { icon: Download, label: 'Extração', view: 'extraction' },
   { icon: Megaphone, label: 'Campanha', view: 'campaign' },
   { icon: Bot, label: 'Atendimento de I.A', view: 'ai-service' },
+  { icon: Calendar, label: 'Calendário', view: 'calendar' },
+  { icon: FileText, label: 'Documentos', view: 'documents' },
+  { icon: BrainCircuit, label: 'Assistente IA', view: 'ai-assistant' },
 ];
 
 export function MobileSidebar({ isOpen, onClose, theme, currentView, onViewChange }: MobileSidebarProps) {

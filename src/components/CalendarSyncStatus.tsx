@@ -35,9 +35,7 @@ export function GoogleSyncBadge({
 
       try {
         setLoading(true);
-        console.log('[GoogleSyncBadge] Checking status for workspace:', workspaceId);
         const status = await getGoogleConnectionStatus(workspaceId);
-        console.log('[GoogleSyncBadge] Status received:', status);
         setConnected(status.connected);
         setHasError(!!status.connection?.sync_error);
       } catch (err) {

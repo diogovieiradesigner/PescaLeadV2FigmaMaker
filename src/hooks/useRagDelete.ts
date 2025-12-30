@@ -10,7 +10,6 @@ export function useRagDelete() {
     setIsDeleting(document.id);
 
     try {
-      console.log('[useRagDelete] Deleting document:', document.title);
       
       const response = await fetch(RAG_MANAGE_URL, {
         method: 'POST',
@@ -27,7 +26,6 @@ export function useRagDelete() {
         throw new Error(result.error || 'Falha ao deletar');
       }
 
-      console.log('[useRagDelete] Document deleted successfully');
       return { success: true };
 
     } catch (err: any) {

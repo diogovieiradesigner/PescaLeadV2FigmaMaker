@@ -54,7 +54,6 @@ export function useLeadCustomFields(
 
     // ✅ CACHE: Se já buscou este lead antes, reutilizar
     if (cache && cacheRef.current.has(leadId)) {
-      console.log(`[useLeadCustomFields] ✅ Cache hit para lead ${leadId}`);
       setCustomFields(cacheRef.current.get(leadId)!);
       lastFetchedLeadIdRef.current = leadId;
       return;
@@ -63,12 +62,10 @@ export function useLeadCustomFields(
     // ✅ Evitar re-fetch do mesmo leadId consecutivamente (APENAS SE CACHE ATIVO)
     // 🔥 BUGFIX: Se cache está desabilitado, sempre re-fetch mesmo que seja o mesmo leadId
     if (cache && lastFetchedLeadIdRef.current === leadId) {
-      console.log(`[useLeadCustomFields] ⏭️ Pulando fetch (mesmo leadId com cache ativo)`);
       return;
     }
 
     const fetchCustomFields = async () => {
-      console.log(`[useLeadCustomFields] 🔍 Buscando custom fields para lead ${leadId}${cache ? ' (com cache)' : ' (SEM cache)'}`);
       setLoading(true);
       setError(null);
       lastFetchedLeadIdRef.current = leadId;
@@ -103,7 +100,6 @@ export function useLeadCustomFields(
           cacheRef.current.set(leadId, fields);
         }
 
-        console.log(`[useLeadCustomFields] ✅ ${fields.length} custom fields carregados`);
       } catch (err: any) {
         console.error('[useLeadCustomFields] ❌ Erro ao buscar custom fields:', err);
         setError(err.message || 'Erro ao carregar campos personalizados');

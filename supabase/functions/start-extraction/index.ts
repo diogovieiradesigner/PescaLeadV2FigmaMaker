@@ -415,10 +415,11 @@ serve(async (req) => {
 
     console.log(`\n📨 Total enfileirado: ${queuedCount}/${pagesNeeded} páginas`);
 
-    // PASSO 6: Criar log de sucesso
+    // PASSO 6: Criar log de sucesso com detalhes completos
+    const estimatedResults = queuedCount * resultsPerPage;
     await createExtractionLog(
       supabase, run_id, 1, 'Inicialização', 'success',
-      `V4: Enfileiradas ${queuedCount} páginas (${startPage} a ${startPage + pagesNeeded - 1})`,
+      `✅ V4: Enfileiradas ${queuedCount} páginas (${startPage} a ${startPage + pagesNeeded - 1}) - Estimativa: ~${estimatedResults} resultados`,
       {
         version: 'V4_UNIVERSAL_QUEUE',
         queue_name: QUEUE_NAME,
@@ -426,8 +427,12 @@ serve(async (req) => {
         target_quantity: targetQuantity,
         history_pages: lastProcessedPage,
         start_page: startPage,
+        end_page: startPage + pagesNeeded - 1,
         pages_queued: queuedCount,
-        queued_pages: queuedPages
+        queued_pages: queuedPages,
+        estimated_results: estimatedResults,
+        results_per_page: resultsPerPage,
+        location_level: locationLevel
       }
     );
 

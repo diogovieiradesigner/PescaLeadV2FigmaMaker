@@ -52,7 +52,6 @@ export async function getMyWorkspaces(): Promise<{
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !authUser) {
-      console.error('[WORKSPACES] Usuário não autenticado:', authError);
       return { workspaces: [], error: authError || new Error('Não autenticado') };
     }
 
@@ -66,12 +65,10 @@ export async function getMyWorkspaces(): Promise<{
       .eq('user_id', authUser.id);
 
     if (membershipsError) {
-      console.error('[WORKSPACES] Erro ao buscar workspaces:', membershipsError);
       return { workspaces: [], error: membershipsError };
     }
 
     if (!memberships || memberships.length === 0) {
-      console.log('[WORKSPACES] Usuário não tem workspaces');
       return { workspaces: [], error: null };
     }
 
@@ -83,11 +80,9 @@ export async function getMyWorkspaces(): Promise<{
         m as DbWorkspaceMember
       ));
 
-    console.log(`[WORKSPACES] ${workspaces.length} workspace(s) encontrado(s)`);
     return { workspaces, error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { workspaces: [], error: error as Error };
   }
 }
@@ -122,7 +117,6 @@ export async function getWorkspaceById(workspaceId: string): Promise<{
       .single();
 
     if (membershipError) {
-      console.error('[WORKSPACES] Erro ao buscar workspace:', membershipError);
       return { workspace: null, error: membershipError };
     }
 
@@ -138,7 +132,6 @@ export async function getWorkspaceById(workspaceId: string): Promise<{
     return { workspace, error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { workspace: null, error: error as Error };
   }
 }
@@ -166,7 +159,6 @@ export async function createWorkspace(data: CreateWorkspaceData): Promise<{
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !authUser) {
-      console.error('[WORKSPACES] Usuário não autenticado:', authError);
       return { workspace: null, error: authError || new Error('Não autenticado') };
     }
 
@@ -176,13 +168,11 @@ export async function createWorkspace(data: CreateWorkspaceData): Promise<{
     });
 
     if (rpcError) {
-      console.error('[WORKSPACES] ❌ Erro RPC ao criar workspace:', rpcError);
       return { workspace: null, error: rpcError };
     }
 
     if (!rpcResult?.success) {
       const errorMsg = rpcResult?.error || 'Erro desconhecido ao criar workspace';
-      console.error('[WORKSPACES] ❌ RPC retornou erro:', errorMsg);
       return { workspace: null, error: new Error(errorMsg) };
     }
 
@@ -195,11 +185,9 @@ export async function createWorkspace(data: CreateWorkspaceData): Promise<{
       ownerId: rpcResult.owner_id,
     };
 
-    console.log('[WORKSPACES] ✅ Workspace criado com sucesso via RPC:', workspace.name);
     return { workspace, error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { workspace: null, error: error as Error };
   }
 }
@@ -222,15 +210,12 @@ export async function updateWorkspace(
       .eq('id', workspaceId);
 
     if (updateError) {
-      console.error('[WORKSPACES] Erro ao atualizar workspace:', updateError);
       return { error: updateError };
     }
 
-    console.log('[WORKSPACES] Workspace atualizado com sucesso');
     return { error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { error: error as Error };
   }
 }
@@ -250,15 +235,12 @@ export async function deleteWorkspace(workspaceId: string): Promise<{ error: Err
       .eq('id', workspaceId);
 
     if (deleteError) {
-      console.error('[WORKSPACES] Erro ao deletar workspace:', deleteError);
       return { error: deleteError };
     }
 
-    console.log('[WORKSPACES] Workspace deletado com sucesso');
     return { error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { error: error as Error };
   }
 }
@@ -284,7 +266,6 @@ export async function getMembers(workspaceId: string): Promise<{
       .eq('workspace_id', workspaceId);
 
     if (membershipsError) {
-      console.error('[WORKSPACES] Erro ao buscar membros:', membershipsError);
       return { members: [], error: membershipsError };
     }
 
@@ -302,7 +283,6 @@ export async function getMembers(workspaceId: string): Promise<{
     return { members, error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { members: [], error: error as Error };
   }
 }
@@ -342,15 +322,12 @@ export async function inviteMember(data: InviteMemberData): Promise<{
       });
 
     if (inviteError) {
-      console.error('[WORKSPACES] Erro ao criar convite:', inviteError);
       return { inviteCode: null, error: inviteError };
     }
 
-    console.log('[WORKSPACES] Convite criado com sucesso');
     return { inviteCode: code, error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { inviteCode: null, error: error as Error };
   }
 }
@@ -381,7 +358,6 @@ export async function acceptInvite(code: string): Promise<{
       .single();
 
     if (inviteError || !invite) {
-      console.error('[WORKSPACES] Convite não encontrado:', inviteError);
       return { workspaceId: null, error: new Error('Convite inválido') };
     }
 
@@ -405,7 +381,6 @@ export async function acceptInvite(code: string): Promise<{
       });
 
     if (memberError) {
-      console.error('[WORKSPACES] Erro ao adicionar membro:', memberError);
       return { workspaceId: null, error: memberError };
     }
 
@@ -419,11 +394,9 @@ export async function acceptInvite(code: string): Promise<{
       })
       .eq('code', code);
 
-    console.log('[WORKSPACES] Convite aceito com sucesso');
     return { workspaceId: invite.workspace_id, error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { workspaceId: null, error: error as Error };
   }
 }
@@ -447,15 +420,12 @@ export async function removeMember(
       .eq('user_id', userId);
 
     if (deleteError) {
-      console.error('[WORKSPACES] Erro ao remover membro:', deleteError);
       return { error: deleteError };
     }
 
-    console.log('[WORKSPACES] Membro removido com sucesso');
     return { error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { error: error as Error };
   }
 }
@@ -480,15 +450,12 @@ export async function updateMemberRole(
       .eq('user_id', userId);
 
     if (updateError) {
-      console.error('[WORKSPACES] Erro ao atualizar role:', updateError);
       return { error: updateError };
     }
 
-    console.log('[WORKSPACES] Role atualizada com sucesso');
     return { error: null };
 
   } catch (error) {
-    console.error('[WORKSPACES] Erro inesperado:', error);
     return { error: error as Error };
   }
 }

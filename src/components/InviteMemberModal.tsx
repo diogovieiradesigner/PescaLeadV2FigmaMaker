@@ -31,21 +31,16 @@ export function InviteMemberModal({
     setError(null);
     setLoading(true);
 
-    console.log('[INVITE-MODAL] Form submitted:', { email, role, workspaceId });
 
     try {
-      console.log('[INVITE-MODAL] Calling inviteMemberByEmail...');
       const result = await inviteMemberByEmail(workspaceId, email, role);
-      console.log('[INVITE-MODAL] Invite successful:', result);
       
       // Show success message
       if (onSuccess) {
-        console.log('[INVITE-MODAL] Calling onSuccess callback');
         onSuccess(result.member);
       }
       
       // Close modal and reset
-      console.log('[INVITE-MODAL] Closing modal');
       handleClose();
     } catch (err: any) {
       console.error('[INVITE-MODAL] Error caught:', err);
@@ -61,7 +56,6 @@ export function InviteMemberModal({
       }
     } finally {
       setLoading(false);
-      console.log('[INVITE-MODAL] Loading finished');
     }
   };
 
@@ -107,7 +101,7 @@ export function InviteMemberModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
           <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-6">
           <div className="space-y-4">
             {error && (
@@ -150,15 +144,16 @@ export function InviteMemberModal({
                 value={role}
                 onChange={(e) => setRole(e.target.value as typeof role)}
                 disabled={loading}
+                style={isDark ? { colorScheme: 'dark' } : undefined}
                 className={`w-full px-4 py-2.5 rounded-lg border transition-colors focus:outline-none focus:border-[#0169D9] ${
                   isDark
                     ? 'bg-white/[0.05] border-white/[0.08] text-white'
                     : 'bg-white border-border-light text-text-primary-light'
                 }`}
               >
-                <option value="viewer">Visualizador</option>
-                <option value="member">Membro</option>
-                <option value="admin">Admin</option>
+                <option value="viewer" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Visualizador</option>
+                <option value="member" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Membro</option>
+                <option value="admin" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Admin</option>
               </select>
             </div>
 

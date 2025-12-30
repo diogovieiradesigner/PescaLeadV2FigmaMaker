@@ -86,7 +86,7 @@ export function FiltersModal({ isOpen, onClose, theme, filters }: FiltersModalPr
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
+        <div className="p-6 overflow-y-auto scrollbar-thin max-h-[60vh]">
           <div className="space-y-6">
             {/* Parâmetros de Busca */}
             <div>
@@ -222,7 +222,7 @@ export function FiltersModal({ isOpen, onClose, theme, filters }: FiltersModalPr
                 <div className={`p-4 rounded-lg ${
                   isDark ? 'bg-white/[0.02] border border-white/[0.05]' : 'bg-gray-50 border border-border-light'
                 }`}>
-                  <pre className={`text-xs whitespace-pre-wrap overflow-x-auto ${
+                  <pre className={`text-xs whitespace-pre-wrap overflow-x-auto scrollbar-thin ${
                     isDark ? 'text-white/80' : 'text-text-primary-light'
                   }`}>
                     {formatJsonFilter(filters.filters_applied || filters.filters_json)}

@@ -77,19 +77,6 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
   }, [funnelData]);
 
   // DEBUG: Logs completos dos dados
-  console.log('🔍 [LEADS TAB] Dados recebidos:', {
-    summary,
-    funnelData,
-    normalizedFunnelData,
-    channelData,
-    topSources,
-    evolutionData,
-    loadingSummary,
-    loadingFunnel,
-    loadingChannel,
-    loadingTopSources,
-    loadingEvolution,
-  });
 
   // Verificar se há erros
   const hasError = errorSummary || errorFunnel || errorChannel || errorTopSources || errorEvolution || errorFunnels || funnelsResult?.error;
@@ -111,6 +98,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
           <select
             value={periodDays}
             onChange={(e) => setPeriodDays(e.target.value)}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             className={cn(
               "h-9 px-3 py-2 rounded-lg text-sm border transition-colors",
               isDark
@@ -118,10 +106,10 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                 : "bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400"
             )}
           >
-            <option value="7">Últimos 7 dias</option>
-            <option value="15">Últimos 15 dias</option>
-            <option value="30">Últimos 30 dias</option>
-            <option value="90">Últimos 90 dias</option>
+            <option value="7" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 7 dias</option>
+            <option value="15" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 15 dias</option>
+            <option value="30" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 30 dias</option>
+            <option value="90" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 90 dias</option>
           </select>
         </div>
 
@@ -133,6 +121,7 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
           <select
             value={funnelId || 'all'}
             onChange={(e) => setFunnelId(e.target.value === 'all' ? null : e.target.value)}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             className={cn(
               "h-9 px-3 py-2 rounded-lg text-sm border transition-colors",
               isDark
@@ -140,9 +129,9 @@ export function LeadsTab({ isDark }: LeadsTabProps) {
                 : "bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400"
             )}
           >
-            <option value="all">Todos</option>
+            <option value="all" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Todos</option>
             {funnelsList.map((funnel) => (
-              <option key={funnel.id} value={funnel.id}>{funnel.name}</option>
+              <option key={funnel.id} value={funnel.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>{funnel.name}</option>
             ))}
           </select>
         </div>

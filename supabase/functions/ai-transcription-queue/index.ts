@@ -231,30 +231,33 @@ Deno.serve(async (req) => {
         const isImage = job.content_type === "image";
         const isVideo = job.content_type === "video";
 
+        // Determinar tabela (messages padrão, ai_messages para AI Assistant)
+        const tableName = job.table_name || "messages";
+
         if (isAudio && !config.audio_enabled) {
           console.log(`[ai-transcription-queue] Audio transcription disabled, skipping`);
-          await supabase.from("messages").update({ transcription_status: "disabled" }).eq("id", job.message_id);
+          await supabase.from(tableName).update({ transcription_status: "disabled" }).eq("id", job.message_id);
           await supabase.rpc("pgmq_delete", { queue_name: "ai_transcription_queue", msg_id: queueMsg.msg_id });
           continue;
         }
 
         if (isImage && !config.image_enabled) {
           console.log(`[ai-transcription-queue] Image transcription disabled, skipping`);
-          await supabase.from("messages").update({ transcription_status: "disabled" }).eq("id", job.message_id);
+          await supabase.from(tableName).update({ transcription_status: "disabled" }).eq("id", job.message_id);
           await supabase.rpc("pgmq_delete", { queue_name: "ai_transcription_queue", msg_id: queueMsg.msg_id });
           continue;
         }
 
         if (isVideo && !config.video_enabled) {
           console.log(`[ai-transcription-queue] Video transcription disabled, skipping`);
-          await supabase.from("messages").update({ transcription_status: "disabled" }).eq("id", job.message_id);
+          await supabase.from(tableName).update({ transcription_status: "disabled" }).eq("id", job.message_id);
           await supabase.rpc("pgmq_delete", { queue_name: "ai_transcription_queue", msg_id: queueMsg.msg_id });
           continue;
         }
 
         // Atualizar status para processing
         await supabase
-          .from("messages")
+          .from(tableName)
           .update({ transcription_status: "processing" })
           .eq("id", job.message_id);
 
@@ -292,7 +295,7 @@ Deno.serve(async (req) => {
         let conversationId = job.conversation_id;
         if (!conversationId) {
           const { data: msgData } = await supabase
-            .from("messages")
+            .from(tableName)
             .select("conversation_id")
             .eq("id", job.message_id)
             .single();
@@ -300,14 +303,21 @@ Deno.serve(async (req) => {
         }
 
         // Atualizar mensagem com transcrição
+        // Para ai_messages, não temos transcription_provider e transcribed_at
+        const updateData: Record<string, any> = {
+          transcription: transcription,
+          transcription_status: "completed"
+        };
+
+        // Adicionar campos extras apenas para tabela messages (WhatsApp)
+        if (tableName === "messages") {
+          updateData.transcription_provider = provider;
+          updateData.transcribed_at = new Date().toISOString();
+        }
+
         await supabase
-          .from("messages")
-          .update({
-            transcription: transcription,
-            transcription_status: "completed",
-            transcription_provider: provider,
-            transcribed_at: new Date().toISOString()
-          })
+          .from(tableName)
+          .update(updateData)
           .eq("id", job.message_id);
 
         // Logar transcrição bem-sucedida
@@ -344,10 +354,12 @@ Deno.serve(async (req) => {
         const duration = Date.now() - jobStartTime;
 
         // Buscar conversation_id se não temos
+        // Nota: tableName pode não estar definido aqui se o erro ocorreu antes
+        const errorTableName = job.table_name || "messages";
         let conversationId = job.conversation_id;
         if (!conversationId) {
           const { data: msgData } = await supabase
-            .from("messages")
+            .from(errorTableName)
             .select("conversation_id")
             .eq("id", job.message_id)
             .single();
@@ -356,7 +368,7 @@ Deno.serve(async (req) => {
 
         // Marcar como falha
         await supabase
-          .from("messages")
+          .from(errorTableName)
           .update({
             transcription_status: "failed",
             transcription: `[Erro: ${jobError.message}]`

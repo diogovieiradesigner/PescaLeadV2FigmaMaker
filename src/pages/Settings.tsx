@@ -70,7 +70,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         return;
       }
 
-      console.log('[SETTINGS] Carregando membros do workspace:', currentWorkspace?.id);
 
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/workspace-team/members?workspace_id=${currentWorkspace?.id}`,
@@ -93,7 +92,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         throw new Error(data.error || 'Failed to load members');
       }
 
-      console.log('[SETTINGS] Membros carregados:', data.members);
       setMembers(data.members || []);
     } catch (error: any) {
       console.error('[SETTINGS] Load members error:', error);
@@ -107,7 +105,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
     if (!confirm('Tem certeza que deseja remover este membro?')) return;
 
     try {
-      console.log('[SETTINGS] Removendo membro:', memberId);
 
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/workspace-team/remove-member`,
@@ -129,7 +126,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         throw new Error(data.error || 'Failed to remove member');
       }
 
-      console.log('[SETTINGS] Membro removido com sucesso');
       showMessage('Membro removido com sucesso!');
       loadMembers();
     } catch (error: any) {
@@ -140,7 +136,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
 
   const handleChangeRole = async (memberId: string, newRole: string) => {
     try {
-      console.log('[SETTINGS] Alterando role do membro:', { memberId, newRole });
 
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/workspace-team/update-role`,
@@ -163,7 +158,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         throw new Error(data.error || 'Failed to change role');
       }
 
-      console.log('[SETTINGS] Role alterado com sucesso');
       showMessage('Função alterada com sucesso!');
       loadMembers();
     } catch (error: any) {
@@ -270,7 +264,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
       }
 
       const data = await response.json();
-      console.log('[SETTINGS] Notification preferences loaded:', data);
       setNotificationPreferences(data.preferences);
     } catch (error: any) {
       console.error('[SETTINGS] Error loading notification preferences:', error);
@@ -322,7 +315,6 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         throw new Error('Failed to save notification preferences');
       }
 
-      console.log('[SETTINGS] Notification preferences saved successfully');
       showMessage('Preferências de notificações salvas com sucesso!');
     } catch (error: any) {
       console.error('[SETTINGS] Error saving notification preferences:', error);
@@ -690,15 +682,16 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
                         <select
                           value={member.role || 'member'}
                           onChange={(e) => handleChangeRole(member.user_id || member.id, e.target.value)}
+                          style={isDark ? { colorScheme: 'dark' } : undefined}
                           className={`text-sm px-3 py-1 rounded-full border transition-colors ${
-                            isDark 
-                              ? 'bg-[#0169D9]/20 text-[#0169D9] border-[#0169D9]/30 hover:bg-[#0169D9]/30' 
+                            isDark
+                              ? 'bg-[#0169D9]/20 text-[#0169D9] border-[#0169D9]/30 hover:bg-[#0169D9]/30'
                               : 'bg-[#0169D9]/10 text-[#0169D9] border-[#0169D9]/20 hover:bg-[#0169D9]/20'
                           }`}
                         >
-                          <option value="viewer">Viewer</option>
-                          <option value="member">Member</option>
-                          <option value="admin">Admin</option>
+                          <option value="viewer" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Viewer</option>
+                          <option value="member" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Member</option>
+                          <option value="admin" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Admin</option>
                         </select>
                       ) : (
                         <span className={`text-sm px-3 py-1 rounded-full ${
@@ -939,7 +932,7 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
                 Tipos de Notificação
               </h3>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto scrollbar-thin">
                 <table className="w-full">
                   <thead>
                     <tr className={`border-b ${
@@ -1409,7 +1402,7 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
 
       {/* Content Area - Com scroll */}
       <div className={cn(
-        "flex-1 overflow-auto",
+        "flex-1 overflow-auto scrollbar-thin",
         isDark ? "bg-black" : "bg-zinc-50"
       )}>
         <div className="max-w-7xl mx-auto px-6 py-8">

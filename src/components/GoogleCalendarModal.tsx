@@ -97,12 +97,10 @@ export function GoogleCalendarModal({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'google-oauth-success') {
-        console.log('[GoogleCalendarModal] OAuth success message received');
         setSuccessMessage('Conta Google conectada com sucesso!');
         setConnecting(false);
         loadConnectionStatus();
       } else if (event.data?.type === 'google-oauth-error') {
-        console.log('[GoogleCalendarModal] OAuth error message received:', event.data.error);
         setError(`Erro ao conectar: ${event.data.error}`);
         setConnecting(false);
       }
@@ -523,7 +521,7 @@ export function GoogleCalendarModal({
                 Selecione os calendários que deseja sincronizar:
               </p>
 
-              <div className="max-h-64 overflow-y-auto space-y-2">
+              <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
                 {calendars.map((cal) => (
                   <label
                     key={cal.id}

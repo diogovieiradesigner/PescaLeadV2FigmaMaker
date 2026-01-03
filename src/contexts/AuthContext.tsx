@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { supabase } from '../utils/supabase/client';
 import * as authService from '../services/auth-service';
 import * as workspacesService from '../services/workspaces-service';
@@ -25,6 +25,14 @@ export interface Workspace {
   ownerId: string;
 }
 
+export interface AccessiblePage {
+  page_id: string;
+  page_name: string;
+  page_path: string;
+  page_icon: string | null;
+  display_order: number;
+}
+
 export interface WorkspaceMember {
   userId: string;
   userName: string;
@@ -42,25 +50,29 @@ interface AuthContextType {
   accessToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  
+  accessiblePages: AccessiblePage[];
+
   // Auth methods
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, workspaceName: string, phone?: string) => Promise<void>;
   signupWithInvite: (name: string, email: string, password: string, inviteCode: string) => Promise<void>;
   logout: () => Promise<void>;
-  
+
   // Workspace methods
   switchWorkspace: (workspaceId: string) => Promise<void>;
   refreshWorkspaces: () => Promise<void>;
   createWorkspace: (name: string) => Promise<Workspace>;
   updateProfile: (data: { name?: string; avatar?: string; phone?: string }) => Promise<void>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<void>;
-  
+
   // Workspace members methods
   getWorkspaceMembers: () => Promise<WorkspaceMember[]>;
   inviteMember: (role: 'admin' | 'member' | 'viewer', expiresInDays?: number) => Promise<string>;
   updateMemberRole: (userId: string, role: string) => Promise<void>;
   removeMember: (userId: string) => Promise<void>;
+
+  // Page access methods
+  hasPageAccess: (pageId: string) => boolean;
 }
 
 // ============================================
@@ -91,6 +103,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [accessiblePages, setAccessiblePages] = useState<AccessiblePage[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const isAuthenticated = !!user && !!accessToken;
 
@@ -172,6 +186,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   // ============================================
+  // Check if user is Super Admin
+  // ============================================
+  async function checkSuperAdmin() {
+    try {
+      const { data, error } = await supabase.rpc('is_super_admin');
+      if (!error && data === true) {
+        setIsSuperAdmin(true);
+        return true;
+      }
+      setIsSuperAdmin(false);
+      return false;
+    } catch (error) {
+      console.error('Error checking super admin:', error);
+      setIsSuperAdmin(false);
+      return false;
+    }
+  }
+
+  // ============================================
   // Load User Profile & Workspaces
   // ============================================
   async function loadUserData() {
@@ -185,7 +218,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setUser(userData as User);
 
-      // 2. Get user workspaces
+      // 2. Check if user is super admin (for full access bypass)
+      await checkSuperAdmin();
+
+      // 3. Get user workspaces
       const { workspaces: workspacesData, error: workspacesError } =
         await workspacesService.getMyWorkspaces();
 
@@ -195,7 +231,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setWorkspaces(workspacesData as Workspace[]);
 
-      // 3. Set current workspace (last used or first available)
+      // 4. Set current workspace (last used or first available)
       let activeWorkspace: Workspace | null = null;
 
       if (userData.lastWorkspaceId) {
@@ -207,6 +243,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setCurrentWorkspace(activeWorkspace);
+
+      // 5. Load accessible pages for the active workspace
+      if (activeWorkspace) {
+        await loadAccessiblePages(activeWorkspace.id);
+      }
 
     } catch (error) {
       // Erro silencioso ao carregar dados
@@ -247,6 +288,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } else if (workspace) {
         setWorkspaces([workspace as Workspace]);
         setCurrentWorkspace(workspace as Workspace);
+        // Load accessible pages for the new workspace
+        await loadAccessiblePages(workspace.id);
       } else {
         throw new Error('Workspace não foi criado');
       }
@@ -292,6 +335,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // 4. Refresh workspaces to get the new workspace
       await refreshWorkspaces();
 
+      // 5. Switch to the invited workspace (this also loads accessible pages)
+      if (workspaceId) {
+        await switchWorkspace(workspaceId);
+      }
+
     } catch (error) {
       throw error;
     } finally {
@@ -326,6 +374,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setUser(userData as User);
 
+      // Check if user is super admin (for full access bypass)
+      await checkSuperAdmin();
+
       // Load workspaces
       const { workspaces: workspacesData } = await workspacesService.getMyWorkspaces();
       setWorkspaces(workspacesData as Workspace[]);
@@ -339,6 +390,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         activeWorkspace = workspacesData[0] as Workspace;
       }
       setCurrentWorkspace(activeWorkspace);
+
+      // Load accessible pages for the active workspace
+      if (activeWorkspace) {
+        await loadAccessiblePages(activeWorkspace.id);
+      }
 
     } catch (error) {
       throw error;
@@ -371,6 +427,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   // ============================================
+  // LOAD ACCESSIBLE PAGES
+  // ============================================
+  async function loadAccessiblePages(workspaceId: string) {
+    try {
+      const { data, error } = await supabase.rpc('get_workspace_accessible_pages', {
+        p_workspace_id: workspaceId
+      });
+
+      if (error) {
+        console.error('Error loading accessible pages:', error);
+        setAccessiblePages([]);
+        return;
+      }
+
+      setAccessiblePages(data || []);
+    } catch (error) {
+      console.error('Error loading accessible pages:', error);
+      setAccessiblePages([]);
+    }
+  }
+
+  // ============================================
+  // HAS PAGE ACCESS
+  // ============================================
+  // useCallback para evitar recriação da função a cada render
+  // Isso previne loops infinitos no useNavigation que depende desta função
+  const hasPageAccess = useCallback((pageId: string): boolean => {
+    // Super admins have access to ALL pages
+    if (isSuperAdmin) return true;
+
+    // Dashboard is always accessible
+    if (pageId === 'dashboard') return true;
+
+    // Settings pages are always accessible (not controlled by plan)
+    if (pageId === 'settings' || pageId === 'account-settings') return true;
+
+    // If no workspace selected, deny access (except dashboard/settings)
+    if (!currentWorkspace) return false;
+
+    // If pages haven't loaded yet, deny access for safety
+    // The user will be redirected to dashboard until pages load
+    if (accessiblePages.length === 0) return false;
+
+    return accessiblePages.some(page => page.page_id === pageId);
+  }, [isSuperAdmin, currentWorkspace, accessiblePages]);
+
+  // ============================================
   // SWITCH WORKSPACE
   // ============================================
   async function switchWorkspace(workspaceId: string) {
@@ -382,10 +485,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const workspace = workspaces.find(ws => ws.id === workspaceId);
       if (workspace) {
         setCurrentWorkspace(workspace);
-        
+
         if (user) {
           setUser({ ...user, lastWorkspaceId: workspaceId });
         }
+
+        // Load accessible pages for the new workspace
+        await loadAccessiblePages(workspaceId);
       }
 
     } catch (error) {
@@ -432,15 +538,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       const newWorkspace = workspace as Workspace;
       setWorkspaces([...workspaces, newWorkspace]);
-      
+
       // Automatically set as current workspace
       setCurrentWorkspace(newWorkspace);
-      
+
       // Update user's last workspace
       if (user) {
         setUser({ ...user, lastWorkspaceId: newWorkspace.id });
         await authService.updateLastWorkspace(newWorkspace.id);
       }
+
+      // Load accessible pages for the new workspace
+      await loadAccessiblePages(newWorkspace.id);
 
       return newWorkspace;
 
@@ -618,6 +727,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     accessToken,
     isLoading,
     isAuthenticated,
+    accessiblePages,
 
     // Methods
     login,
@@ -633,6 +743,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     inviteMember,
     updateMemberRole,
     removeMember,
+    hasPageAccess,
   };
 
   return (

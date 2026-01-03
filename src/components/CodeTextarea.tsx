@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Maximize2, X, GripHorizontal } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog@1.1.6';
 import { Resizable } from 're-resizable';
+import DOMPurify from 'dompurify';
 
 interface CodeTextareaProps {
   value: string;
@@ -104,13 +105,13 @@ export function CodeTextarea({
   // Syntax highlighting para tags HTML
   const highlightSyntax = (text: string) => {
     if (!text) return '';
-    
+
     // Escapar HTML primeiro
     const escaped = text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-    
+
     // Colorir tags de abertura e fechamento
     const highlighted = escaped.replace(
       /&lt;(\/?\w+)(?:\s[^&]*?)?&gt;/g,
@@ -120,8 +121,12 @@ export function CodeTextarea({
         return `<span style="color: ${color}; font-weight: 500;">${match}</span>`;
       }
     );
-    
-    return highlighted;
+
+    // Sanitizar com DOMPurify para prevenir XSS
+    return DOMPurify.sanitize(highlighted, {
+      ALLOWED_TAGS: ['span'],
+      ALLOWED_ATTR: ['style'],
+    });
   };
 
   // Sincronizar scroll do highlight com o textarea

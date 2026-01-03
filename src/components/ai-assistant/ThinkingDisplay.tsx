@@ -79,25 +79,6 @@ export function ThinkingDisplay({ thinkingContent, isThinking, theme }: Thinking
         </div>
       </button>
 
-      {/* Content - colapsável */}
-      {isExpanded && thinkingContent && (
-        <div className={cn(
-          "px-3 pb-3 border-t",
-          isDark ? "border-purple-500/20" : "border-purple-200"
-        )}>
-          <div className={cn(
-            "mt-2 text-sm max-h-[400px] overflow-y-auto scrollbar-thin prose prose-sm",
-            isDark
-              ? "text-purple-200/80 prose-invert prose-headings:text-purple-300 prose-p:text-purple-200/70 prose-strong:text-purple-200 prose-code:text-purple-300 prose-code:bg-purple-500/20"
-              : "text-purple-800 prose-headings:text-purple-900 prose-p:text-purple-700 prose-strong:text-purple-900 prose-code:text-purple-700 prose-code:bg-purple-100"
-          )}>
-            <ReactMarkdown>
-              {thinkingContent}
-            </ReactMarkdown>
-          </div>
-        </div>
-      )}
-
       {/* Loading indicator quando está pensando mas ainda não tem conteúdo */}
       {isThinking && !thinkingContent && (
         <div className={cn(
@@ -112,20 +93,25 @@ export function ThinkingDisplay({ thinkingContent, isThinking, theme }: Thinking
         </div>
       )}
 
-      {/* Streaming content quando está pensando */}
-      {isThinking && thinkingContent && isExpanded && (
+      {/* Content - colapsável (único bloco para evitar duplicação) */}
+      {isExpanded && thinkingContent && (
         <div className={cn(
           "px-3 pb-3 border-t",
           isDark ? "border-purple-500/20" : "border-purple-200"
         )}>
           <div className={cn(
-            "mt-2 text-sm max-h-[400px] overflow-y-auto scrollbar-thin",
-            isDark ? "text-purple-200/80" : "text-purple-800"
+            "mt-2 text-sm max-h-[400px] overflow-y-auto scrollbar-thin prose prose-sm",
+            isDark
+              ? "text-purple-200/80 prose-invert prose-headings:text-purple-300 prose-p:text-purple-200/70 prose-strong:text-purple-200 prose-code:text-purple-300 prose-code:bg-purple-500/20"
+              : "text-purple-800 prose-headings:text-purple-900 prose-p:text-purple-700 prose-strong:text-purple-900 prose-code:text-purple-700 prose-code:bg-purple-100"
           )}>
             <ReactMarkdown>
               {thinkingContent}
             </ReactMarkdown>
-            <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
+            {/* Cursor piscante durante streaming */}
+            {isThinking && (
+              <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
+            )}
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import { Theme } from '../hooks/useTheme';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import IconografiaPescaLead from '../imports/IconografiaPescaLead';
 import LogoPescaLeadBranca from '../imports/LogoPescaLeadBranca';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -12,6 +13,19 @@ interface SidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
 }
+
+// Mapeamento de view para URL path (sincronizado com useNavigation.ts)
+const VIEW_TO_PATH: Record<string, string> = {
+  'dashboard': '/dashboard',
+  'pipeline': '/pipeline',
+  'chat': '/chat',
+  'extraction': '/extracao',
+  'campaign': '/campanhas',
+  'ai-service': '/ia',
+  'calendar': '/calendario',
+  'documents': '/documentos',
+  'ai-assistant': '/assistente-ia',
+};
 
 const navItems = [
   { icon: Home, label: 'Dashboard', active: false, view: 'dashboard' },
@@ -27,7 +41,11 @@ const navItems = [
 
 export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChange }: SidebarProps) {
   const isDark = theme === 'dark';
-  
+  const { hasPageAccess } = useAuth();
+
+  // Filter nav items based on page access
+  const visibleNavItems = navItems.filter(item => hasPageAccess(item.view));
+
   return (
     <motion.aside
       initial={false}
@@ -79,7 +97,7 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
 
       {/* Navigation */}
       <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto scrollbar-thin">
-        {navItems.map((item, index) => (
+        {visibleNavItems.map((item) => (
           <button
             key={item.label}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 relative ${
@@ -92,6 +110,14 @@ export function Sidebar({ isCollapsed, onToggle, theme, currentView, onViewChang
                 : 'text-text-secondary-light hover:bg-light-elevated-hover hover:text-text-primary-light'
             }`}
             onClick={() => onViewChange(item.view)}
+            onAuxClick={(e) => {
+              // Middle-click (scroll button) - abre em nova aba
+              if (e.button === 1) {
+                e.preventDefault();
+                const path = VIEW_TO_PATH[item.view] || `/${item.view}`;
+                window.open(path, '_blank');
+              }
+            }}
           >
             {currentView === item.view && (
               <motion.div 

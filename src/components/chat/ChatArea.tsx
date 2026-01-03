@@ -154,6 +154,31 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     return () => window.removeEventListener('keydown', handleEscape);
   }, [expandedImage]);
 
+  // ✅ Handle paste for images (Ctrl+V) - movido para antes do return condicional
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          // Inline processing para evitar dependência circular
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            setImagePreview(dataUrl);
+            setSelectedFile(null);
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  }, []);
+
   if (!conversation) {
     return (
       <div
@@ -303,7 +328,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     if (e.metaKey || e.ctrlKey) {
       return; // Não interferir com atalhos do sistema
     }
-    
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -758,6 +783,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             onKeyDown={handleKeyPress}
+            onPaste={handlePaste}
             disabled={isRecording}
             className={`flex-1 border px-4 py-2 rounded-lg transition-all focus:outline-none focus:border-[#0169D9] ${
               isDark

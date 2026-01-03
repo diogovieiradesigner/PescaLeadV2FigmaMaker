@@ -23,15 +23,42 @@ function extractModelName(id: string): string {
   const nameParts = id.split('/');
   let name = nameParts[nameParts.length - 1];
 
-  // Remover sufixos comuns
+  // Detectar características antes de limpar (uma vez só, mesmo que apareça múltiplas vezes)
+  const hasInstruct = name.includes('-Instruct');
+  const hasTEE = name.includes('-TEE');
+  const hasThinking = name.includes('-Thinking');
+  const hasFP8 = name.includes('-FP8');
+
+  // Extrair ÚLTIMA versão numérica (ex: 2507, 0528, 2503)
+  const versionMatches = name.match(/-(\d{4})(?=-|$)/g);
+  const version = versionMatches ? versionMatches[versionMatches.length - 1].replace('-', '') : null;
+
+  // Remover TODOS os sufixos conhecidos de qualquer posição (não só do final)
   name = name
-    .replace(/-Instruct.*$/i, '')
+    .replace(/-Instruct/gi, '') // Remove TODOS os -Instruct
+    .replace(/-Thinking/gi, '') // Remove TODOS os -Thinking
+    .replace(/-FP8/gi, '')      // Remove TODOS os -FP8
+    .replace(/-TEE/gi, '')      // Remove TODOS os -TEE
+    .replace(/-\d{4}/g, '')     // Remove TODAS as versões numéricas (4 dígitos)
     .replace(/-it$/i, '')
     .replace(/-Preview$/i, '')
-    .replace(/-TEE$/i, ' TEE')
     .replace(/-Chimera$/i, ' Chimera')
     .replace(/^unsloth-/, '')
+    .replace(/-+/g, '-')        // Colapsar múltiplos hífens
+    .replace(/^-|-$/g, '')      // Remover hífens no início/fim
     .replace(/-/g, ' ');
+
+  // Adicionar sufixos relevantes de volta (apenas uma vez cada)
+  const suffixes: string[] = [];
+  if (hasInstruct) suffixes.push('Instruct');
+  if (hasThinking) suffixes.push('Thinking');
+  if (hasFP8) suffixes.push('FP8');
+  if (version) suffixes.push(version);
+  if (hasTEE) suffixes.push('TEE');
+
+  if (suffixes.length > 0) {
+    name += ' ' + suffixes.join(' ');
+  }
 
   return name;
 }

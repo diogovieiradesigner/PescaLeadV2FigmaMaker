@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, StopCircle, Paperclip, Mic, X, BookOpen, ArrowUp } from 'lucide-react';
+import { Send, StopCircle, Paperclip, Mic, X, BookOpen, ArrowUp, Database, Globe, Wand2, Sparkles, Loader2 } from 'lucide-react';
 import { Theme } from '../../hooks/useTheme';
 import { MediaAttachment, MediaContentType } from '../../types/ai-assistant';
 import { ContextUsageIndicator } from './ContextUsageIndicator';
@@ -16,21 +16,38 @@ interface ExternalImage {
 }
 
 interface ChatInputProps {
-  onSend: (message: string, media?: MediaAttachment, useRag?: boolean) => void;
+  onSend: (message: string, media?: MediaAttachment, useRag?: boolean, useAgentRag?: boolean, useWebSearch?: boolean) => void;
   isStreaming: boolean;
   theme: Theme;
   disabled?: boolean;
   centered?: boolean;
   onStop?: () => void;
-  // RAG props
+  // RAG props (workspace conversations)
   ragEnabled?: boolean;
   onRagToggle?: () => void;
   hasRagDocuments?: boolean;
+  // Agent RAG props (agent-specific documents)
+  agentRagEnabled?: boolean;
+  onAgentRagToggle?: () => void;
+  hasAgentRagDocuments?: boolean;
+  // Web search props
+  webSearchEnabled?: boolean;
+  onWebSearchToggle?: () => void;
   // Context usage props
   contextUsage?: ContextUsageInfo;
+  onForceCompact?: () => Promise<void>;
+  isCompacting?: boolean;
   // External image (from drag and drop)
   externalImage?: ExternalImage | null;
   onClearExternalImage?: () => void;
+  // Image generation
+  onOpenImageGeneration?: () => void;
+  isGeneratingImage?: boolean;
+  isImagePanelOpen?: boolean;
+  onGenerateImage?: () => void;
+  imageGenerationMode?: 'text-to-image' | 'image-to-image';
+  imagePrompt?: string;
+  onImagePromptChange?: (prompt: string) => void;
 }
 
 export function ChatInput({
@@ -43,9 +60,23 @@ export function ChatInput({
   ragEnabled = false,
   onRagToggle,
   hasRagDocuments = false,
+  agentRagEnabled = false,
+  onAgentRagToggle,
+  hasAgentRagDocuments = false,
+  webSearchEnabled = false,
+  onWebSearchToggle,
   contextUsage,
+  onForceCompact,
+  isCompacting = false,
   externalImage,
   onClearExternalImage,
+  onOpenImageGeneration,
+  isGeneratingImage = false,
+  isImagePanelOpen = false,
+  onGenerateImage,
+  imageGenerationMode = 'text-to-image',
+  imagePrompt = '',
+  onImagePromptChange,
 }: ChatInputProps) {
   const isDark = theme === 'dark';
   const [input, setInput] = useState('');
@@ -71,7 +102,32 @@ export function ChatInput({
       const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
       textareaRef.current.style.height = `${newHeight}px`;
     }
-  }, [input]);
+  }, [input, imagePrompt, isImagePanelOpen]);
+
+  // Handle paste for images (Ctrl+V)
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          // Se já tem áudio gravado, limpar
+          if (audioBlob) {
+            clearAudio();
+          }
+          setSelectedImage(file);
+          // Create preview
+          const url = URL.createObjectURL(file);
+          setImagePreview(url);
+        }
+        break;
+      }
+    }
+  }, [audioBlob]);
 
   // Handle external image (from drag and drop)
   useEffect(() => {
@@ -118,7 +174,7 @@ export function ChatInput({
       };
     }
 
-    onSend(input.trim(), media, ragEnabled);
+    onSend(input.trim(), media, ragEnabled, agentRagEnabled, webSearchEnabled);
     setInput('');
     clearImage();
     clearAudio();
@@ -132,7 +188,12 @@ export function ChatInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      // Se o painel de geração de imagem está aberto, gerar imagem
+      if (isImagePanelOpen && onGenerateImage && !isGeneratingImage) {
+        onGenerateImage();
+      } else if (!isImagePanelOpen) {
+        handleSend();
+      }
     }
   };
 
@@ -225,9 +286,7 @@ export function ChatInput({
   const canSend = (input.trim() || hasMedia) && !isStreaming && !disabled && !isRecording;
 
   return (
-    <div className={`px-4 pb-4 pt-2 ${
-      !centered && (isDark ? 'bg-true-black' : 'bg-white')
-    }`}>
+    <div className="px-4 pb-4 pt-2">
       <div className="max-w-3xl mx-auto">
         {/* Main Input Container */}
         <div className={`rounded-2xl border overflow-hidden transition-all ${
@@ -309,19 +368,28 @@ export function ChatInput({
           <div className="px-4 py-3">
             <textarea
               ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
+              value={isImagePanelOpen ? imagePrompt : input}
+              onChange={(e) => {
+                if (isImagePanelOpen) {
+                  onImagePromptChange?.(e.target.value);
+                } else {
+                  setInput(e.target.value);
+                }
+              }}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder={
-                isRecording
-                  ? 'Gravando áudio...'
-                  : isStreaming
-                    ? 'Aguarde a resposta...'
+                isImagePanelOpen
+                  ? imageGenerationMode === 'image-to-image'
+                    ? 'Descreva como você quer transformar a imagem...'
+                    : 'Descreva a imagem que você quer gerar...'
+                  : isRecording
+                    ? 'Gravando áudio...'
                     : hasMedia
                       ? 'Adicione uma mensagem (opcional)...'
                       : 'Pergunte qualquer coisa...'
               }
-              disabled={isStreaming || disabled || isRecording}
+              disabled={disabled || isRecording}
               rows={1}
               className={`w-full resize-none outline-none bg-transparent text-[15px] leading-relaxed ${
                 isDark ? 'text-white placeholder:text-white/40' : 'text-gray-900 placeholder:text-gray-400'
@@ -345,99 +413,198 @@ export function ChatInput({
                 className="hidden"
               />
 
-              {/* Attach Image Button */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || disabled || isRecording || !!audioBlob}
-                className={`p-2 rounded-lg transition-all ${
-                  isStreaming || disabled || isRecording || audioBlob
-                    ? isDark
-                      ? 'text-white/20 cursor-not-allowed'
-                      : 'text-gray-300 cursor-not-allowed'
-                    : isDark
-                      ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                }`}
-                title="Anexar imagem"
-              >
-                <Paperclip className="w-[18px] h-[18px]" />
-              </button>
-
-              {/* Mic Button */}
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isStreaming || disabled || !!selectedImage}
-                className={`p-2 rounded-lg transition-all ${
-                  isStreaming || disabled || selectedImage
-                    ? isDark
-                      ? 'text-white/20 cursor-not-allowed'
-                      : 'text-gray-300 cursor-not-allowed'
-                    : isRecording
-                      ? 'text-red-500 bg-red-500/10'
-                      : isDark
-                        ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
-                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                }`}
-                title={isRecording ? 'Parar gravação' : 'Gravar áudio'}
-              >
-                {isRecording ? (
-                  <StopCircle className="w-[18px] h-[18px]" />
-                ) : (
-                  <Mic className="w-[18px] h-[18px]" />
-                )}
-              </button>
-
-              {/* RAG Toggle Button */}
-              {onRagToggle && (
+              {/* Quando o painel de geração está aberto, mostrar apenas o botão de fechar */}
+              {isImagePanelOpen ? (
                 <button
-                  onClick={onRagToggle}
-                  disabled={isStreaming || disabled || isRecording || !hasRagDocuments}
+                  onClick={onOpenImageGeneration}
                   className={`p-2 rounded-lg transition-all ${
-                    isStreaming || disabled || isRecording || !hasRagDocuments
-                      ? isDark
-                        ? 'text-white/20 cursor-not-allowed'
-                        : 'text-gray-300 cursor-not-allowed'
-                      : ragEnabled
-                        ? 'text-[#0169D9] bg-[#0169D9]/10'
+                    isDark
+                      ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20'
+                      : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                  }`}
+                  title="Fechar geração de imagem"
+                >
+                  <Wand2 className="w-[18px] h-[18px]" />
+                </button>
+              ) : (
+                <>
+                  {/* Attach Image Button */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isStreaming || disabled || isRecording || !!audioBlob}
+                    className={`p-2 rounded-lg transition-all ${
+                      isStreaming || disabled || isRecording || audioBlob
+                        ? isDark
+                          ? 'text-white/20 cursor-not-allowed'
+                          : 'text-gray-300 cursor-not-allowed'
                         : isDark
                           ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
                           : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  }`}
-                  title={
-                    !hasRagDocuments
-                      ? 'Nenhuma conversa salva na base de conhecimento'
-                      : ragEnabled
-                        ? 'Desativar consulta ao histórico'
-                        : 'Consultar histórico de conversas'
-                  }
-                >
-                  <BookOpen className="w-[18px] h-[18px]" />
-                </button>
-              )}
+                    }`}
+                    title="Anexar imagem"
+                  >
+                    <Paperclip className="w-[18px] h-[18px]" />
+                  </button>
 
-              {/* Divider */}
-              {contextUsage && contextUsage.usedTokens > 0 && (
-                <div className={`w-px h-5 mx-1 ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
-              )}
+                  {/* Mic Button */}
+                  <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isStreaming || disabled || !!selectedImage}
+                    className={`p-2 rounded-lg transition-all ${
+                      isStreaming || disabled || selectedImage
+                        ? isDark
+                          ? 'text-white/20 cursor-not-allowed'
+                          : 'text-gray-300 cursor-not-allowed'
+                        : isRecording
+                          ? 'text-red-500 bg-red-500/10'
+                          : isDark
+                            ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
+                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                    }`}
+                    title={isRecording ? 'Parar gravação' : 'Gravar áudio'}
+                  >
+                    {isRecording ? (
+                      <StopCircle className="w-[18px] h-[18px]" />
+                    ) : (
+                      <Mic className="w-[18px] h-[18px]" />
+                    )}
+                  </button>
 
-              {/* Context Usage Indicator */}
-              {contextUsage && contextUsage.usedTokens > 0 && (
-                <ContextUsageIndicator
-                  usagePercent={contextUsage.usagePercent}
-                  usedTokens={contextUsage.usedTokens}
-                  maxTokens={contextUsage.maxTokens}
-                  theme={theme}
-                />
+                  {/* RAG Toggle Button - Workspace Conversations */}
+                  {onRagToggle && (
+                    <button
+                      onClick={onRagToggle}
+                      disabled={isStreaming || disabled || isRecording || !hasRagDocuments}
+                      className={`p-2 rounded-lg transition-all ${
+                        isStreaming || disabled || isRecording || !hasRagDocuments
+                          ? isDark
+                            ? 'text-white/20 cursor-not-allowed'
+                            : 'text-gray-300 cursor-not-allowed'
+                          : ragEnabled
+                            ? 'text-[#0169D9] bg-[#0169D9]/10'
+                            : isDark
+                              ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
+                              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      }`}
+                      title={
+                        !hasRagDocuments
+                          ? 'Nenhuma conversa salva na base de conhecimento'
+                          : ragEnabled
+                            ? 'Desativar consulta ao histórico'
+                            : 'Consultar histórico de conversas'
+                      }
+                    >
+                      <BookOpen className="w-[18px] h-[18px]" />
+                    </button>
+                  )}
+
+                  {/* Agent RAG Toggle Button - Agent Documents */}
+                  {onAgentRagToggle && (
+                    <button
+                      onClick={onAgentRagToggle}
+                      disabled={isStreaming || disabled || isRecording || !hasAgentRagDocuments}
+                      className={`p-2 rounded-lg transition-all ${
+                        isStreaming || disabled || isRecording || !hasAgentRagDocuments
+                          ? isDark
+                            ? 'text-white/20 cursor-not-allowed'
+                            : 'text-gray-300 cursor-not-allowed'
+                          : agentRagEnabled
+                            ? 'text-blue-500 bg-blue-500/10'
+                            : isDark
+                              ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
+                              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      }`}
+                      title={
+                        !hasAgentRagDocuments
+                          ? 'Agente não tem documentos na base de conhecimento'
+                          : agentRagEnabled
+                            ? 'Desativar consulta aos documentos do agente'
+                            : 'Consultar documentos do agente'
+                      }
+                    >
+                      <Database className="w-[18px] h-[18px]" />
+                    </button>
+                  )}
+
+                  {/* Web Search Toggle Button */}
+                  {onWebSearchToggle && (
+                    <button
+                      onClick={onWebSearchToggle}
+                      disabled={isStreaming || disabled || isRecording}
+                      className={`p-2 rounded-lg transition-all ${
+                        isStreaming || disabled || isRecording
+                          ? isDark
+                            ? 'text-white/20 cursor-not-allowed'
+                            : 'text-gray-300 cursor-not-allowed'
+                          : webSearchEnabled
+                            ? 'text-blue-500 bg-blue-500/10'
+                            : isDark
+                              ? 'text-white/50 hover:text-white hover:bg-white/[0.08]'
+                              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      }`}
+                      title={
+                        webSearchEnabled
+                          ? 'Desativar busca na internet'
+                          : 'Ativar busca na internet'
+                      }
+                    >
+                      <Globe className="w-[18px] h-[18px]" />
+                    </button>
+                  )}
+
+                  {/* Image Generation Button */}
+                  {onOpenImageGeneration && (
+                    <button
+                      onClick={onOpenImageGeneration}
+                      disabled={isStreaming || disabled || isRecording || isGeneratingImage}
+                      className={`p-2 rounded-lg transition-all ${
+                        isStreaming || disabled || isRecording || isGeneratingImage
+                          ? isDark
+                            ? 'text-white/20 cursor-not-allowed'
+                            : 'text-gray-300 cursor-not-allowed'
+                          : isDark
+                            ? 'text-white/50 hover:text-blue-400 hover:bg-blue-500/10'
+                            : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+                      }`}
+                      title="Gerar imagem com IA"
+                    >
+                      <Wand2 className="w-[18px] h-[18px]" />
+                    </button>
+                  )}
+
+                  {/* Divider */}
+                  {contextUsage && contextUsage.usedTokens > 0 && (
+                    <div className={`w-px h-5 mx-1 ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
+                  )}
+
+                  {/* Context Usage Indicator */}
+                  {contextUsage && contextUsage.usedTokens > 0 && (
+                    <ContextUsageIndicator
+                      usagePercent={contextUsage.usagePercent}
+                      usedTokens={contextUsage.usedTokens}
+                      maxTokens={contextUsage.maxTokens}
+                      theme={theme}
+                      onForceCompact={onForceCompact}
+                      isCompacting={isCompacting}
+                    />
+                  )}
+                </>
               )}
             </div>
 
-            {/* Right Side - Send/Stop Button */}
+            {/* Right Side - Send/Stop/Generate Button */}
             <div className="flex items-center gap-2">
               {/* Keyboard hint */}
-              {!isStreaming && canSend && (
-                <span className={`text-xs hidden sm:block ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
-                  Enter para enviar
-                </span>
+              {!isStreaming && (
+                (isImagePanelOpen && !isGeneratingImage) ? (
+                  <span className={`text-xs hidden sm:block ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                    Enter para gerar
+                  </span>
+                ) : (!isImagePanelOpen && canSend) ? (
+                  <span className={`text-xs hidden sm:block ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                    Enter para enviar
+                  </span>
+                ) : null
               )}
 
               {isStreaming ? (
@@ -447,6 +614,28 @@ export function ChatInput({
                   title="Parar resposta"
                 >
                   <StopCircle className="w-[18px] h-[18px]" />
+                </button>
+              ) : isImagePanelOpen ? (
+                <button
+                  onClick={onGenerateImage}
+                  disabled={isGeneratingImage}
+                  className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                    isGeneratingImage
+                      ? isDark
+                        ? 'bg-blue-500/30 text-blue-300 cursor-not-allowed'
+                        : 'bg-blue-100 text-blue-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white'
+                  }`}
+                  title="Gerar imagem"
+                >
+                  {isGeneratingImage ? (
+                    <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                  ) : (
+                    <Sparkles className="w-[18px] h-[18px]" />
+                  )}
+                  <span className="text-sm font-medium hidden sm:block">
+                    {isGeneratingImage ? 'Gerando...' : 'Gerar'}
+                  </span>
                 </button>
               ) : (
                 <button

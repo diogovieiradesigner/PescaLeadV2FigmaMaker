@@ -4,6 +4,7 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import IconografiaPescaLead from '../imports/IconografiaPescaLead';
 import LogoPescaLeadBranca from '../imports/LogoPescaLeadBranca';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
+import { useAuth } from '../contexts/AuthContext';
 
 interface MobileSidebarProps {
   isOpen: boolean;
@@ -12,6 +13,19 @@ interface MobileSidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
 }
+
+// Mapeamento de view para URL path (sincronizado com useNavigation.ts)
+const VIEW_TO_PATH: Record<string, string> = {
+  'dashboard': '/dashboard',
+  'pipeline': '/pipeline',
+  'chat': '/chat',
+  'extraction': '/extracao',
+  'campaign': '/campanhas',
+  'ai-service': '/ia',
+  'calendar': '/calendario',
+  'documents': '/documentos',
+  'ai-assistant': '/assistente-ia',
+};
 
 const navItems = [
   { icon: Home, label: 'Dashboard', view: 'dashboard' },
@@ -27,6 +41,10 @@ const navItems = [
 
 export function MobileSidebar({ isOpen, onClose, theme, currentView, onViewChange }: MobileSidebarProps) {
   const isDark = theme === 'dark';
+  const { hasPageAccess } = useAuth();
+
+  // Filter nav items based on page access
+  const visibleNavItems = navItems.filter(item => hasPageAccess(item.view));
 
   const handleViewChange = (view: string) => {
     onViewChange(view);
@@ -67,7 +85,7 @@ export function MobileSidebar({ isOpen, onClose, theme, currentView, onViewChang
 
         {/* Navigation */}
         <nav className="flex-1 py-4 px-3 space-y-1">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <button
               key={item.label}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200 relative ${
@@ -80,6 +98,14 @@ export function MobileSidebar({ isOpen, onClose, theme, currentView, onViewChang
                   : 'text-text-secondary-light hover:bg-light-elevated-hover hover:text-text-primary-light'
               }`}
               onClick={() => handleViewChange(item.view)}
+              onAuxClick={(e) => {
+                // Middle-click (scroll button) - abre em nova aba
+                if (e.button === 1) {
+                  e.preventDefault();
+                  const path = VIEW_TO_PATH[item.view] || `/${item.view}`;
+                  window.open(path, '_blank');
+                }
+              }}
             >
               {currentView === item.view && (
                 <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0169D9] rounded-r" />

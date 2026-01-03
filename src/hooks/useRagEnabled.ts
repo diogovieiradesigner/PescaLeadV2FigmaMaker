@@ -26,13 +26,14 @@ export function useRagEnabled(agentId: string | null): UseRagEnabledReturn {
           .from('ai_agents')
           .select('rag_enabled')
           .eq('id', agentId)
-          .single();
+          .maybeSingle();
 
         if (error) {
           console.error('[useRagEnabled] Error loading state:', error);
           throw error;
         }
 
+        // Se não encontrou o agente, manter default true
         const enabled = data?.rag_enabled ?? true;
         setRagEnabledState(enabled);
       } catch (err) {

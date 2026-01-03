@@ -576,10 +576,9 @@ Deno.serve(async (req) => {
       cause: error.cause
     });
     
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       error: error.message || 'Erro interno do servidor',
-      error_code: 'FATAL_ERROR',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error_code: 'FATAL_ERROR'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

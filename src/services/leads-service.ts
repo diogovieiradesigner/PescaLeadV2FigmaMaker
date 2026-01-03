@@ -182,25 +182,15 @@ export async function getLeadById(leadId: string): Promise<{
  * Registra uma atividade no histórico do lead
  */
 export async function createLeadActivity(
-  leadId: string, 
-  description: string, 
+  leadId: string,
+  description: string,
   type: 'system' | 'user' | 'status_change' | 'field_update' = 'user'
 ): Promise<void> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:185',message:'createLeadActivity ENTRY',data:{leadId,description,type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:192',message:'User not authenticated',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       return;
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:198',message:'BEFORE insert lead_activities',data:{userId:user.id,leadId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     // ✅ Verificar se o lead existe e pertence a um workspace acessível
     // A política RLS with_check verifica isso, mas vamos fazer uma verificação prévia para debug
@@ -211,15 +201,8 @@ export async function createLeadActivity(
       .single();
 
     if (leadCheckError || !leadCheck) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:203',message:'Lead not found or not accessible',data:{leadId,leadCheckError:leadCheckError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       return; // Não bloquear operação principal
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:210',message:'Lead found, attempting insert',data:{leadId,workspaceId:(leadCheck as any).workspace_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     // ✅ Tabela confirmada via MCP: lead_activities existe no banco
     // Usando activity_type e user_id conforme definição do banco (DbLeadActivity)
@@ -227,71 +210,46 @@ export async function createLeadActivity(
     const { error } = await (supabase.from('lead_activities') as any).insert({
       lead_id: leadId,
       description: description,
-      activity_type: type, 
+      activity_type: type,
       user_id: user.id,
     });
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:212',message:'AFTER insert lead_activities',data:{hasError:!!error,errorCode:error?.code,errorMessage:error?.message,errorStatus:error?.status,errorDetails:JSON.stringify(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     if (error) {
       // Log detalhado do erro para debug
 
       // Erro específico: lead_extraction_staging não existe (pode ser problema de trigger)
       if (error.message?.includes('lead_extraction_staging')) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:223',message:'lead_extraction_staging error in trigger',data:{errorCode:error.code,errorMessage:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         return; // Não bloquear operação principal
       }
 
       // Erro 404 ou 42P01: pode ser problema de RLS ou tabela não acessível
       const errorStatus = (error as any)?.status;
       if (errorStatus === 404 || error.code === '42P01' || error.code === 'PGRST116') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:223',message:'RLS or table access error',data:{errorCode:error.code,errorStatus:error.status,errorMessage:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         return; // Não bloquear operação principal
       }
 
       // Erro 42703: coluna não existe (schema diferente)
       if (error.code === '42703') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:232',message:'Column error, trying fallback schema',data:{errorCode:error.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         const { error: fallbackError } = await (supabase.from('lead_activities') as any).insert({
           lead_id: leadId,
           description: description,
           type: type,
           created_by: user.id
         });
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:238',message:'Fallback insert result',data:{hasError:!!fallbackError,errorCode:fallbackError?.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        
+
         if (fallbackError) {
+          console.error('[LEADS] Fallback insert failed:', fallbackError);
         }
         return; // Não bloquear operação principal mesmo se fallback falhar
       }
 
       // Outros erros: logar mas não bloquear
-    } else {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:250',message:'Activity registered successfully',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
+      console.error('[LEADS] Error creating activity:', error);
     }
   } catch (error: any) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:254',message:'Unexpected error in createLeadActivity',data:{errorMessage:error?.message,errorStack:error?.stack,errorDetails:error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     // Erro inesperado: logar mas não bloquear operação principal
-    // Não re-throw: atividades são secundárias, não devem bloquear operações principais
+    console.error('[LEADS] Unexpected error in createLeadActivity:', error);
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:260',message:'createLeadActivity EXIT',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
 }
 
 

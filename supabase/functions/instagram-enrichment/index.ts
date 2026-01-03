@@ -130,7 +130,7 @@ async function validateAuthAndWorkspace(req: Request, supabase: any, workspaceId
 
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
-  console.log('👤 User result:', user?.id, user?.email);
+  console.log('👤 User result:', user?.id);
   console.log('❌ Auth error:', authError?.message);
 
   if (authError || !user) {

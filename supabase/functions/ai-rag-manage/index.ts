@@ -71,6 +71,7 @@ Deno.serve(async (req) => {
         }
 
         const storeResult = await response.json();
+        console.log("[ai-rag-manage] Gemini store created:", storeResult.name);
 
         // Save to Supabase
         const supabase = createClient(
@@ -78,16 +79,27 @@ Deno.serve(async (req) => {
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
         );
 
-        await supabase.from("ai_rag_collections").upsert({
-          agent_id: body.agent_id,
-          external_store_id: storeResult.name,
-          name: displayName,
-          description: `File Search Store for agent ${body.agent_id}`,
-          is_active: true,
-          total_documents: 0
-        }, { onConflict: "agent_id" });
+        const { data: collectionData, error: upsertError } = await supabase
+          .from("ai_rag_collections")
+          .upsert({
+            agent_id: body.agent_id,
+            external_store_id: storeResult.name,
+            name: displayName,
+            description: `File Search Store for agent ${body.agent_id}`,
+            is_active: true,
+            total_documents: 0
+          }, { onConflict: "agent_id" })
+          .select()
+          .single();
 
-        result = { success: true, store: storeResult };
+        if (upsertError) {
+          console.error("[ai-rag-manage] Failed to save collection to database:", upsertError);
+          throw new Error(`Failed to save collection: ${upsertError.message}`);
+        }
+
+        console.log("[ai-rag-manage] Collection saved:", collectionData.id);
+
+        result = { success: true, store: storeResult, collection: collectionData };
         break;
       }
 
@@ -110,7 +122,14 @@ Deno.serve(async (req) => {
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
         );
 
-        await supabase.from("ai_rag_collections").delete().eq("external_store_id", body.store_name);
+        const { error: deleteError } = await supabase
+          .from("ai_rag_collections")
+          .delete()
+          .eq("external_store_id", body.store_name);
+
+        if (deleteError) {
+          console.error("[ai-rag-manage] Error deleting collection from database:", deleteError);
+        }
 
         result = { success: true };
         break;

@@ -486,9 +486,8 @@ export const handleCreateInstance = async (c: Context) => {
     console.error('Error stack:', error.stack);
     console.error('================================');
     
-    return c.json({ 
-      error: error.message,
-      details: error.stack 
+    return c.json({
+      error: error.message
     }, 400);
   }
 };

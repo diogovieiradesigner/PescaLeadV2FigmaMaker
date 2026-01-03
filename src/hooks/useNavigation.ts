@@ -33,6 +33,7 @@ export interface NavigationParams {
   campaignRunId?: string;
   extractionTab?: ExtractionTab;
   aiConversationId?: string;
+  aiAgentId?: string; // ID do agente para pré-selecionar no AI Assistant
 }
 
 // Mapeamento de URL path para view
@@ -73,6 +74,20 @@ const VIEW_TO_PATH: Record<AppView, string> = {
   'account-settings': '/conta',
   'extraction-progress': '/extracao/progresso',
 };
+
+// Mapeamento de sub-rotas para suas páginas pai (para verificação de acesso)
+// Sub-rotas herdam a permissão da página pai
+const SUB_ROUTE_TO_PARENT: Partial<Record<AppView, AppView>> = {
+  'extraction-progress': 'extraction',  // /extracao/progresso requer acesso a 'extraction'
+  'agent-logs': 'ai-service',           // /logs requer acesso a 'ai-service'
+};
+
+/**
+ * Retorna a página pai de uma sub-rota, ou a própria view se não for sub-rota
+ */
+function getParentPage(view: AppView): AppView {
+  return SUB_ROUTE_TO_PARENT[view] || view;
+}
 
 // Labels amigáveis para cada view (para breadcrumb/título)
 export const VIEW_LABELS: Record<AppView, string> = {
@@ -118,10 +133,23 @@ function getViewFromPath(pathname: string): AppView {
   return 'dashboard';
 }
 
+// Options for useNavigation hook
+export interface UseNavigationOptions {
+  defaultView?: AppView;
+  hasPageAccess?: (pageId: string) => boolean;
+}
+
 /**
  * Hook para gerenciar navegação baseada em URL
  */
-export function useNavigation(defaultView: AppView = 'dashboard') {
+export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptions = 'dashboard') {
+  // Handle both legacy and new options format
+  const options: UseNavigationOptions = typeof optionsOrDefaultView === 'string'
+    ? { defaultView: optionsOrDefaultView }
+    : optionsOrDefaultView;
+
+  const defaultView = options.defaultView || 'dashboard';
+  const hasPageAccess = options.hasPageAccess;
   // Inicializa com a view baseada na URL atual
   const [currentView, setCurrentViewState] = useState<AppView>(() => {
     if (typeof window === 'undefined') return defaultView;
@@ -198,10 +226,31 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     return match ? match[1] : null;
   });
 
+  // Estado para agente IA pré-selecionado via query param (?agent=xxx)
+  const [aiAgentId, setAiAgentId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    return searchParams.get('agent');
+  });
+
   /**
    * Navega para uma view, atualizando URL e estado
    */
   const navigate = useCallback((view: AppView, params?: NavigationParams) => {
+    // Check page access if hasPageAccess function is provided
+    // Sub-rotas verificam acesso pela página pai (ex: extraction-progress verifica 'extraction')
+    if (hasPageAccess && view !== 'dashboard' && view !== 'settings' && view !== 'account-settings') {
+      const pageToCheck = getParentPage(view);
+      if (!hasPageAccess(pageToCheck)) {
+        // Redirect to dashboard if access is not allowed
+        const dashboardPath = VIEW_TO_PATH['dashboard'];
+        window.history.pushState({ view: 'dashboard' }, '', dashboardPath);
+        setCurrentViewState('dashboard');
+        return;
+      }
+    }
+
     let path = VIEW_TO_PATH[view];
 
     // Adiciona parâmetros específicos
@@ -260,15 +309,38 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
       setAiConversationId(null);
     }
 
+    // AI Agent ID para assistente-ia (query param)
+    if (view === 'ai-assistant' && params?.aiAgentId) {
+      // Adiciona query param ao path
+      const separator = path.includes('?') ? '&' : '?';
+      path = `${path}${separator}agent=${params.aiAgentId}`;
+      setAiAgentId(params.aiAgentId);
+    } else if (view !== 'ai-assistant') {
+      setAiAgentId(null);
+    }
+
     // Atualiza URL sem recarregar página
     window.history.pushState({ view, ...params }, '', path);
     setCurrentViewState(view);
-  }, []);
+  }, [hasPageAccess]);
 
   /**
    * Substitui a entrada atual no histórico (para redirecionamentos)
    */
   const replaceView = useCallback((view: AppView, params?: NavigationParams) => {
+    // Check page access if hasPageAccess function is provided
+    // Sub-rotas verificam acesso pela página pai (ex: extraction-progress verifica 'extraction')
+    if (hasPageAccess && view !== 'dashboard' && view !== 'settings' && view !== 'account-settings') {
+      const pageToCheck = getParentPage(view);
+      if (!hasPageAccess(pageToCheck)) {
+        // Redirect to dashboard if access is not allowed
+        const dashboardPath = VIEW_TO_PATH['dashboard'];
+        window.history.replaceState({ view: 'dashboard' }, '', dashboardPath);
+        setCurrentViewState('dashboard');
+        return;
+      }
+    }
+
     let path = VIEW_TO_PATH[view];
 
     if (view === 'extraction-progress' && params?.runId) {
@@ -326,9 +398,18 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
       setAiConversationId(null);
     }
 
+    // AI Agent ID para assistente-ia (query param)
+    if (view === 'ai-assistant' && params?.aiAgentId) {
+      const separator = path.includes('?') ? '&' : '?';
+      path = `${path}${separator}agent=${params.aiAgentId}`;
+      setAiAgentId(params.aiAgentId);
+    } else if (view !== 'ai-assistant') {
+      setAiAgentId(null);
+    }
+
     window.history.replaceState({ view, ...params }, '', path);
     setCurrentViewState(view);
-  }, []);
+  }, [hasPageAccess]);
 
   /**
    * Handler para navegação via sidebar (wrapper conveniente)
@@ -384,6 +465,12 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         } else {
           setAiConversationId(null);
         }
+        // AI Agent ID
+        if (event.state.aiAgentId) {
+          setAiAgentId(event.state.aiAgentId);
+        } else {
+          setAiAgentId(null);
+        }
       } else {
         // Fallback: extrai da URL
         const pathname = window.location.pathname;
@@ -417,6 +504,10 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         // AI Conversation ID
         const aiConversationMatch = pathname.match(/\/assistente-ia\/([^/]+)/);
         setAiConversationId(aiConversationMatch ? aiConversationMatch[1] : null);
+
+        // AI Agent ID (query param)
+        const searchParams = new URLSearchParams(window.location.search);
+        setAiAgentId(searchParams.get('agent'));
       }
     };
 
@@ -424,7 +515,7 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Sincroniza URL inicial se necessário
+  // Sincroniza URL inicial se necessário e verifica acesso
   useEffect(() => {
     const pathname = window.location.pathname;
 
@@ -436,8 +527,18 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     // Se está na raiz, redireciona para /dashboard
     if (pathname === '/' || pathname === '') {
       replaceView('dashboard');
+      return;
     }
-  }, [replaceView]);
+
+    // Check access to current page on initial load
+    // Sub-rotas verificam acesso pela página pai
+    if (hasPageAccess && currentView !== 'dashboard' && currentView !== 'settings' && currentView !== 'account-settings') {
+      const pageToCheck = getParentPage(currentView);
+      if (!hasPageAccess(pageToCheck)) {
+        replaceView('dashboard');
+      }
+    }
+  }, [replaceView, hasPageAccess, currentView]);
 
   /**
    * Limpa o leadId da URL (volta para /pipeline)
@@ -489,6 +590,18 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     }
   }, [currentView]);
 
+  /**
+   * Limpa o aiAgentId da URL (remove query param ?agent=xxx)
+   */
+  const clearAiAgentId = useCallback(() => {
+    if (currentView === 'ai-assistant') {
+      setAiAgentId(null);
+      // Remove apenas o query param, mantém o path atual
+      const pathname = window.location.pathname;
+      window.history.replaceState({ view: 'ai-assistant' }, '', pathname);
+    }
+  }, [currentView]);
+
   return {
     currentView,
     setCurrentView,
@@ -513,6 +626,9 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     aiConversationId,
     setAiConversationId,
     clearAiConversationId,
+    aiAgentId,
+    setAiAgentId,
+    clearAiAgentId,
     // Utilitários
     getPathForView: (view: AppView) => VIEW_TO_PATH[view],
     getLabelForView: (view: AppView) => VIEW_LABELS[view],

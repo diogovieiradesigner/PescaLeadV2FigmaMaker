@@ -53,10 +53,10 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
+  const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces, hasPageAccess } = useAuth();
 
-  // ✅ Navegação baseada em URL (sem hash #)
-  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab, aiConversationId, setAiConversationId } = useNavigation('dashboard');
+  // ✅ Navegação baseada em URL (sem hash #) com verificação de acesso a páginas
+  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab, aiConversationId, setAiConversationId, aiAgentId, clearAiAgentId } = useNavigation({ defaultView: 'dashboard', hasPageAccess });
 
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
@@ -1140,12 +1140,17 @@ function AppContent() {
             onManageMembersClick={() => setIsWorkspaceMembersOpen(true)}
             onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
             initialConversationId={aiConversationId}
+            initialAgentId={aiAgentId}
             onConversationChange={(conversationId) => {
               if (conversationId) {
                 navigate('ai-assistant', { aiConversationId: conversationId });
               } else {
                 navigate('ai-assistant');
               }
+            }}
+            onAgentUsed={() => {
+              // Limpa o agentId da URL após usar (para não re-selecionar ao navegar)
+              clearAiAgentId();
             }}
           />
         ) : (

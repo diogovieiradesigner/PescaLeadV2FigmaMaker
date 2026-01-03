@@ -170,7 +170,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", workspace_id)
       .single();
 
-    console.log(`[invite-member-by-email] ${targetUser.email} adicionado ao workspace ${workspace?.name} como ${role}`);
+    console.log(`[invite-member-by-email] Usuario adicionado ao workspace como ${role}`);
 
     return new Response(
       JSON.stringify({ 

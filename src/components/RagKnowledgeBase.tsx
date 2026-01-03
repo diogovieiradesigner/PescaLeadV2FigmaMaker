@@ -6,7 +6,7 @@ import { useRagDocuments } from '../hooks/useRagDocuments';
 import { useRagUpload } from '../hooks/useRagUpload';
 import { useRagDelete } from '../hooks/useRagDelete';
 import { RagEnabledSwitch } from './RagEnabledSwitch';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface RagKnowledgeBaseProps {
   agentId: string | null;
@@ -31,10 +31,14 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
 
     // Garantir que store existe
     let store = collection;
+    let storeNameToUse = collection?.external_store_id || '';
+
     if (!store) {
       try {
         toast.info('Configurando base de conhecimento...');
         store = await ensureStoreExists();
+        // Usar o store_name do store recém-criado
+        storeNameToUse = store?.external_store_id || '';
         toast.success('Base de conhecimento configurada!');
       } catch (err: any) {
         toast.error('Erro ao criar base de conhecimento');
@@ -43,9 +47,9 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
       }
     }
 
-    // Upload de cada arquivo
+    // Upload de cada arquivo (passa o storeName atualizado)
     for (const file of acceptedFiles) {
-      const result = await uploadDocument(file);
+      const result = await uploadDocument(file, storeNameToUse);
 
       if (result.success) {
         toast.success(`${file.name} enviado com sucesso!`);
@@ -214,7 +218,7 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
         <div className="flex items-center justify-center py-8">
           <Loader2 className={`w-5 h-5 animate-spin ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
         </div>
-      ) : documents.length > 0 ? (
+      ) : documents.length > 0 && (
         <div className="space-y-2">
           <p className={`text-xs mb-2 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
             Documentos ({documents.length})
@@ -226,8 +230,8 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
               <div
                 key={doc.id}
                 className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
-                  isDark 
-                    ? 'bg-white/[0.03] hover:bg-white/[0.05]' 
+                  isDark
+                    ? 'bg-white/[0.03] hover:bg-white/[0.05]'
                     : 'bg-gray-50 hover:bg-gray-100'
                 }`}
               >
@@ -242,7 +246,7 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
                       {doc.title}
                     </p>
                     <p className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-                      {formatFileSize(doc.metadata?.original_size)} • 
+                      {formatFileSize(doc.metadata?.original_size)} •
                       <span className={status.color}> {status.label}</span>
                     </p>
                   </div>
@@ -252,8 +256,8 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
                   onClick={() => handleDelete(doc)}
                   disabled={isDeleting === doc.id}
                   className={`p-2 rounded-lg transition-colors shrink-0 ${
-                    isDark 
-                      ? 'hover:bg-white/[0.08] text-white/40 hover:text-red-400' 
+                    isDark
+                      ? 'hover:bg-white/[0.08] text-white/40 hover:text-red-400'
                       : 'hover:bg-gray-200 text-gray-400 hover:text-red-500'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                   title="Excluir documento"
@@ -267,18 +271,6 @@ export function RagKnowledgeBase({ agentId, isDark = true }: RagKnowledgeBasePro
               </div>
             );
           })}
-        </div>
-      ) : (
-        <div className="text-center py-8">
-          <FileText className={`w-12 h-12 mx-auto mb-2 ${
-            isDark ? 'text-white/20' : 'text-gray-300'
-          }`} />
-          <p className={`text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-            Nenhum documento enviado ainda
-          </p>
-          <p className={`text-xs mt-1 ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
-            Arraste arquivos ou clique na área acima para começar
-          </p>
         </div>
       )}
     </div>

@@ -79,6 +79,7 @@ export function useRagImport(
 interface UseRagDocumentsReturn {
   documents: AssistantRagDocument[];
   totalDocuments: number;
+  savedConversationIds: string[]; // IDs das conversas já salvas no RAG
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -88,6 +89,7 @@ interface UseRagDocumentsReturn {
 export function useRagDocuments(workspaceId: string | null): UseRagDocumentsReturn {
   const [documents, setDocuments] = useState<AssistantRagDocument[]>([]);
   const [totalDocuments, setTotalDocuments] = useState(0);
+  const [savedConversationIds, setSavedConversationIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,6 +106,11 @@ export function useRagDocuments(workspaceId: string | null): UseRagDocumentsRetu
       const result = await listRagDocuments(workspaceId);
       setDocuments(result.documents);
       setTotalDocuments(result.total);
+      // Extrair IDs das conversas salvas
+      const ids = result.documents
+        .map(doc => doc.conversation_id)
+        .filter((id): id is string => !!id);
+      setSavedConversationIds(ids);
     } catch (err: any) {
       console.error('[useRagDocuments] Error:', err);
       setError(err.message);
@@ -133,6 +140,7 @@ export function useRagDocuments(workspaceId: string | null): UseRagDocumentsRetu
   return {
     documents,
     totalDocuments,
+    savedConversationIds,
     isLoading,
     error,
     refresh,

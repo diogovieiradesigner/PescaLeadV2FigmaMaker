@@ -1,7 +1,9 @@
 import { Theme } from '../../hooks/useTheme';
-import { AIMessage, SearchStep, SearchSource } from '../../types/ai-assistant';
+import { AIMessage, SearchStep, SearchSource, ImageGenerationData } from '../../types/ai-assistant';
 import { MessageBubble } from './MessageBubble';
 import { SearchProgress } from './SearchProgress';
+import { McpToolProgress, McpToolCall } from './McpToolProgress';
+import { DataToolProgress, DataToolCall } from './DataToolProgress';
 import { ThinkingDisplay } from './ThinkingDisplay';
 import { Loader2 } from 'lucide-react';
 
@@ -16,6 +18,14 @@ interface ChatMessageListProps {
   searchSources?: SearchSource[];
   isThinking?: boolean;
   thinkingContent?: string;
+  // MCP Tool Calls
+  mcpToolCalls?: McpToolCall[];
+  isMcpExecuting?: boolean;
+  // Data Tool Calls (SQL Tool Nativa)
+  dataToolCalls?: DataToolCall[];
+  isDataToolExecuting?: boolean;
+  // Image generation reuse
+  onReuseImageConfig?: (config: ImageGenerationData) => void;
 }
 
 export function ChatMessageList({
@@ -29,6 +39,11 @@ export function ChatMessageList({
   searchSources = [],
   isThinking = false,
   thinkingContent = '',
+  mcpToolCalls = [],
+  isMcpExecuting = false,
+  dataToolCalls = [],
+  isDataToolExecuting = false,
+  onReuseImageConfig,
 }: ChatMessageListProps) {
   const isDark = theme === 'dark';
 
@@ -57,6 +72,7 @@ export function ChatMessageList({
           theme={theme}
           onDelete={onDeleteMessage}
           sources={message.sources}
+          onReuseImageConfig={onReuseImageConfig}
         />
       ))}
 
@@ -67,6 +83,26 @@ export function ChatMessageList({
           isSearching={isSearching}
           theme={theme}
         />
+      )}
+
+      {/* MCP Tool Progress - mostra durante execução de ferramentas MCP
+          Renderiza SEMPRE que houver tool calls, não apenas durante streaming */}
+      {mcpToolCalls.length > 0 && (
+        <McpToolProgress
+          toolCalls={mcpToolCalls}
+          isExecuting={isMcpExecuting}
+          theme={theme}
+        />
+      )}
+
+      {/* Data Tool Progress - mostra durante execução de Data Tools (SQL) */}
+      {dataToolCalls.length > 0 && (
+        <div className="mb-4">
+          <DataToolProgress
+            calls={dataToolCalls}
+            theme={theme}
+          />
+        </div>
       )}
 
       {/* Thinking Display - mostra raciocínio de modelos como DeepSeek R1 */}
@@ -97,8 +133,8 @@ export function ChatMessageList({
         />
       )}
 
-      {/* Typing indicator (quando ainda não há tokens e não está buscando) */}
-      {isStreaming && !streamingMessage && searchSteps.length === 0 && (
+      {/* Typing indicator (quando ainda não há tokens e não está buscando nem executando tools) */}
+      {isStreaming && !streamingMessage && searchSteps.length === 0 && mcpToolCalls.length === 0 && dataToolCalls.length === 0 && (
         <div className="flex gap-4 mb-6">
           <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
             isDark ? 'bg-[#0169D9]/10' : 'bg-[#0169D9]/10'

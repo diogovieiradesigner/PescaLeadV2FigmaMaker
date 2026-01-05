@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Theme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
-import { projectId } from '../utils/supabase/info';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { 
   User, 
   Building2, 
@@ -75,7 +75,8 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         `https://${projectId}.supabase.co/functions/v1/workspace-team/members?workspace_id=${currentWorkspace?.id}`,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': publicAnonKey  // ✅ OBRIGATÓRIO: Kong exige apikey
           }
         }
       );
@@ -112,6 +113,7 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
+            'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -143,6 +145,7 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
+            'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -175,7 +178,8 @@ export default function Settings({ theme, onToggleTheme, onManageMembersClick }:
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${accessToken}`
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': publicAnonKey  // ✅ OBRIGATÓRIO: Kong exige apikey
           }
         }
       );

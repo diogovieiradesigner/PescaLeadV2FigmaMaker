@@ -23,6 +23,7 @@ export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 /**
  * Helper para fazer chamadas autenticadas à API
+ * ✅ IMPORTANTE: Sempre inclui apikey header (exigido pelo Kong no self-hosted)
  */
 export async function apiCall(
   endpoint: string,
@@ -31,6 +32,7 @@ export async function apiCall(
 ) {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON_KEY, // ✅ OBRIGATÓRIO: Kong exige apikey
     ...options.headers,
   };
 
@@ -81,6 +83,61 @@ export const API_ENDPOINTS = {
   updateMember: (workspaceId: string, userId: string) => `/workspaces/${workspaceId}/members/${userId}`,
   removeMember: (workspaceId: string, userId: string) => `/workspaces/${workspaceId}/members/${userId}`,
 };
+
+/**
+ * Helper para fazer chamadas autenticadas a Edge Functions
+ * (alternativa ao apiCall para uso direto sem passar pelo make-server)
+ *
+ * @example
+ * const data = await edgeFunctionCall('/kanban-api/workspaces/123/funnels', token);
+ */
+export async function edgeFunctionCall(
+  path: string, // Ex: '/kanban-api/health' ou '/kanban-api/workspaces/123/funnels'
+  accessToken?: string,
+  options: RequestInit = {}
+) {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON_KEY, // ✅ OBRIGATÓRIO: Kong exige apikey
+    ...options.headers,
+  };
+
+  // Se tiver token de acesso (usuário logado), usa ele
+  // Senão, usa a anon key pública
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  } else {
+    headers['Authorization'] = `Bearer ${SUPABASE_ANON_KEY}`;
+  }
+
+  // Garantir que path começa com /
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${SUPABASE_URL}/functions/v1${normalizedPath}`;
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type');
+    let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        // Ignorar erro de parse
+      }
+    }
+
+    console.error(`Edge Function Error [${path}]:`, errorMessage);
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
 
 // Debug: Mostrar configuração atual no console
 console.log('🔧 Supabase Config:', {

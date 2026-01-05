@@ -5,7 +5,7 @@
  */
 
 import { supabase } from '../utils/supabase/client';
-import { projectId } from '../utils/supabase/info';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 export interface RAGDocument {
   id: string;
@@ -94,12 +94,13 @@ export async function createRAGStore(agentId: string): Promise<RAGCollection> {
   }
 
   const response = await fetch(
-    `https://${projectId}.supabase.co/functions/v1/ai-rag-manage`,
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-manage`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
+        'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
       },
       body: JSON.stringify({
         action: 'create_store',
@@ -157,12 +158,13 @@ export async function uploadRAGDocument(
 
     // Upload via edge function
     const response = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/ai-rag-manage`,
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-manage`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
+          'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
         },
         body: JSON.stringify({
           action: 'upload_document',
@@ -204,12 +206,13 @@ export async function deleteRAGDocument(documentId: string, externalFileId: stri
 
     // Deletar do Gemini via edge function
     const response = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/ai-rag-manage`,
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-manage`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
+          'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
         },
         body: JSON.stringify({
           action: 'delete_document',
@@ -239,12 +242,13 @@ export async function searchRAG(agentId: string, query: string): Promise<RAGSear
     }
 
     const response = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/ai-rag-search`,
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-search`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
+          'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
         },
         body: JSON.stringify({
           agent_id: agentId,

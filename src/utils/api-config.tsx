@@ -13,11 +13,15 @@ import { projectId, publicAnonKey } from './supabase/info';
  */
 
 // Base URL da API
-export const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774`;
+// Usa env var se disponível, senão fallback para Cloud
+export const API_BASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/make-server-e4f9d774`
+  : `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774`;
 
 // Supabase Config
-export const SUPABASE_URL = `https://${projectId}.supabase.co`;
-export const SUPABASE_ANON_KEY = publicAnonKey;
+// Usa env vars se disponíveis, senão fallback para Cloud
+export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || `https://${projectId}.supabase.co`;
+export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || publicAnonKey;
 
 /**
  * Helper para fazer chamadas autenticadas à API

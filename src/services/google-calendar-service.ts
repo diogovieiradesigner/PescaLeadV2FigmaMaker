@@ -14,8 +14,8 @@ import {
 } from '../types/google-calendar.types';
 
 // URL base das Edge Functions
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co';
-const FUNCTIONS_URL = SUPABASE_URL.replace('.supabase.co', '.supabase.co/functions/v1');
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 
 // Timeout padrão para requisições (30 segundos)
 const DEFAULT_TIMEOUT_MS = 30000;

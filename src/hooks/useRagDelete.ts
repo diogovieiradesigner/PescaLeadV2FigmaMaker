@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../utils/supabase/client';
 import type { RagDocument } from './useRagDocuments';
 
-const RAG_MANAGE_URL = 'https://nlbcwaxkeaddfocigwuk.supabase.co/functions/v1/ai-rag-manage';
+const RAG_MANAGE_URL = `${import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co'}/functions/v1/ai-rag-manage`;
 
 export function useRagDelete() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);

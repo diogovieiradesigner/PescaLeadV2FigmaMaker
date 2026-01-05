@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../utils/supabase/client';
 
-const RAG_MANAGE_URL = 'https://nlbcwaxkeaddfocigwuk.supabase.co/functions/v1/ai-rag-manage';
+const RAG_MANAGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-manage`;
 
 // MIME types permitidos
 const ALLOWED_MIME_TYPES: Record<string, string> = {

@@ -13,15 +13,13 @@ import { projectId, publicAnonKey } from './supabase/info';
  */
 
 // Base URL da API
-// Usa env var se disponível, senão fallback para Cloud
-export const API_BASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-  ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/make-server-e4f9d774`
-  : `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774`;
+// Usa env var (OBRIGATÓRIO - sem fallback)
+export const API_BASE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/make-server-e4f9d774`;
 
 // Supabase Config
-// Usa env vars se disponíveis, senão fallback para Cloud
-export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || `https://${projectId}.supabase.co`;
-export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || publicAnonKey;
+// Usa env vars (OBRIGATÓRIO - sem fallback)
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 /**
  * Helper para fazer chamadas autenticadas à API
@@ -83,3 +81,12 @@ export const API_ENDPOINTS = {
   updateMember: (workspaceId: string, userId: string) => `/workspaces/${workspaceId}/members/${userId}`,
   removeMember: (workspaceId: string, userId: string) => `/workspaces/${workspaceId}/members/${userId}`,
 };
+
+// Debug: Mostrar configuração atual no console
+console.log('🔧 Supabase Config:', {
+  SUPABASE_URL,
+  API_BASE_URL,
+  ANON_KEY_PREFIX: SUPABASE_ANON_KEY.substring(0, 50) + '...',
+  ENV_VITE_URL: import.meta.env.VITE_SUPABASE_URL,
+  ENV_LOADED: !!import.meta.env.VITE_SUPABASE_URL
+});

@@ -131,7 +131,7 @@ export function useKanbanData(
       if (filters?.hasWhatsapp) queryParams.append('hasWhatsapp', 'true');
       if (filters?.searchQuery) queryParams.append('searchQuery', filters.searchQuery);
       
-      const url = `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/leads?${queryParams}`;
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/leads?${queryParams}`;
       
       
       const response = await fetch(url, {
@@ -975,7 +975,7 @@ export function useKanbanData(
         if (filters?.hasWhatsapp) queryParams.append('hasWhatsapp', 'true');
         if (filters?.searchQuery) queryParams.append('searchQuery', filters.searchQuery);
         
-        const url = `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${currentFunnelId}/leads?${queryParams}`;
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${currentFunnelId}/leads?${queryParams}`;
         
         
         const response = await fetch(url, {

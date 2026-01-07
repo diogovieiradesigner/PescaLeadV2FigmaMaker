@@ -54,7 +54,7 @@ function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
 
   // ✅ Navegação baseada em URL (sem hash #)
-  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab } = useNavigation('dashboard');
+  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, documentId, navigateToDocument, clearDocumentId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab } = useNavigation('dashboard');
 
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
@@ -1315,6 +1315,9 @@ function AppContent() {
               setCurrentView('settings');
             }}
             navigationState={leadNavigationState}
+            urlDocumentId={documentId}
+            onDocumentOpen={(docId) => selectedLead && navigateToDocument(selectedLead.id, docId)}
+            onDocumentClose={clearDocumentId}
           />
         );
       })()}

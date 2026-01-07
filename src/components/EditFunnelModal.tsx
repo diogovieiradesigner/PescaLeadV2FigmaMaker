@@ -30,6 +30,8 @@ export function EditFunnelModal({
 }: EditFunnelModalProps) {
   const [funnelName, setFunnelName] = useState('');
   const [columns, setColumns] = useState<FunnelColumn[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const initializedRef = useRef(false);
 
   const isDark = theme === 'dark';
@@ -59,6 +61,55 @@ export function EditFunnelModal({
 
   const handleRemoveColumn = (id: string) => {
     setColumns(columns.filter((col) => col.id !== id));
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+    setDraggedIndex(index);
+
+    // Criar imagem fantasma personalizada
+    const dragImage = (e.target as HTMLElement).cloneNode(true) as HTMLElement;
+    dragImage.style.opacity = '0.5';
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-9999px';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    setTimeout(() => document.body.removeChild(dragImage), 0);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    const dragIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+
+    if (dragIndex === dropIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newColumns = [...columns];
+    const [draggedColumn] = newColumns.splice(dragIndex, 1);
+    newColumns.splice(dropIndex, 0, draggedColumn);
+    setColumns(newColumns);
+
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const handleSave = () => {
@@ -164,14 +215,43 @@ export function EditFunnelModal({
               </button>
             </div>
 
+            {/* Info sobre Taxa de Conversão */}
+            <div className={`mb-3 p-3 rounded-lg border text-xs ${
+              isDark
+                ? 'bg-blue-500/5 border-blue-500/20 text-blue-400'
+                : 'bg-blue-50 border-blue-200 text-blue-700'
+            }`}>
+              <p className="font-medium mb-1">Taxa de Conversão:</p>
+              <p>
+                Colunas com as palavras <strong>"ganho"</strong>, <strong>"fechado"</strong> ou <strong>"won"</strong> no nome são contadas como conversão.
+              </p>
+              <p className="mt-1">
+                Se nenhuma coluna tiver essas palavras, a <strong>última coluna</strong> será considerada como conversão.
+              </p>
+            </div>
+
             <div className="space-y-2">
               {columns.map((column, index) => (
                 <div
                   key={column.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border ${
-                    isDark
-                      ? 'bg-true-black border-white/[0.08]'
-                      : 'bg-light-elevated border-border-light'
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDragEnd={handleDragEnd}
+                  onDrop={(e) => handleDrop(e, index)}
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-move transition-all ${
+                    draggedIndex === index
+                      ? isDark
+                        ? 'opacity-50 bg-true-black border-white/[0.08]'
+                        : 'opacity-50 bg-light-elevated border-border-light'
+                      : dragOverIndex === index
+                      ? isDark
+                        ? 'bg-blue-500/10 border-blue-500/30 scale-105'
+                        : 'bg-blue-50 border-blue-300 scale-105'
+                      : isDark
+                      ? 'bg-true-black border-white/[0.08] hover:border-white/[0.15]'
+                      : 'bg-light-elevated border-border-light hover:border-border-light/80'
                   }`}
                 >
                   <GripVertical

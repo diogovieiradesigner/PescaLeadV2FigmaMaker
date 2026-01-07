@@ -67,6 +67,9 @@ interface CampaignAnalytics {
     success_rate: number;
     workspace_id: string;
     inbox_name: string;
+    instance_name: string;
+    instance_provider: string;
+    instance_status: string;
     funnel_name: string;
     source_column: string;
     target_column: string;
@@ -929,6 +932,13 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
             </h1>
             <p className={cn("text-xs", isDark ? "text-zinc-500" : "text-zinc-600")}>
               {analytics.run.funnel_name} • {analytics.run.source_column} → {analytics.run.target_column}
+              {analytics.run.instance_name && (
+                <span className="ml-2">
+                  • WhatsApp: <span className={cn("font-medium", analytics.run.instance_status === 'connected' ? "text-green-600" : "text-red-600")}>
+                    {analytics.run.instance_name}
+                  </span>
+                </span>
+              )}
             </p>
           </div>
         </div>

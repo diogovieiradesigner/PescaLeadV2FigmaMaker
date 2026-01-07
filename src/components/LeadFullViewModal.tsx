@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, MessageSquare, FileText, Activity, Save, User, Building2, Calendar, Tag, DollarSign, Phone, Mail, MoreVertical, CheckCircle, XCircle, Globe, Send, Settings, FolderOpen, Upload, Download, Trash2, File, FileImage, FileSpreadsheet, FileType, Plus, BookOpen, ArrowLeft } from 'lucide-react';
 import { CRMLead, CustomField } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
@@ -7,6 +7,7 @@ import { ChatArea } from './chat/ChatArea';
 import { useSingleConversation } from '../hooks/useSingleConversation';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeadCustomFields } from '../hooks/useLeadCustomFields'; // ✅ Novo hook de lazy loading
+import { useDebounce } from '../hooks/useDebounce';
 import { getLeadActivities, updateLead } from '../services/leads-service';
 import { deleteCustomFieldValue } from '../services/custom-fields-service';
 import { toast } from 'sonner';
@@ -80,6 +81,9 @@ interface LeadFullViewModalProps {
     currentIndex: number;
     total: number;
   };
+  urlDocumentId?: string | null; // ✅ Document ID da URL
+  onDocumentOpen?: (documentId: string) => void; // ✅ Callback ao abrir documento
+  onDocumentClose?: () => void; // ✅ Callback ao fechar documento
 }
 
 type ActiveTab = 'chat' | 'data' | 'activities' | 'files' | 'documents';
@@ -380,7 +384,7 @@ function renderEmailValue(email: string, isDark: boolean) {
   );
 }
 
-export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavigateNext, onNavigatePrev, onNavigateToInstances, navigationState }: LeadFullViewModalProps) {
+export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavigateNext, onNavigatePrev, onNavigateToInstances, navigationState, urlDocumentId, onDocumentOpen, onDocumentClose }: LeadFullViewModalProps) {
   console.log('[LeadFullViewModal] RENDERIZADO:', {
     isOpen,
     hasLead: !!lead,
@@ -607,6 +611,17 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
       fetchLeadDocuments();
     }
   }, [isOpen, lead, currentWorkspace?.id, customFields, fetchLeadFiles, fetchLeadDocuments]); // ✅ Incluir customFields, fetchLeadFiles e fetchLeadDocuments nas dependências
+
+  // ✅ Abrir documento automaticamente se houver documentId na URL
+  useEffect(() => {
+    if (isOpen && urlDocumentId && leadDocuments.length > 0 && !isEditingDocument) {
+      const doc = leadDocuments.find(d => d.id === urlDocumentId);
+      if (doc) {
+        setSelectedDocument(doc);
+        setIsEditingDocument(true);
+      }
+    }
+  }, [isOpen, urlDocumentId, leadDocuments, isEditingDocument]);
 
   // ✅ Gerenciar seleção de telefone
   useEffect(() => {
@@ -1077,6 +1092,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
       setIsEditingDocument(true);
       setShowTemplateSelector(false);
       setPendingFolderId(undefined);
+      onDocumentOpen?.(newDoc.id);
       toast.success(template ? 'Documento criado a partir do template!' : 'Documento criado!');
     } catch (error: unknown) {
       console.error('[LeadFullViewModal] Erro ao criar documento:', error);
@@ -2494,6 +2510,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                    onSelectDocument={(doc) => {
                                       setSelectedDocument(doc);
                                       setIsEditingDocument(true);
+                                      onDocumentOpen?.(doc.id);
                                    }}
                                    onDeleteDocument={handleDeleteDocument}
                                    onPinDocument={(docId, isPinned) => handleUpdateDocument(docId, { is_pinned: isPinned })}
@@ -2525,6 +2542,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                        onBack={() => {
                           setIsEditingDocument(false);
                           setSelectedDocument(null);
+                          onDocumentClose?.();
                        }}
                        onTitleChange={(newTitle) => {
                           setSelectedDocument(prev => prev ? { ...prev, title: newTitle } : null);

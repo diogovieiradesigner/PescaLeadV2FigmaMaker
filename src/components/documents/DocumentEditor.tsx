@@ -406,6 +406,7 @@ export function DocumentEditor({
 }: DocumentEditorProps) {
   const isDark = theme === 'dark';
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const titleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastContentRef = useRef<string>('');
 
   // Title editing state
@@ -428,11 +429,29 @@ export function DocumentEditor({
     }
   }, [onBack]);
 
-  // Handle title change with debounce
+  // Handle title change with debounce (2 segundos)
   const handleTitleChange = useCallback((newTitle: string) => {
     setEditingTitle(newTitle);
-    onTitleChange?.(newTitle);
+
+    // Limpar timeout anterior
+    if (titleTimeoutRef.current) {
+      clearTimeout(titleTimeoutRef.current);
+    }
+
+    // Agendar atualização após 2 segundos de inatividade
+    titleTimeoutRef.current = setTimeout(() => {
+      onTitleChange?.(newTitle);
+    }, 2000);
   }, [onTitleChange]);
+
+  // Cleanup do timeout ao desmontar
+  useEffect(() => {
+    return () => {
+      if (titleTimeoutRef.current) {
+        clearTimeout(titleTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Line spacing state - load from localStorage
   const [lineSpacing, setLineSpacing] = useState<LineSpacing>(() => {

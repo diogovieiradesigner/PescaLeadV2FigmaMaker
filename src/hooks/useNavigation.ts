@@ -26,6 +26,7 @@ export type ExtractionTab = 'google-maps' | 'cnpj' | 'instagram';
 export interface NavigationParams {
   runId?: string;
   leadId?: string;
+  documentId?: string;
   conversationId?: string;
   eventId?: string;
   campaignRunId?: string;
@@ -141,6 +142,15 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
 
     const pathname = window.location.pathname;
     const match = pathname.match(/\/pipeline\/lead\/([^/]+)/);
+    return match ? match[1] : null;
+  });
+
+  // Estado para documento aberto via URL (/pipeline/lead/:leadId/document/:documentId)
+  const [documentId, setDocumentId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+
+    const pathname = window.location.pathname;
+    const match = pathname.match(/\/pipeline\/lead\/[^/]+\/document\/([^/]+)/);
     return match ? match[1] : null;
   });
 
@@ -354,9 +364,12 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         const extractionMatch = pathname.match(/\/extracao\/progresso\/([^/]+)/);
         setExtractionRunId(extractionMatch ? extractionMatch[1] : null);
 
-        // Lead ID
+        // Lead ID and Document ID
         const leadMatch = pathname.match(/\/pipeline\/lead\/([^/]+)/);
         setLeadId(leadMatch ? leadMatch[1] : null);
+
+        const documentMatch = pathname.match(/\/pipeline\/lead\/[^/]+\/document\/([^/]+)/);
+        setDocumentId(documentMatch ? documentMatch[1] : null);
 
         // Conversation ID
         const conversationMatch = pathname.match(/\/mensagens\/([^/]+)/);
@@ -435,6 +448,26 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     }
   }, [currentView]);
 
+  /**
+   * Navega para um documento dentro de um lead (/pipeline/lead/:leadId/document/:documentId)
+   */
+  const navigateToDocument = useCallback((leadIdParam: string, documentIdParam: string) => {
+    setLeadId(leadIdParam);
+    setDocumentId(documentIdParam);
+    const url = `/pipeline/lead/${leadIdParam}/document/${documentIdParam}`;
+    window.history.pushState({ view: 'pipeline', leadId: leadIdParam, documentId: documentIdParam }, '', url);
+  }, []);
+
+  /**
+   * Limpa o documentId da URL (volta para /pipeline/lead/:leadId)
+   */
+  const clearDocumentId = useCallback(() => {
+    if (leadId && currentView === 'pipeline') {
+      setDocumentId(null);
+      window.history.replaceState({ view: 'pipeline', leadId }, '', `/pipeline/lead/${leadId}`);
+    }
+  }, [currentView, leadId]);
+
   return {
     currentView,
     setCurrentView,
@@ -445,6 +478,10 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     leadId,
     setLeadId,
     clearLeadId,
+    documentId,
+    setDocumentId,
+    navigateToDocument,
+    clearDocumentId,
     conversationId,
     setConversationId,
     clearConversationId,

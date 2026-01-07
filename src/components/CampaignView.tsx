@@ -839,6 +839,25 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
+          {/* Save Configuration Button */}
+          <button
+            onClick={saveConfig}
+            disabled={saving}
+            className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Salvando...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>Salvar</span>
+              </>
+            )}
+          </button>
+
           {/* Execute Now Button */}
           <div className="flex flex-col items-end gap-1">
             <button
@@ -858,7 +877,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 </>
               )}
             </button>
-            
+
             {/* ✅ NOVA: Nota informativa sobre restrição de horário */}
             {!canExecuteNow().canExecute && canExecuteNow().reason && (
               <div className="flex items-center gap-1 text-xs text-red-400">
@@ -866,7 +885,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 <span>{canExecuteNow().reason}</span>
               </div>
             )}
-            
+
             {canExecuteNow().canExecute && canExecuteNow().timeRemaining > 0 && (
               <div className="flex items-center gap-1 text-xs text-white/60">
                 <Clock className="w-3 h-3" />
@@ -1314,27 +1333,6 @@ NUNCA:
                   </div>
                 </div>
               )}
-
-              {/* Botão Salvar */}
-              <div className="flex items-center gap-3 pt-4">
-                <button
-                  onClick={saveConfig}
-                  disabled={saving}
-                  className="px-6 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Salvando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>Salvar Configuração</span>
-                    </>
-                  )}
-                </button>
-              </div>
             </div>
           </div>
 

@@ -244,7 +244,7 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
   const [enrichmentStatus, setEnrichmentStatus] = useState<{
     total: number;
     whatsapp: { total_com_telefone: number; verificados: number; validos: number; invalidos: number; pending: number; sem_telefone: number };
-    whois: { total_br: number; enriched: number; pending: number; internacional: number; sem_dominio: number };
+    whois: { total_br: number; enriched: number; pending: number; failed: number; internacional: number; sem_dominio: number };
     cnpj: { total_com_cnpj: number; enriched: number; pending: number; sem_cnpj: number };
     scraping: { total_com_site: number; pending: number; processing: number; completed: number; failed: number; sem_site: number };
     status_enrichment: { pending: number; enriching: number; completed: number };
@@ -1419,6 +1419,12 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
                           <div className="flex justify-between text-xs">
                             <span className={isDark ? "text-zinc-500" : "text-zinc-600"}>Pendentes</span>
                             <span className={isDark ? "text-yellow-400" : "text-yellow-600"}>{enrichmentStatus.whois.pending}</span>
+                          </div>
+                        )}
+                        {enrichmentStatus.whois.failed > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className={isDark ? "text-zinc-500" : "text-zinc-600"}>Falhas</span>
+                            <span className={isDark ? "text-red-400" : "text-red-600"}>{enrichmentStatus.whois.failed}</span>
                           </div>
                         )}
                         <div className="flex justify-between text-xs">

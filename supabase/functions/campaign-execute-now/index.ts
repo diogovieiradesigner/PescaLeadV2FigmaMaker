@@ -544,48 +544,68 @@ Deno.serve(async (req) => {
     );
 
     // 8. Gerar horários aleatórios respeitando start_time e end_time
-    // ✅ CORREÇÃO: Cálculo 100% dinâmico baseado na janela de tempo disponível
-    // Não usar valores hardcoded - calcular automaticamente baseado em:
+    // ✅ CORREÇÃO: Respeitar min_interval_seconds da configuração
     // - Janela disponível: max(now, start_time) até end_time
     // - Quantidade de leads
-    // - Distribuição inteligente na janela
-    
+    // - Intervalo configurado pelo usuário (min_interval_seconds)
+
+    // ✅ VALIDAR min_interval_seconds
+    const configuredMinInterval = config.min_interval_seconds;
+    if (!configuredMinInterval || configuredMinInterval < 30) {
+      await log(supabase, run.id, 'VALIDAÇÃO', 'error',
+        `min_interval_seconds inválido: ${configuredMinInterval}. Deve ser >= 30`,
+        { invalid_value: configuredMinInterval }
+      );
+      await supabase
+        .from('campaign_runs')
+        .update({ status: 'failed', error_message: `min_interval_seconds inválido: ${configuredMinInterval}. Deve ser >= 30`, completed_at: new Date().toISOString() })
+        .eq('id', run.id);
+      return new Response(JSON.stringify({
+        error: `min_interval_seconds inválido: ${configuredMinInterval}. Deve ser >= 30`,
+        error_code: 'INVALID_MIN_INTERVAL'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     let minInterval: number;
     let maxInterval: number;
-    
+
     // Se tiver end_time definido, calcular intervalo ótimo para caber todos os leads
     if (endTimeToday && leads.length > 0) {
-      // Usar intervalo mínimo de 30 segundos como segurança absoluta
-      const SAFETY_MIN_INTERVAL = 30; // 30 segundos - mínimo de segurança
+      // ✅ USAR O INTERVALO CONFIGURADO, não hardcoded!
       const optimalIntervals = calculateOptimalInterval(
         actualStartTime,
         endTimeToday,
         leads.length,
-        SAFETY_MIN_INTERVAL
+        configuredMinInterval // ✅ Usar intervalo configurado pelo usuário
       );
 
-      minInterval = Math.max(optimalIntervals.minInterval, 30); // mínimo absoluto: 30 segundos
-      maxInterval = Math.max(optimalIntervals.maxInterval, 45); // mínimo absoluto: 45 segundos
+      minInterval = optimalIntervals.minInterval;
+      maxInterval = optimalIntervals.maxInterval;
 
       await log(supabase, run.id, 'AGENDAMENTO', 'info',
-        `📊 Intervalo calculado dinamicamente para ${leads.length} leads: ${minInterval}s - ${maxInterval}s (janela: ${availableMinutes} min)`,
+        `📊 Intervalo calculado para ${leads.length} leads: ${minInterval}s - ${maxInterval}s (configurado: ${configuredMinInterval}s, janela: ${availableMinutes} min)`,
         {
           calculated_interval: `${minInterval}s - ${maxInterval}s`,
+          configured_min_interval: configuredMinInterval,
           window_minutes: availableMinutes,
           leads_count: leads.length,
-          reason: 'Calculado dinamicamente baseado na janela de tempo disponível'
+          reason: 'Calculado baseado no intervalo configurado e janela disponível'
         }
       );
     } else {
-      // Fallback para casos sem end_time - usar intervalo conservador
-      minInterval = 120; // 2 minutos
-      maxInterval = 180; // 3 minutos
-      
+      // Fallback para casos sem end_time - usar intervalo configurado
+      minInterval = configuredMinInterval;
+      maxInterval = configuredMinInterval * 2;
+
       await log(supabase, run.id, 'AGENDAMENTO', 'info',
-        `📊 Usando intervalo conservador (sem end_time definido): ${minInterval}s - ${maxInterval}s`,
+        `📊 Usando intervalo configurado (sem end_time definido): ${minInterval}s - ${maxInterval}s`,
         {
           interval: `${minInterval}s - ${maxInterval}s`,
-          reason: 'Sem end_time definido - usando intervalo conservador'
+          configured_min_interval: configuredMinInterval,
+          reason: 'Sem end_time definido - usando intervalo configurado'
         }
       );
     }

@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { Download, FileText, FileCode2, ChevronDown } from 'lucide-react';
+import { Download, FileText, FileCode2, ChevronDown, Copy } from 'lucide-react';
 import type { JSONContent } from '@tiptap/react';
 import { contentToMarkdown } from '../../services/documents-service';
 import type { Editor } from '@tiptap/react';
@@ -16,9 +16,10 @@ interface ExportMenuProps {
   editor?: Editor | null; // Direct editor reference for getText()
   editorElement?: HTMLElement | null; // Keep for backwards compatibility but no longer used
   theme?: 'dark' | 'light';
+  onCopyMarkdown?: () => void; // Callback to copy as markdown
 }
 
-export function ExportMenu({ documentTitle, content, getContent, editor, theme = 'dark' }: ExportMenuProps) {
+export function ExportMenu({ documentTitle, content, getContent, editor, theme = 'dark', onCopyMarkdown }: ExportMenuProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
@@ -157,10 +158,37 @@ export function ExportMenu({ documentTitle, content, getContent, editor, theme =
       doc.text(titleLines, margin, y);
       y += titleLines.length * 8 + 5;
 
+      // Sanitize text for PDF (replace Unicode chars not supported by helvetica)
+      const sanitizeTextForPDF = (text: string): string => {
+        return text
+          .replace(/→/g, '->')    // Arrow right
+          .replace(/←/g, '<-')    // Arrow left
+          .replace(/↔/g, '<->')   // Arrow both
+          .replace(/•/g, '*')     // Bullet (use for inline, list bullets handled separately)
+          .replace(/–/g, '-')     // En dash
+          .replace(/—/g, '--')    // Em dash
+          .replace(/'/g, "'")     // Smart quote
+          .replace(/'/g, "'")     // Smart quote
+          .replace(/"/g, '"')     // Smart quote
+          .replace(/"/g, '"')     // Smart quote
+          .replace(/…/g, '...')   // Ellipsis
+          .replace(/×/g, 'x')     // Multiplication
+          .replace(/÷/g, '/')     // Division
+          .replace(/≈/g, '~')     // Approximately
+          .replace(/≠/g, '!=')    // Not equal
+          .replace(/≤/g, '<=')    // Less or equal
+          .replace(/≥/g, '>=')    // Greater or equal
+          .replace(/✓/g, '[x]')   // Checkmark
+          .replace(/✗/g, '[ ]')   // X mark
+          .replace(/★/g, '*')     // Star
+          .replace(/☆/g, '*');    // Empty star
+      };
+
       // Extract text from node (handles nested content and marks)
       const extractNodeText = (node: Record<string, unknown>): string => {
         if (node.type === 'text') {
-          return (node.text as string) || '';
+          const rawText = (node.text as string) || '';
+          return sanitizeTextForPDF(rawText);
         }
         const nodeContent = node.content as Record<string, unknown>[] | undefined;
         if (nodeContent) {
@@ -183,14 +211,20 @@ export function ExportMenu({ documentTitle, content, getContent, editor, theme =
           case 'heading': {
             const level = (attrs?.level as number) || 1;
             const sizes = { 1: 18, 2: 16, 3: 14 };
+            const topPadding = { 1: 10, 2: 8, 3: 6 }; // Padding superior por nível
             const fontSize = sizes[level as 1 | 2 | 3] || 14;
+            const paddingTop = topPadding[level as 1 | 2 | 3] || 6;
+
+            // Adiciona padding superior antes do título
+            y += paddingTop;
+
             doc.setFontSize(fontSize);
             doc.setFont('helvetica', 'bold');
             const text = extractNodeText(node);
             const lines = doc.splitTextToSize(text, maxWidth - indent * 5);
-            checkPageBreak(lines.length * (fontSize / 2.5) + 3);
+            checkPageBreak(lines.length * (fontSize / 2.5) + paddingTop + 3);
             doc.text(lines, margin + indent * 5, y);
-            y += lines.length * (fontSize / 2.5) + 3;
+            y += lines.length * (fontSize / 2.5) + 4;
             break;
           }
 
@@ -294,11 +328,119 @@ export function ExportMenu({ documentTitle, content, getContent, editor, theme =
           }
 
           case 'horizontalRule': {
-            checkPageBreak(8);
+            checkPageBreak(20);
+            y += 8; // Padding acima da linha
             doc.setDrawColor(200);
             doc.setLineWidth(0.3);
-            doc.line(margin, y + 2, pageWidth - margin, y + 2);
-            y += 8;
+            doc.line(margin, y, pageWidth - margin, y);
+            y += 12; // Padding abaixo da linha (maior para separar do título)
+            break;
+          }
+
+          case 'table': {
+            // Process table
+            const rows = nodeContent || [];
+            if (rows.length === 0) break;
+
+            // Calculate column widths based on content
+            const allCells: string[][] = [];
+            rows.forEach(row => {
+              const rowNode = row as Record<string, unknown>;
+              const cells = (rowNode.content as Record<string, unknown>[]) || [];
+              const rowTexts: string[] = [];
+              cells.forEach(cell => {
+                const cellText = extractNodeText(cell as Record<string, unknown>);
+                rowTexts.push(cellText);
+              });
+              allCells.push(rowTexts);
+            });
+
+            if (allCells.length === 0) break;
+
+            const numCols = Math.max(...allCells.map(r => r.length));
+            const colWidth = maxWidth / numCols;
+            const cellPadding = 3;
+            const lineHeight = 4;
+            const minRowHeight = 8;
+
+            // Calculate row heights based on content wrapping
+            doc.setFontSize(9);
+            const rowHeights: number[] = allCells.map(rowTexts => {
+              let maxLines = 1;
+              rowTexts.forEach(cellText => {
+                const textWidth = colWidth - cellPadding * 2;
+                const lines = doc.splitTextToSize(cellText, textWidth);
+                maxLines = Math.max(maxLines, lines.length);
+              });
+              return Math.max(minRowHeight, maxLines * lineHeight + cellPadding * 2);
+            });
+
+            // Calculate total table height needed
+            const tableHeight = rowHeights.reduce((sum, h) => sum + h, 0) + 4;
+            checkPageBreak(Math.min(tableHeight, 100)); // Check at least first part fits
+
+            // Draw table
+            let tableY = y;
+            const tableStartX = margin;
+
+            allCells.forEach((rowTexts, rowIndex) => {
+              const isHeader = rowIndex === 0;
+              const currentRowHeight = rowHeights[rowIndex];
+
+              // Check if we need a page break mid-table
+              if (tableY + currentRowHeight > pageHeight - margin) {
+                doc.addPage();
+                tableY = margin;
+              }
+
+              // Draw row background for header
+              if (isHeader) {
+                doc.setFillColor(235, 235, 235);
+                doc.rect(tableStartX, tableY, maxWidth, currentRowHeight, 'F');
+              } else if (rowIndex % 2 === 0) {
+                // Zebra striping for readability
+                doc.setFillColor(250, 250, 250);
+                doc.rect(tableStartX, tableY, maxWidth, currentRowHeight, 'F');
+              }
+
+              // Draw cells
+              rowTexts.forEach((cellText, colIndex) => {
+                const cellX = tableStartX + colIndex * colWidth;
+
+                // Set font for header vs body
+                doc.setFontSize(9);
+                if (isHeader) {
+                  doc.setFont('helvetica', 'bold');
+                  doc.setTextColor(50, 50, 50);
+                } else {
+                  doc.setFont('helvetica', 'normal');
+                  doc.setTextColor(70, 70, 70);
+                }
+
+                // Wrap text within cell
+                const textWidth = colWidth - cellPadding * 2;
+                const lines = doc.splitTextToSize(cellText, textWidth);
+
+                // Draw wrapped text
+                lines.forEach((line: string, lineIndex: number) => {
+                  const textY = tableY + cellPadding + lineHeight * (lineIndex + 1);
+                  if (textY < tableY + currentRowHeight - 1) {
+                    doc.text(line, cellX + cellPadding, textY);
+                  }
+                });
+
+                // Draw cell border
+                doc.setDrawColor(200);
+                doc.setLineWidth(0.2);
+                doc.rect(cellX, tableY, colWidth, currentRowHeight);
+              });
+
+              tableY += currentRowHeight;
+            });
+
+            // Reset text color
+            doc.setTextColor(0, 0, 0);
+            y = tableY + 6; // Add spacing after table
             break;
           }
 
@@ -383,6 +525,23 @@ export function ExportMenu({ documentTitle, content, getContent, editor, theme =
             <FileCode2 className="w-4 h-4 text-blue-500" />
             Markdown (.md)
           </button>
+
+          {onCopyMarkdown && (
+            <button
+              onClick={() => {
+                onCopyMarkdown();
+                setShowMenu(false);
+              }}
+              className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
+                isDark
+                  ? 'text-white/70 hover:bg-white/5 hover:text-white'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Copy className="w-4 h-4 text-green-500" />
+              Copiar Markdown
+            </button>
+          )}
         </div>
       )}
     </>

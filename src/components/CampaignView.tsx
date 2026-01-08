@@ -108,6 +108,9 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
   const [funnels, setFunnels] = useState<Array<{ id: string; name: string }>>([]);
   const [columns, setColumns] = useState<Array<{ id: string; title: string; position: number }>>([]);
 
+  // Estado para rastrear inboxes com agente de IA
+  const [inboxesWithAI, setInboxesWithAI] = useState<Set<string>>(new Set());
+
   // Estados para paginação
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -771,6 +774,18 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       setFunnels(funnelsData || []);
     }
 
+    // Carregar inboxes que têm agente de IA vinculado
+    const { data: aiInboxesData, error: aiInboxesError } = await supabase
+      .from('ai_agent_inboxes')
+      .select('inbox_id')
+      .eq('is_active', true);
+    if (aiInboxesError) {
+      console.error('Erro ao carregar inboxes com IA:', aiInboxesError);
+    } else {
+      const aiInboxIds = new Set(aiInboxesData?.map(item => item.inbox_id) || []);
+      setInboxesWithAI(aiInboxIds);
+    }
+
     // Não carregar colunas aqui - elas dependem do funil selecionado
     // A função loadFunnelColumns será chamada quando um funil for selecionado
 
@@ -1222,6 +1237,32 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
                   WhatsApp principal para enviar mensagens (🟢 conectado / 🔴 desconectado)
                 </p>
+
+                {/* Aviso: Inbox sem agente de IA */}
+                {inboxId && !inboxesWithAI.has(inboxId) && (
+                  <div className={`mt-3 p-3 rounded-lg border flex items-start gap-2 ${
+                    isDark
+                      ? 'bg-yellow-500/10 border-yellow-500/30'
+                      : 'bg-yellow-50 border-yellow-200'
+                  }`}>
+                    <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                      isDark ? 'text-yellow-400' : 'text-yellow-600'
+                    }`} />
+                    <div>
+                      <p className={`text-sm font-medium ${
+                        isDark ? 'text-yellow-400' : 'text-yellow-700'
+                      }`}>
+                        Esta caixa de entrada não possui agente de I.A configurado
+                      </p>
+                      <p className={`text-xs mt-1 ${
+                        isDark ? 'text-yellow-400/70' : 'text-yellow-600'
+                      }`}>
+                        Quando leads responderem, serão transferidos automaticamente para atendimento humano.
+                        Para respostas automáticas, configure um agente de I.A nas configurações da caixa de entrada.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* ✅ NOVO: Números Reserva */}

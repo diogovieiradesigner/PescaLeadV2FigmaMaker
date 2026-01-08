@@ -1,7 +1,13 @@
 // =============================================================================
-// EDGE FUNCTION: instagram-discovery V2 (Etapa 1 - Serper.dev + Expansão por IA)
+// EDGE FUNCTION: instagram-discovery V3 (Etapa 1 - Serper.dev + Expansão por IA)
 // =============================================================================
 // REFATORADO: Usa tabelas compartilhadas (lead_extraction_runs, extraction_logs)
+//
+// V3 Melhorias (2026-01-08):
+// 1. ✅ ROTAÇÃO DE API KEYS: Mesmo padrão do Google Maps - tenta todas as 15 keys
+//    antes de desistir quando uma key retorna "Not enough credits"
+// 2. ✅ Logs detalhados de rotação de keys para debug
+// 3. ✅ allKeysExhausted flag para parar busca quando todas keys falharam
 //
 // V2 Melhorias:
 // 1. ✅ Expansão automática por bairros usando IA quando páginas esgotam
@@ -272,81 +278,139 @@ function buildOptimizedQuery(searchTerm: string, location: string): string {
 }
 
 /**
- * Executa uma requisição ao Serper com retry e backoff exponencial
- * V2: Usa query otimizada com localização no texto + operadores avançados
+ * Resultado da busca com informações de rotação de chave
+ */
+interface SerperFetchResult {
+  response: SerperResponse | null;
+  usedKeyIndex: number;
+  allKeysExhausted: boolean;
+}
+
+/**
+ * Executa uma requisição ao Serper com retry e ROTAÇÃO DE CHAVES
+ * V3: Mesmo padrão do Google Maps - tenta todas as 15 keys antes de desistir
  */
 async function fetchSerperWithRetry(
   apiKey: string,
   searchTerm: string,
   location: string,
-  page: number
-): Promise<SerperResponse | null> {
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`   [Serper] Página ${page}, tentativa ${attempt}/${MAX_RETRIES}...`);
+  page: number,
+  supabase?: any,
+  currentKeyIndex: number = 1
+): Promise<SerperFetchResult> {
+  let currentApiKey = apiKey;
+  let keyIndex = currentKeyIndex;
+  let keysTriedCount = 0;
+  const maxKeysToTry = TOTAL_API_KEYS; // Tentar todas as 15 keys
 
-      // V2: Construir query otimizada com localização no texto + operadores
-      // Exemplo: 'arquitetos "em São Paulo" site:instagram.com inurl:arquitet'
-      const optimizedQuery = buildOptimizedQuery(searchTerm, location);
+  while (keysTriedCount < maxKeysToTry) {
+    keysTriedCount++;
 
-      const requestBody = {
-        q: optimizedQuery,
-        location: location,  // Manter location separado também para reforço
-        page: page,
-        num: RESULTS_PER_PAGE,
-        gl: 'br',
-        hl: 'pt-br',
-      };
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`   [Serper] Página ${page}, Key #${keyIndex}, tentativa ${attempt}/${MAX_RETRIES}...`);
 
-      console.log(`   [Serper] Request: q="${requestBody.q}", location="${requestBody.location}", page=${requestBody.page}`);
+        const optimizedQuery = buildOptimizedQuery(searchTerm, location);
 
-      const response = await fetch(SERPER_API_URL, {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+        const requestBody = {
+          q: optimizedQuery,
+          location: location,
+          page: page,
+          num: RESULTS_PER_PAGE,
+          gl: 'br',
+          hl: 'pt-br',
+        };
 
-      if (response.ok) {
-        return await response.json();
+        console.log(`   [Serper] Request: q="${requestBody.q}", page=${requestBody.page}`);
+
+        const response = await fetch(SERPER_API_URL, {
+          method: 'POST',
+          headers: {
+            'X-API-KEY': currentApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`   [Serper] ✅ Sucesso com Key #${keyIndex}`);
+          return { response: data, usedKeyIndex: keyIndex, allKeysExhausted: false };
+        }
+
+        // Erro 500 = API esgotou resultados (não rotacionar, é fim dos resultados)
+        if (response.status === 500) {
+          console.log(`   [Serper] Página ${page}: Erro 500 - API esgotou resultados`);
+          return { response: null, usedKeyIndex: keyIndex, allKeysExhausted: false };
+        }
+
+        // Erro 400 = Pode ser "Not enough credits" - ROTACIONAR CHAVE
+        if (response.status === 400) {
+          const errorText = await response.text();
+          console.error(`   [Serper] ❌ HTTP 400 (Key #${keyIndex}): ${errorText}`);
+
+          // Verificar se é erro de créditos
+          if (errorText.includes('Not enough credits') || errorText.includes('credits')) {
+            console.log(`   [Serper] 🔄 Key #${keyIndex} sem créditos, tentando próxima...`);
+            break; // Sair do loop de retry e ir para próxima key
+          }
+
+          // Outros erros 400 - tentar retry
+          if (attempt < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+          break; // Tentar próxima key
+        }
+
+        // Erro 401/403 = Chave inválida - ROTACIONAR CHAVE
+        if (response.status === 401 || response.status === 403) {
+          console.error(`   [Serper] ❌ HTTP ${response.status} - Key #${keyIndex} inválida ou sem permissão`);
+          break; // Tentar próxima key
+        }
+
+        // Erro 429 = Rate limit - ROTACIONAR CHAVE
+        if (response.status === 429) {
+          console.log(`   [Serper] ⏳ Rate limit na Key #${keyIndex}`);
+          break; // Tentar próxima key
+        }
+
+        // Outros erros
+        const errorText = await response.text();
+        throw new Error(`Serper API error: ${response.status} - ${errorText}`);
+
+      } catch (error) {
+        console.error(`   [Serper] Erro na tentativa ${attempt} (Key #${keyIndex}):`, error);
+
+        if (attempt < MAX_RETRIES) {
+          const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`   [Serper] Aguardando ${delay / 1000}s antes de retry...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
       }
+    }
 
-      // Erro 500 = API esgotou resultados (não retry)
-      if (response.status === 500) {
-        console.log(`   [Serper] Página ${page}: Erro 500 - API esgotou resultados`);
-        return null;
-      }
+    // Tentar próxima chave
+    if (supabase && keysTriedCount < maxKeysToTry) {
+      const nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
+      console.log(`   [Serper] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (${keysTriedCount}/${maxKeysToTry} keys tentadas)`);
 
-      // Erro 429 = Rate limit (retry com backoff maior)
-      if (response.status === 429) {
-        const retryAfter = parseInt(response.headers.get('retry-after') || '10', 10);
-        console.log(`   [Serper] Rate limit! Aguardando ${retryAfter}s...`);
-        await new Promise(r => setTimeout(r, retryAfter * 1000));
+      const nextKey = await getSerperApiKey(supabase, nextKeyIndex);
+      if (nextKey) {
+        currentApiKey = nextKey;
+        keyIndex = nextKeyIndex;
+        await new Promise(r => setTimeout(r, 500)); // Pequena pausa entre keys
         continue;
-      }
-
-      // Outros erros
-      const errorText = await response.text();
-      throw new Error(`Serper API error: ${response.status} - ${errorText}`);
-
-    } catch (error) {
-      console.error(`   [Serper] Erro na tentativa ${attempt}:`, error);
-
-      if (attempt < MAX_RETRIES) {
-        // Backoff exponencial: 3s, 6s, 12s
-        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        console.log(`   [Serper] Aguardando ${delay / 1000}s antes de retry...`);
-        await new Promise(r => setTimeout(r, delay));
       } else {
-        console.error(`   [Serper] Falha após ${MAX_RETRIES} tentativas`);
-        return null;
+        console.warn(`   [Serper] Key #${nextKeyIndex} não disponível, tentando próxima...`);
+        keyIndex = nextKeyIndex; // Continuar tentando próximas
+        continue;
       }
     }
   }
 
-  return null;
+  console.error(`   [Serper] ❌ TODAS AS ${maxKeysToTry} KEYS ESGOTADAS OU INVÁLIDAS!`);
+  return { response: null, usedKeyIndex: keyIndex, allKeysExhausted: true };
 }
 
 /**
@@ -356,32 +420,40 @@ interface PaginatedSearchResult {
   response: SerperResponse;
   lastPage: number;
   isExhausted: boolean;
+  allKeysExhausted: boolean;
+  usedKeyIndex: number;
 }
 
 /**
- * Executa busca no Serper.dev com paginação e retry
- * CORRIGIDO: Recebe searchTerm e location separados
+ * Executa busca no Serper.dev com paginação e ROTAÇÃO DE CHAVES
+ * V3: Passa supabase para permitir rotação de keys quando uma falha
  *
  * @param searchTerm - Termo de busca (ex: "agência de marketing")
  * @param location - Localização no formato Google Maps (ex: "Sao Paulo, State of Sao Paulo, Brazil")
  * @param startPage - Página inicial (para continuar de onde parou)
+ * @param supabase - Cliente Supabase para buscar novas keys
+ * @param initialKeyIndex - Índice da chave inicial
  */
 async function searchSerperWithPagination(
   apiKey: string,
   searchTerm: string,
   location: string,
   targetResults: number,
-  startPage: number = 1
+  startPage: number = 1,
+  supabase?: any,
+  initialKeyIndex: number = 1
 ): Promise<PaginatedSearchResult> {
   const allOrganic: SerperResult[] = [];
   const pagesNeeded = Math.ceil(targetResults / RESULTS_PER_PAGE);
   const maxPages = Math.min(pagesNeeded, MAX_PAGES_PER_QUERY);
   let lastPage = Math.max(startPage - 1, 0);
   let isExhausted = false;
+  let allKeysExhausted = false;
   let consecutiveEmptyPages = 0;
-  const EMPTY_PAGES_TO_EXHAUST = 2; // Só marca como esgotado após 2 páginas vazias consecutivas
+  let currentKeyIndex = initialKeyIndex;
+  const EMPTY_PAGES_TO_EXHAUST = 2;
 
-  console.log(`   [Serper] Busca: "${searchTerm}" em "${location}" - ${maxPages} páginas (iniciando na ${startPage})`);
+  console.log(`   [Serper] Busca: "${searchTerm}" em "${location}" - ${maxPages} páginas (iniciando na ${startPage}, Key #${currentKeyIndex})`);
   console.log(`   [Serper] Debug: lastPage inicial = ${lastPage}, startPage = ${startPage}`);
 
   for (let i = 0; i < maxPages; i++) {
@@ -394,8 +466,21 @@ async function searchSerperWithPagination(
       break;
     }
 
-    // Usar função com retry - passa searchTerm e location separados
-    const data = await fetchSerperWithRetry(apiKey, searchTerm, location, page);
+    // V3: Passar supabase e keyIndex para permitir rotação de keys
+    const result = await fetchSerperWithRetry(apiKey, searchTerm, location, page, supabase, currentKeyIndex);
+
+    // Atualizar keyIndex para próxima iteração (pode ter mudado devido a rotação)
+    currentKeyIndex = result.usedKeyIndex;
+
+    // Se todas as keys foram esgotadas, parar
+    if (result.allKeysExhausted) {
+      console.log(`   [Serper] ❌ Todas as API keys esgotadas! Parando busca.`);
+      allKeysExhausted = true;
+      isExhausted = true;
+      break;
+    }
+
+    const data = result.response;
 
     // Se retornou null, parar (erro não recuperável ou fim dos resultados)
     if (!data) {
@@ -423,7 +508,7 @@ async function searchSerperWithPagination(
     // Reset contador de páginas vazias se encontrou resultados
     consecutiveEmptyPages = 0;
 
-    console.log(`   [Serper] Página ${page}: ${data.organic.length} resultados`);
+    console.log(`   [Serper] Página ${page}: ${data.organic.length} resultados (Key #${currentKeyIndex})`);
     allOrganic.push(...data.organic);
     lastPage = page;
 
@@ -446,7 +531,7 @@ async function searchSerperWithPagination(
     }
   }
 
-  console.log(`   [Serper] Total coletado: ${allOrganic.length} resultados (última página: ${lastPage}, esgotada: ${isExhausted})`);
+  console.log(`   [Serper] Total coletado: ${allOrganic.length} resultados (última página: ${lastPage}, esgotada: ${isExhausted}, allKeysExhausted: ${allKeysExhausted})`);
 
   return {
     response: {
@@ -461,6 +546,8 @@ async function searchSerperWithPagination(
     },
     lastPage,
     isExhausted,
+    allKeysExhausted,
+    usedKeyIndex: currentKeyIndex,
   };
 }
 
@@ -587,6 +674,43 @@ async function getAIConfig(supabase: any): Promise<AILocationConfig | null> {
     };
   } catch (error) {
     console.error('[V2 AI] Erro ao buscar configuração de IA:', error);
+    return null;
+  }
+}
+
+/**
+ * V4: Buscar API key do OpenRouter do Vault do Supabase
+ * IMPORTANTE: A key está no Vault, não em variáveis de ambiente!
+ */
+async function getOpenRouterApiKey(supabase: any): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('decrypted_secrets')
+      .select('decrypted_secret')
+      .eq('name', 'OPENROUTER_API_KEY')
+      .single();
+
+    if (error || !data?.decrypted_secret) {
+      // Tentar variação do nome (lowercase)
+      const { data: data2 } = await supabase
+        .from('decrypted_secrets')
+        .select('decrypted_secret')
+        .eq('name', 'openrouter_api_key')
+        .single();
+
+      if (data2?.decrypted_secret) {
+        console.log('[V4] OPENROUTER_API_KEY encontrada (lowercase)');
+        return data2.decrypted_secret;
+      }
+
+      console.error('[V4] OPENROUTER_API_KEY não encontrada no Vault');
+      return null;
+    }
+
+    console.log('[V4] OPENROUTER_API_KEY encontrada no Vault');
+    return data.decrypted_secret;
+  } catch (error: any) {
+    console.error('[V4] Erro ao buscar API key do Vault:', error.message);
     return null;
   }
 }
@@ -783,12 +907,28 @@ serve(async (req) => {
       }
 
       // Verificar se busca está totalmente esgotada
-      if (searchProgress?.is_fully_exhausted) {
-        console.log(`⚠️ Busca "${niche}" em "${location}" está totalmente esgotada`);
+      // V3 FIX: Em vez de retornar imediatamente, tentar expansão por bairros primeiro
+      let searchExhausted = searchProgress?.is_fully_exhausted || false;
+      let totalPagesUsedPreviously = 0;
+
+      if (searchExhausted) {
+        console.log(`⚠️ Busca "${niche}" em "${location}" está esgotada - Tentando expansão por bairros...`);
+
+        // Calcular informações de páginas consumidas
+        const lastPageByQuery: Record<string, number> = searchProgress?.last_page_by_query || {};
+        totalPagesUsedPreviously = Object.values(lastPageByQuery).reduce((sum: number, page: number) => sum + page, 0);
+        const exhaustedQueriesCount = (searchProgress?.exhausted_queries || []).length;
+
         await createLog(
-          supabase, run_id, 2, 'Search Exhausted', 'discovery', 'warning',
-          `Todas as queries para "${niche}" em "${location}" já foram esgotadas. Resultados podem ser limitados.`,
-          { query_hash: queryHash, exhausted_queries: searchProgress.exhausted_queries }
+          supabase, run_id, 2, 'Busca Principal Esgotada', 'discovery', 'warning',
+          `⚠️ Páginas da busca principal esgotadas (${totalPagesUsedPreviously} páginas usadas). Tentando expansão por bairros...`,
+          {
+            query_hash: queryHash,
+            exhausted_queries: searchProgress.exhausted_queries,
+            pages_by_query: lastPageByQuery,
+            total_pages_used: totalPagesUsedPreviously,
+            will_try_ai_expansion: true
+          }
         );
       }
 
@@ -835,6 +975,13 @@ serve(async (req) => {
 
       console.log(`📊 Usernames já existentes no workspace ${runData.workspace_id}: ${existingUsernamesGlobal.size}`);
 
+      // V3 FIX: Se busca principal já esgotada, ir direto para expansão por IA
+      // Força allQueriesExhausted = true na primeira iteração
+      let forceAIExpansion = searchExhausted;
+      if (forceAIExpansion) {
+        console.log(`\n🤖 [V3] Busca principal esgotada - Pulando para expansão por IA na primeira iteração`);
+      }
+
       // LOOP PRINCIPAL: Continua buscando até atingir target ou esgotar
       while (loopIteration < MAX_LOOP_ITERATIONS) {
         loopIteration++;
@@ -865,6 +1012,14 @@ serve(async (req) => {
 
         let newProfilesThisRound = 0;
         let allQueriesExhausted = true;
+
+        // V3 FIX: Se forceAIExpansion ativo, pular busca normal e ir direto para expansão
+        if (forceAIExpansion) {
+          console.log(`   🤖 [V3] forceAIExpansion=true - Pulando busca normal, indo para expansão por bairros`);
+          forceAIExpansion = false; // Só força na primeira iteração
+          // allQueriesExhausted já é true por default, então vai direto para expansão IA
+        } else {
+          // Busca normal - só executa se não estiver forçando expansão
 
         // Atualizar lista de queries esgotadas (pode ter mudado desde última iteração)
         const { data: currentProgress } = await supabase.rpc('get_or_create_instagram_search_progress', {
@@ -914,14 +1069,31 @@ serve(async (req) => {
 
           try {
             // Buscar apenas 1 página por vez no loop para melhor controle
+            // V3: Passar supabase e keyIndex para rotação de keys
             const paginatedResult = await searchSerperWithPagination(
               serperApiKey,
               query,
               location,
               RESULTS_PER_PAGE, // Apenas 1 página por vez
-              startPage
+              startPage,
+              supabase,
+              usedKeyIndex
             );
-            const { response: serperResponse, lastPage, isExhausted } = paginatedResult;
+            const { response: serperResponse, lastPage, isExhausted, allKeysExhausted, usedKeyIndex: newKeyIndex } = paginatedResult;
+
+            // Atualizar keyIndex global para próximas buscas
+            usedKeyIndex = newKeyIndex;
+
+            // Se todas as keys esgotaram, criar log de erro e parar
+            if (allKeysExhausted) {
+              console.error(`   ❌ TODAS AS API KEYS ESGOTADAS!`);
+              await createLog(
+                supabase, run_id, 3, 'API Keys Esgotadas', 'discovery', 'error',
+                `❌ ERRO CRÍTICO: Todas as ${TOTAL_API_KEYS} API keys do Serper estão sem créditos. Entre em contato com o suporte.`,
+                { keys_tried: TOTAL_API_KEYS }
+              );
+              break;
+            }
             const profiles = processSerperResults(serperResponse, query);
 
             console.log(`   └─ Bruto: ${profiles.length} perfis (página ${lastPage}, esgotada: ${isExhausted})`);
@@ -1000,6 +1172,7 @@ serve(async (req) => {
             );
           }
         }
+        } // Fim do else (busca normal)
 
         // Verificar se todas as queries estão esgotadas
         if (allQueriesExhausted) {
@@ -1008,9 +1181,20 @@ serve(async (req) => {
           // =====================================================================
           // V2: EXPANSÃO POR IA - Quando queries esgotam mas target não atingido
           // =====================================================================
+          console.log(`\n🔍 [V2] Verificando condições para expansão IA...`);
+          console.log(`   totalUniqueFound=${totalUniqueFound}, target_quantity=${target_quantity}`);
+          console.log(`   Condição totalUniqueFound < target_quantity = ${totalUniqueFound < target_quantity}`);
+
           if (totalUniqueFound < target_quantity) {
             console.log(`\n🤖 [V2] QUERIES ESGOTADAS - Tentando expansão por IA...`);
             console.log(`   Target: ${target_quantity}, Atual: ${totalUniqueFound}, Déficit: ${target_quantity - totalUniqueFound}`);
+
+            // Criar log para indicar que vai tentar expansão
+            await createLog(
+              supabase, run_id, 3, 'AI Expansion Start', 'discovery', 'info',
+              `🤖 Iniciando tentativa de expansão por bairros (target: ${target_quantity}, atual: ${totalUniqueFound})`,
+              { target_quantity, total_unique_found: totalUniqueFound, deficit: target_quantity - totalUniqueFound }
+            );
 
             // 1. Detectar nível da localização
             const locationLevel = detectLocationLevel(location);
@@ -1028,9 +1212,20 @@ serve(async (req) => {
               // 3. Se é cidade ou estado, chamar IA para obter bairros
               console.log(`🔍 [V2] Localização é ${locationLevel} - Iniciando expansão por IA...`);
 
+              await createLog(
+                supabase, run_id, 3, 'AI Expansion', 'discovery', 'info',
+                `📍 Localização detectada como "${locationLevel}" - Buscando configuração de IA...`,
+                { location, location_level: locationLevel }
+              );
+
               const aiConfig = await getAIConfig(supabase);
+              console.log(`🔧 [V2] aiConfig: ${aiConfig ? 'OK' : 'NULL'}`);
+
               if (aiConfig) {
-                const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
+                // V4: Buscar do Vault em vez de variáveis de ambiente
+                const openrouterKey = await getOpenRouterApiKey(supabase);
+                console.log(`🔑 [V4] OPENROUTER_API_KEY: ${openrouterKey ? 'OK (length=' + openrouterKey.length + ')' : 'NULL/VAZIO - Verifique o Vault do Supabase'}`);
+
                 if (openrouterKey) {
                   // Parse da localização para extrair cidade e estado
                   const { city, state } = parseLocation(location);
@@ -1123,15 +1318,32 @@ serve(async (req) => {
                           console.log(`   📄 [V2] Página ${page} de ${neighborhoodLocation}`);
 
                           try {
+                            // V3: Passar supabase e keyIndex para rotação de keys
                             const paginatedResult = await searchSerperWithPagination(
                               serperApiKey,
                               niche, // TERMO EXATO - NUNCA MUDA!
                               neighborhoodLocation,
                               RESULTS_PER_PAGE,
-                              page
+                              page,
+                              supabase,
+                              usedKeyIndex
                             );
 
-                            const { response: serperResponse, lastPage, isExhausted } = paginatedResult;
+                            const { response: serperResponse, lastPage, isExhausted, allKeysExhausted, usedKeyIndex: newKeyIndex } = paginatedResult;
+
+                            // Atualizar keyIndex global para próximas buscas
+                            usedKeyIndex = newKeyIndex;
+
+                            // Se todas as keys esgotaram, criar log de erro e parar
+                            if (allKeysExhausted) {
+                              console.error(`   ❌ [V2] TODAS AS API KEYS ESGOTADAS!`);
+                              await createLog(
+                                supabase, run_id, 3, 'API Keys Esgotadas', 'discovery', 'error',
+                                `❌ ERRO CRÍTICO: Todas as ${TOTAL_API_KEYS} API keys do Serper estão sem créditos. Entre em contato com o suporte.`,
+                                { keys_tried: TOTAL_API_KEYS, context: 'ai_expansion' }
+                              );
+                              break;
+                            }
                             const profiles = processSerperResults(serperResponse, niche);
 
                             console.log(`   └─ Bruto: ${profiles.length} perfis`);
@@ -1192,10 +1404,24 @@ serve(async (req) => {
                   }
 
                 } else {
-                  console.log(`⚠️ [V2] OPENROUTER_API_KEY não configurada`);
+                  console.log(`⚠️ [V4] OPENROUTER_API_KEY não encontrada no Vault do Supabase`);
+                  await createLog(
+                    supabase, run_id, 3, 'AI Expansion Error', 'discovery', 'warning',
+                    `⚠️ OPENROUTER_API_KEY não encontrada no Vault - Verifique se existe em decrypted_secrets`,
+                    { error: 'OPENROUTER_API_KEY not found in Vault' }
+                  );
                 }
+              } else {
+                console.log(`⚠️ [V2] aiConfig não disponível`);
+                await createLog(
+                  supabase, run_id, 3, 'AI Expansion Error', 'discovery', 'warning',
+                  `⚠️ Configuração de IA não encontrada no banco - Expansão indisponível`,
+                  { error: 'aiConfig is null' }
+                );
               }
             }
+          } else {
+            console.log(`⏹️ [V2] Target já atingido ou sem déficit - Não precisa expansão`);
           }
           // =====================================================================
           // FIM V2: EXPANSÃO POR IA

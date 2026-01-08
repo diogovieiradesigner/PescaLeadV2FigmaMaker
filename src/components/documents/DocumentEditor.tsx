@@ -5,12 +5,17 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { toast } from 'sonner';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table';
+import { TableHeader } from '@tiptap/extension-table';
+import { TableCell } from '@tiptap/extension-table';
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import {
@@ -40,6 +45,8 @@ import {
   Maximize2,
   Minimize2,
   X,
+  Table as TableIcon,
+  Copy,
 } from 'lucide-react';
 import type { JSONContent } from '@tiptap/react';
 import type { SaveStatus, LeadDocument, LeadDocumentVersion } from '../../types/documents';
@@ -149,6 +156,9 @@ const MarkdownPaste = Extension.create({
             const hasBold = /\*\*[^*]+\*\*/.test(text);
             const hasStrike = /~~[^~]+~~/.test(text);
             const hasHr = /^---$/m.test(text);
+            // Detectar tabela: pelo menos 2 linhas com pipe
+            const pipeLines = text.split('\n').filter(line => line.trim().startsWith('|') && line.trim().endsWith('|'));
+            const hasTable = pipeLines.length >= 2;
 
             console.log('[MarkdownPaste] Pattern detection:', {
               hasHeader,
@@ -157,11 +167,12 @@ const MarkdownPaste = Extension.create({
               hasBlockquote,
               hasBold,
               hasStrike,
-              hasHr
+              hasHr,
+              hasTable
             });
 
             const hasMarkdown = hasHeader || hasBulletList || hasOrderedList ||
-                               hasBlockquote || hasBold || hasStrike || hasHr;
+                               hasBlockquote || hasBold || hasStrike || hasHr || hasTable;
 
             if (!hasMarkdown) {
               console.log('[MarkdownPaste] Skipping - no markdown patterns found');
@@ -193,7 +204,10 @@ const MarkdownPaste = Extension.create({
  * Convert Markdown to TipTap JSON content
  */
 function convertMarkdownToTipTap(markdown: string): JSONContent[] {
-  const lines = markdown.split('\n');
+  // Pré-processar tabelas: remover linhas vazias entre linhas de tabela
+  const preprocessedMarkdown = markdown.replace(/(\|.*\|)\s*\n\s*\n\s*(\|)/g, '$1\n$2');
+
+  const lines = preprocessedMarkdown.split('\n');
   const content: JSONContent[] = [];
   let i = 0;
 
@@ -207,8 +221,8 @@ function convertMarkdownToTipTap(markdown: string): JSONContent[] {
       continue;
     }
 
-    // Horizontal rule
-    if (/^---$/.test(trimmedLine) || /^\*\*\*$/.test(trimmedLine)) {
+    // Horizontal rule (mas não linha separadora de tabela)
+    if ((/^---$/.test(trimmedLine) || /^\*\*\*$/.test(trimmedLine)) && !/^\|[\s:-]+\|$/.test(trimmedLine)) {
       content.push({ type: 'horizontalRule' });
       i++;
       continue;
@@ -284,6 +298,70 @@ function convertMarkdownToTipTap(markdown: string): JSONContent[] {
         content: listItems,
       });
       continue;
+    }
+
+    // Markdown table (| Header 1 | Header 2 |)
+    if (/^\|.*\|/.test(trimmedLine)) {
+      const tableLines: string[] = [];
+      let j = i;
+
+      // Coletar todas as linhas da tabela (incluindo com espaços em branco entre elas)
+      while (j < lines.length) {
+        const currentLine = lines[j].trim();
+
+        // Se for linha vazia, pular e continuar procurando
+        if (currentLine === '') {
+          j++;
+          continue;
+        }
+
+        // Se for linha de tabela, adicionar
+        if (/^\|.*\|/.test(currentLine)) {
+          tableLines.push(currentLine);
+          j++;
+        } else {
+          // Encontrou linha que não é tabela, parar
+          break;
+        }
+      }
+
+      i = j; // Atualizar índice principal
+
+      if (tableLines.length >= 2) {
+        // Parse table rows, removendo separador (|---|---|) - verifica se todas as células são apenas traços
+        const rows = tableLines.filter(line => {
+          const cells = line.split('|').slice(1, -1).map(c => c.trim());
+          const isSeparator = cells.every(cell => /^[-:]+$/.test(cell));
+          return !isSeparator;
+        });
+
+        const tableRows: JSONContent[] = [];
+        rows.forEach((row, rowIndex) => {
+          const cells = row.split('|').slice(1, -1).map(cell => cell.trim());
+          const cellsContent: JSONContent[] = cells.map(cellText => {
+            // Se célula vazia, usar espaço para evitar erro de empty text node
+            const content = cellText === '' ? ' ' : cellText;
+            return {
+              type: rowIndex === 0 ? 'tableHeader' : 'tableCell',
+              content: [{
+                type: 'paragraph',
+                content: parseInlineMarkdown(content),
+              }],
+            };
+          });
+
+          tableRows.push({
+            type: 'tableRow',
+            content: cellsContent,
+          });
+        });
+
+        content.push({
+          type: 'table',
+          content: tableRows,
+        });
+        continue;
+      }
     }
 
     // Regular paragraph
@@ -373,6 +451,86 @@ function parseInlineMarkdown(text: string): JSONContent[] {
   }
 
   return result.length > 0 ? result : [{ type: 'text', text: '' }];
+}
+
+/**
+ * Convert TipTap JSON to Markdown
+ */
+function convertTipTapToMarkdown(content: JSONContent): string {
+  if (!content.content) return '';
+
+  return content.content.map(node => {
+    switch (node.type) {
+      case 'heading':
+        const level = node.attrs?.level || 1;
+        const headingText = node.content?.map(n => n.text || '').join('') || '';
+        return '#'.repeat(level) + ' ' + headingText;
+
+      case 'paragraph':
+        return node.content?.map(n => {
+          let text = n.text || '';
+          if (n.marks) {
+            n.marks.forEach(mark => {
+              if (mark.type === 'bold') text = `**${text}**`;
+              if (mark.type === 'italic') text = `*${text}*`;
+              if (mark.type === 'strike') text = `~~${text}~~`;
+              if (mark.type === 'code') text = `\`${text}\``;
+            });
+          }
+          return text;
+        }).join('') || '';
+
+      case 'bulletList':
+        return node.content?.map(item =>
+          '- ' + (item.content?.[0]?.content?.map(n => n.text || '').join('') || '')
+        ).join('\n') || '';
+
+      case 'orderedList':
+        return node.content?.map((item, idx) =>
+          `${idx + 1}. ` + (item.content?.[0]?.content?.map(n => n.text || '').join('') || '')
+        ).join('\n') || '';
+
+      case 'blockquote':
+        return '> ' + (node.content?.map(n =>
+          n.content?.map(c => c.text || '').join('') || ''
+        ).join('\n> ') || '');
+
+      case 'codeBlock':
+        return '```\n' + (node.content?.map(n => n.text || '').join('\n') || '') + '\n```';
+
+      case 'horizontalRule':
+        return '---';
+
+      case 'table':
+        const rows = node.content || [];
+        const markdownRows: string[] = [];
+
+        rows.forEach((row, rowIndex) => {
+          const cells = row.content || [];
+          const cellTexts = cells.map(cell =>
+            cell.content?.[0]?.content?.map((n: any) => n.text || '').join('') || ''
+          );
+          markdownRows.push('| ' + cellTexts.join(' | ') + ' |');
+
+          // Add separator after first row (header)
+          if (rowIndex === 0) {
+            markdownRows.push('|' + cellTexts.map(() => '---').join('|') + '|');
+          }
+        });
+
+        return markdownRows.join('\n');
+
+      case 'taskList':
+        return node.content?.map(item => {
+          const checked = item.attrs?.checked ? '[x]' : '[ ]';
+          const text = item.content?.[0]?.content?.map(n => n.text || '').join('') || '';
+          return `- ${checked} ${text}`;
+        }).join('\n') || '';
+
+      default:
+        return '';
+    }
+  }).filter(line => line !== '').join('\n\n');
 }
 
 interface DocumentEditorProps {
@@ -544,6 +702,15 @@ export function DocumentEditor({
       }),
       Highlight,
       Typography,
+      Table.configure({
+        resizable: true,
+        HTMLAttributes: {
+          class: 'tiptap-table',
+        },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
       SlashCommands,
     ],
     content: document.content,
@@ -621,6 +788,21 @@ export function DocumentEditor({
       onRestoreVersion?.(version);
     }
   }, [editor, onSave, onRestoreVersion]);
+
+  // Copy content as Markdown
+  const handleCopyMarkdown = useCallback(() => {
+    if (!editor) return;
+
+    const content = editor.getJSON();
+    const markdown = convertTipTapToMarkdown(content);
+
+    navigator.clipboard.writeText(markdown).then(() => {
+      toast.success('Conteúdo copiado em Markdown!');
+    }).catch(err => {
+      console.error('Erro ao copiar:', err);
+      toast.error('Erro ao copiar conteúdo');
+    });
+  }, [editor]);
 
   if (!editor) {
     return (
@@ -794,6 +976,15 @@ export function DocumentEditor({
                 <Minus className="w-4 h-4" />
               </ToolbarButton>
 
+              <ToolbarButton
+                onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+                active={editor.isActive('table')}
+                isDark={isDark}
+                title="Inserir tabela 3x3"
+              >
+                <TableIcon className="w-4 h-4" />
+              </ToolbarButton>
+
               <div className={`w-px h-5 mx-1 ${isDark ? 'bg-white/10' : 'bg-gray-300'}`} />
 
               {/* Undo/Redo */}
@@ -870,6 +1061,7 @@ export function DocumentEditor({
                 editor={editor}
                 editorElement={editorContentRef.current?.querySelector('.tiptap') as HTMLElement}
                 theme={theme}
+                onCopyMarkdown={handleCopyMarkdown}
               />
 
               {/* Save Button */}
@@ -1157,6 +1349,7 @@ export function DocumentEditor({
           editor={editor}
           editorElement={editorContentRef.current?.querySelector('.tiptap') as HTMLElement}
           theme={theme}
+          onCopyMarkdown={handleCopyMarkdown}
         />
 
         {/* Manual Save Button */}
@@ -1389,6 +1582,15 @@ export function DocumentEditor({
                 title="Separador"
               >
                 <Minus className="w-4 h-4" />
+              </ToolbarButton>
+
+              <ToolbarButton
+                onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+                active={editor.isActive('table')}
+                isDark={isDark}
+                title="Inserir tabela 3x3"
+              >
+                <TableIcon className="w-4 h-4" />
               </ToolbarButton>
 
               <div className={`w-px h-5 mx-1 ${isDark ? 'bg-white/10' : 'bg-gray-300'}`} />

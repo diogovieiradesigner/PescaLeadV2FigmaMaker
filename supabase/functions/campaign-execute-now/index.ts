@@ -220,15 +220,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Verificar se instância está conectada
-    console.log(`[ExecuteNow] Checking instance status for inbox: ${config.inbox_id}`);
+    // 2. ✅ ATUALIZADO: Buscar inbox via campaign_instance_config (suporta fallback)
+    // Buscar inbox principal (priority=1)
+    const { data: primaryInbox } = await supabase
+      .from('campaign_instance_config')
+      .select('inbox_id')
+      .eq('campaign_config_id', config.id)
+      .eq('is_active', true)
+      .order('priority', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    const activeInboxId = primaryInbox?.inbox_id || config.inbox_id;
+
+    console.log(`[ExecuteNow] Checking instance status for inbox: ${activeInboxId}`);
     const { data: instanceStatus, error: instanceStatusError } = await supabase.rpc('check_campaign_instance_status', {
-      p_inbox_id: config.inbox_id
+      p_inbox_id: activeInboxId
     });
 
     if (instanceStatusError) {
       console.error(`[ExecuteNow] Error checking instance status:`, instanceStatusError);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: `Erro ao verificar status da instância: ${instanceStatusError.message}`,
         error_code: 'INSTANCE_STATUS_ERROR',
         details: instanceStatusError
@@ -240,9 +252,33 @@ Deno.serve(async (req) => {
 
     console.log(`[ExecuteNow] Instance status:`, instanceStatus);
 
-    if (!instanceStatus?.connected) {
-      console.error(`[ExecuteNow] Instance disconnected: ${instanceStatus?.status}`);
-      return new Response(JSON.stringify({ 
+    // ✅ NOVO: Se principal desconectado E fallback habilitado, tentar reserva
+    let finalInboxId = activeInboxId;
+    let finalInstanceName = instanceStatus?.instance_name;
+
+    if (!instanceStatus?.connected && config.fallback_behavior === 'switch_to_reserve') {
+      console.log('[ExecuteNow] Primary disconnected, trying fallback...');
+
+      const { data: nextInbox } = await supabase.rpc('get_next_available_inbox', {
+        p_campaign_config_id: config.id,
+        p_current_inbox_id: activeInboxId
+      });
+
+      if (nextInbox && nextInbox.length > 0) {
+        finalInboxId = nextInbox[0].inbox_id;
+        finalInstanceName = nextInbox[0].instance_name;
+        console.log(`[ExecuteNow] Switched to reserve: ${finalInstanceName}`);
+      } else {
+        return new Response(JSON.stringify({
+          error: 'Todas as instâncias estão desconectadas',
+          error_code: 'ALL_INSTANCES_DISCONNECTED'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else if (!instanceStatus?.connected) {
+      return new Response(JSON.stringify({
         error: `Instância "${instanceStatus?.instance_name || 'WhatsApp'}" está desconectada (${instanceStatus?.status || 'offline'})`,
         error_code: 'INSTANCE_DISCONNECTED',
         instance_status: instanceStatus
@@ -251,7 +287,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    console.log(`[ExecuteNow] Instance connected: ${instanceStatus.instance_name}`);
+
+    console.log(`[ExecuteNow] Using instance: ${finalInstanceName}`);
 
     // 3. ✅ NOVO: Verificar race condition usando RPC com lock atômico
     // Usar RPC que faz verificação e criação atômica para evitar race conditions
@@ -326,7 +363,8 @@ Deno.serve(async (req) => {
         config_id: config.id,
         status: 'running',
         run_date: today,
-        started_at: new Date().toISOString()
+        started_at: new Date().toISOString(),
+        current_inbox_id: finalInboxId  // ✅ NOVO: Setar inbox ativo (pode ser reserva)
       })
       .select('id')
       .single();
@@ -376,7 +414,7 @@ Deno.serve(async (req) => {
       .rpc('get_campaign_eligible_leads', {
         p_workspace_id: config.workspace_id,
         p_source_column_id: config.source_column_id,
-        p_inbox_id: config.inbox_id,
+        p_inbox_id: finalInboxId,  // ✅ CORRIGIDO: Usar inbox após fallback
         p_limit: dailyLimit
       });
 

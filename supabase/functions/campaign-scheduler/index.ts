@@ -212,12 +212,14 @@ Deno.serve(async (req) => {
         }
 
         // 3. Criar run
+        // ✅ NOVO: Setar current_inbox_id com inbox retornado pelo should_campaign_run
         const { data: run, error: runError } = await supabase
           .from('campaign_runs')
           .insert({
             config_id: config.id,
             status: 'running',
-            run_date: new Date().toISOString().split('T')[0]
+            run_date: new Date().toISOString().split('T')[0],
+            current_inbox_id: checkResult.inbox_id || config.inbox_id // ✅ Usar inbox do fallback
           })
           .select('id')
           .single();

@@ -417,6 +417,24 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
   const [error, setError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  // ✅ NOVO: Estados para multi-inbox
+  const [campaignInboxes, setCampaignInboxes] = useState<Array<{
+    inbox_id: string;
+    inbox_name: string;
+    instance_name: string;
+    instance_status: string;
+    priority: number;
+    is_current: boolean;
+  }>>([]);
+  const [inboxSwitches, setInboxSwitches] = useState<Array<{
+    from_inbox_id: string;
+    to_inbox_id: string;
+    from_instance_name: string;
+    to_instance_name: string;
+    reason: string;
+    switched_at: string;
+  }>>([]);
+
   // Estados para logs separados
   const [logs, setLogs] = useState<CampaignLog[]>([]);
   const [logsTotal, setLogsTotal] = useState(0);
@@ -424,10 +442,10 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
   const [logsError, setLogsError] = useState<string | null>(null);
   const [selectedLevel, setSelectedLevel] = useState<LogLevelFilter>('all');
   const [hasMoreLogs, setHasMoreLogs] = useState(true);
-  
+
   // Estados para aba de logs
   const [logTab, setLogTab] = useState<LogTabType>('all');
-  
+
   // Estados para fila de campanhas
   const [queueMessages, setQueueMessages] = useState<QueueMessage[]>([]);
   const [queueSummary, setQueueSummary] = useState<QueueSummary | null>(null);
@@ -482,12 +500,61 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
 
       console.log('Analytics carregado:', data);
       setAnalytics(data);
+
+      // ✅ NOVO: Carregar inboxes e switches
+      await loadCampaignInboxes(data.run.config_id, data.run.id);
     } catch (err) {
       console.error('Erro ao buscar analytics:', err);
       toast.error('Erro ao buscar analytics da campanha');
       setError('Erro ao buscar analytics da campanha');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ NOVO: Carregar todos os inboxes configurados e histórico de switches
+  const loadCampaignInboxes = async (configId: string, runId: string) => {
+    try {
+      // 1. Buscar inboxes configurados
+      const { data: instanceConfigs } = await supabase
+        .from('campaign_instance_config')
+        .select(`
+          inbox_id,
+          priority,
+          inboxes (name),
+          inbox_instances (
+            instances (name, status)
+          )
+        `)
+        .eq('campaign_config_id', configId)
+        .eq('is_active', true)
+        .order('priority');
+
+      // 2. Buscar current_inbox_id e inbox_switches da run
+      const { data: runData } = await supabase
+        .from('campaign_runs')
+        .select('current_inbox_id, inbox_switches')
+        .eq('id', runId)
+        .single();
+
+      if (instanceConfigs && instanceConfigs.length > 0) {
+        const inboxesData = instanceConfigs.map((ic: any) => ({
+          inbox_id: ic.inbox_id,
+          inbox_name: ic.inboxes?.name || 'Sem nome',
+          instance_name: ic.inbox_instances?.[0]?.instances?.name || 'Sem instância',
+          instance_status: ic.inbox_instances?.[0]?.instances?.status || 'unknown',
+          priority: ic.priority,
+          is_current: ic.inbox_id === runData?.current_inbox_id
+        }));
+
+        setCampaignInboxes(inboxesData);
+      }
+
+      if (runData?.inbox_switches && Array.isArray(runData.inbox_switches)) {
+        setInboxSwitches(runData.inbox_switches);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar inboxes da campanha:', err);
     }
   };
 
@@ -932,14 +999,46 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
             </h1>
             <p className={cn("text-xs", isDark ? "text-zinc-500" : "text-zinc-600")}>
               {analytics.run.funnel_name} • {analytics.run.source_column} → {analytics.run.target_column}
-              {analytics.run.instance_name && (
-                <span className="ml-2">
-                  • WhatsApp: <span className={cn("font-medium", analytics.run.instance_status === 'connected' ? "text-green-600" : "text-red-600")}>
-                    {analytics.run.instance_name}
-                  </span>
-                </span>
-              )}
             </p>
+
+            {/* ✅ NOVO: Exibir todos os inboxes configurados */}
+            {campaignInboxes.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap mt-2">
+                {campaignInboxes.map((inbox) => (
+                  <Badge
+                    key={inbox.inbox_id}
+                    variant={inbox.is_current ? "default" : "outline"}
+                    className={cn(
+                      "text-xs",
+                      inbox.is_current && (isDark ? "bg-blue-600" : "bg-blue-500")
+                    )}
+                  >
+                    <span className={cn(
+                      "w-2 h-2 rounded-full mr-2 inline-block",
+                      inbox.instance_status === 'connected' ? "bg-green-500" : "bg-red-500"
+                    )} />
+                    {inbox.priority === 1 ? '📱 Principal' : `🔄 Reserva ${inbox.priority - 1}`}
+                    : {inbox.inbox_name}
+                    {inbox.is_current && <span className="ml-1">• Ativo</span>}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {/* ✅ NOVO: Histórico de switches */}
+            {inboxSwitches.length > 0 && (
+              <div className={cn(
+                "text-xs mt-2 p-2 rounded border",
+                isDark ? "bg-yellow-950/20 border-yellow-900/30 text-yellow-400" : "bg-yellow-50 border-yellow-200 text-yellow-700"
+              )}>
+                <p className="font-medium mb-1">⚠️ Histórico de Trocas:</p>
+                {inboxSwitches.map((sw, idx) => (
+                  <p key={idx} className="ml-2">
+                    {format(new Date(sw.switched_at), "dd/MM HH:mm", { locale: ptBR })}: {sw.from_instance_name} → {sw.to_instance_name}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

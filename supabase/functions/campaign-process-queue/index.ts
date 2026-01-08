@@ -71,11 +71,118 @@ async function checkInstanceConnected(supabase: any, inboxId: string): Promise<{
   const { data } = await supabase.rpc('check_campaign_instance_status', {
     p_inbox_id: inboxId
   });
-  
+
   return {
     connected: data?.connected === true,
     status: data?.status,
     name: data?.instance_name
+  };
+}
+
+/**
+ * ✅ NOVO: Verifica conexão e faz switch automático para inbox reserva se necessário
+ * @returns { connected, inboxId, switched, paused, reason }
+ */
+async function checkAndSwitchIfNeeded(
+  supabase: any,
+  runId: string,
+  configId: string,
+  currentInboxId: string
+): Promise<{
+  connected: boolean;
+  inboxId: string;
+  switched?: boolean;
+  paused?: boolean;
+  reason?: string;
+  instanceName?: string;
+}> {
+  // 1. Verifica se inbox atual está conectado
+  const status = await checkInstanceConnected(supabase, currentInboxId);
+
+  if (status.connected) {
+    return { connected: true, inboxId: currentInboxId, instanceName: status.name };
+  }
+
+  // 2. Busca fallback_behavior da config
+  const { data: config } = await supabase
+    .from('campaign_configs')
+    .select('fallback_behavior')
+    .eq('id', configId)
+    .single();
+
+  if (!config || config.fallback_behavior === 'pause') {
+    // Comportamento = pausar (ou não configurado)
+    await pauseRun(supabase, runId, `Instância desconectada: ${status.name}`);
+    return {
+      connected: false,
+      inboxId: currentInboxId,
+      paused: true,
+      reason: `Instance ${status.name} disconnected (fallback disabled)`
+    };
+  }
+
+  // 3. Tenta trocar para inbox reserva
+  const { data: nextInbox } = await supabase.rpc('get_next_available_inbox', {
+    p_campaign_config_id: configId,
+    p_current_inbox_id: currentInboxId
+  });
+
+  if (!nextInbox || nextInbox.length === 0) {
+    // Nenhuma reserva disponível → pausa
+    await pauseRun(supabase, runId, 'All instances disconnected');
+    return {
+      connected: false,
+      inboxId: currentInboxId,
+      paused: true,
+      reason: 'No reserve instances available'
+    };
+  }
+
+  const newInbox = nextInbox[0];
+
+  // 4. Atualiza run com novo inbox
+  const switchRecord = {
+    from_inbox_id: currentInboxId,
+    to_inbox_id: newInbox.inbox_id,
+    from_instance_name: status.name,
+    to_instance_name: newInbox.instance_name,
+    reason: 'primary_disconnected',
+    switched_at: new Date().toISOString()
+  };
+
+  const { data: currentRun } = await supabase
+    .from('campaign_runs')
+    .select('inbox_switches')
+    .eq('id', runId)
+    .single();
+
+  const updatedSwitches = [...(currentRun?.inbox_switches || []), switchRecord];
+
+  await supabase
+    .from('campaign_runs')
+    .update({
+      current_inbox_id: newInbox.inbox_id,
+      inbox_switches: updatedSwitches
+    })
+    .eq('id', runId);
+
+  // 5. Log do switch
+  await log(
+    supabase,
+    runId,
+    'INSTANCE_SWITCH',
+    'warning',
+    `🔄 Switched from ${status.name} (disconnected) to ${newInbox.instance_name} (priority ${newInbox.priority})`,
+    switchRecord
+  );
+
+  console.log(`🔄 [FALLBACK] Switched inbox: ${status.name} → ${newInbox.instance_name}`);
+
+  return {
+    connected: true,
+    inboxId: newInbox.inbox_id,
+    switched: true,
+    instanceName: newInbox.instance_name
   };
 }
 
@@ -464,7 +571,12 @@ async function processSingleMessage(
 ): Promise<{ processed: boolean; failed: boolean; paused: boolean; error?: any }> {
   const config = msg.campaign_runs.campaign_configs;
   const runId = msg.campaign_runs.id;
-  const inboxId = config.inbox_id;
+  const configId = config.id;
+
+  // ✅ NOVO: Buscar current_inbox_id da run (pode ter mudado por fallback)
+  const currentInboxId = msg.campaign_runs.current_inbox_id || config.inbox_id;
+  let inboxId = currentInboxId;
+
   const workspaceId = config.workspace_id;
   const splitMessagesEnabled = config.split_messages === true;
   
@@ -512,17 +624,30 @@ async function processSingleMessage(
   }
   
   try {
-    // Verificar instância
-    let instanceStatus = inboxStatusCache.get(inboxId);
-    if (!instanceStatus) {
-      instanceStatus = await checkInstanceConnected(supabase, inboxId);
-      inboxStatusCache.set(inboxId, instanceStatus);
-    }
-    
-    if (!instanceStatus.connected) {
-      await pauseRun(supabase, runId, `Instância desconectada: ${instanceStatus.name}`);
+    // ✅ NOVO: Verificar instância E fazer switch automático se necessário
+    const connectionCheck = await checkAndSwitchIfNeeded(
+      supabase,
+      runId,
+      configId,
+      inboxId
+    );
+
+    if (!connectionCheck.connected) {
+      // Já foi pausado dentro do checkAndSwitchIfNeeded
       return { processed: false, failed: false, paused: true };
     }
+
+    // Atualizar inboxId se houve switch
+    if (connectionCheck.switched) {
+      inboxId = connectionCheck.inboxId;
+      console.log(`✅ [FALLBACK] Using reserve inbox: ${connectionCheck.instanceName}`);
+    }
+
+    // Atualizar cache com novo inbox (se mudou)
+    inboxStatusCache.set(inboxId, {
+      connected: true,
+      name: connectionCheck.instanceName
+    });
 
     // Buscar modelo
     let aiModel = modelCache.get(workspaceId);
@@ -656,11 +781,23 @@ async function processSingleMessage(
       })
       .eq('id', msg.id);
 
-    // Re-verificar instância
-    const recheck = await checkInstanceConnected(supabase, inboxId);
-    if (!recheck.connected) {
-      await pauseRun(supabase, runId, `Instância desconectou durante processamento`);
+    // ✅ NOVO: Re-verificar instância E trocar se necessário
+    const recheckResult = await checkAndSwitchIfNeeded(
+      supabase,
+      runId,
+      configId,
+      inboxId
+    );
+
+    if (!recheckResult.connected) {
+      // Já foi pausado dentro do checkAndSwitchIfNeeded
       return { processed: false, failed: false, paused: true };
+    }
+
+    // Atualizar inboxId se houve switch durante o processamento
+    if (recheckResult.switched) {
+      inboxId = recheckResult.inboxId;
+      console.log(`✅ [FALLBACK] Mid-process switch to: ${recheckResult.instanceName}`);
     }
 
     // Buscar ou criar conversa
@@ -775,6 +912,12 @@ async function processSingleMessage(
     if (!allSent) {
       throw new Error('Failed to send one or more message parts');
     }
+
+    // ✅ NOVO: Atualizar inbox_id antes de completar (rastreia qual inbox foi usado)
+    await supabase
+      .from('campaign_messages')
+      .update({ inbox_id: inboxId })
+      .eq('id', msg.id);
 
     // Operação atômica
     const { data: completionResult, error: completionError } = await supabase.rpc(

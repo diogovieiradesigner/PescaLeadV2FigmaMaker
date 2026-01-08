@@ -1,8 +1,10 @@
-import { Phone, Mail, Star, Trash2, DollarSign, Send } from 'lucide-react';
+import { Phone, Mail, Star, Trash2, DollarSign, Send, Instagram } from 'lucide-react';
 import { CRMLead } from '../types/crm';
 import { Theme } from '../hooks/useTheme';
 import { Avatar } from './Avatar';
 import { memo, useState } from 'react';
+
+// FORCE RELOAD v2
 import { openEmailCompose } from '../utils/email-helper';
 import {
   AlertDialog,
@@ -92,9 +94,26 @@ function KanbanCardComponent({ lead, isDragging, theme, onClick, onDelete }: Kan
     onDelete?.(lead.id);
   };
 
+  // ✅ Extrair Instagram username da URL
+  let instagramUsername = '';
+  const instagram = lead.instagram;
+
+  if (instagram) {
+    // Extrair username da URL ou usar direto
+    const urlMatch = instagram.match(/instagram\.com\/([a-zA-Z0-9._]+)/);
+    if (urlMatch) {
+      instagramUsername = urlMatch[1];
+    } else if (instagram.startsWith('@')) {
+      instagramUsername = instagram.substring(1);
+    } else if (!instagram.includes('/') && !instagram.includes('.')) {
+      instagramUsername = instagram;
+    }
+  }
+
   // ✅ Regras de exibição conforme especificação
   const shouldShowEmail = lead.email && lead.email !== '';
   const shouldShowPhone = lead.phone && lead.phone !== '';
+  const shouldShowInstagram = instagramUsername !== '';
   const shouldShowCompany = lead.company && lead.company !== '';
   const shouldShowTags = lead.tags && lead.tags.length > 0;
   // ✅ Verificação robusta: garantir que dealValue existe, é um número válido e > 0
@@ -217,6 +236,29 @@ function KanbanCardComponent({ lead, isDragging, theme, onClick, onDelete }: Kan
           >
             <Phone className="w-3 h-3 flex-shrink-0" />
             <span className="truncate">{formatPhone(lead.phone)}</span>
+          </div>
+        )}
+
+        {/* 📷 Instagram (apenas se existir) */}
+        {shouldShowInstagram && (
+          <div
+            className={`flex items-center gap-1.5 mb-2 text-xs ${
+              isDark ? 'text-white/60' : 'text-text-secondary-light'
+            }`}
+          >
+            <Instagram className="w-3 h-3 flex-shrink-0" />
+            <a
+              href={`https://instagram.com/${instagramUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={`truncate flex-1 hover:underline ${
+                isDark ? 'text-pink-400 hover:text-pink-300' : 'text-pink-600 hover:text-pink-700'
+              }`}
+              title={`Abrir perfil @${instagramUsername}`}
+            >
+              @{instagramUsername}
+            </a>
           </div>
         )}
 
@@ -344,6 +386,7 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
     prevProps.lead.company === nextProps.lead.company &&
     prevProps.lead.email === nextProps.lead.email &&
     prevProps.lead.phone === nextProps.lead.phone &&
+    prevProps.lead.instagram === nextProps.lead.instagram && // ✅ Instagram
     prevProps.lead.dealValue === nextProps.lead.dealValue &&
     prevProps.lead.priority === nextProps.lead.priority &&
     prevProps.lead.isImportant === nextProps.lead.isImportant &&

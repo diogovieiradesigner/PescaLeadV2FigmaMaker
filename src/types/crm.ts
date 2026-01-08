@@ -4,6 +4,7 @@ export interface CRMLead {
   company: string;
   email?: string; // ✅ Adicionado
   phone?: string; // ✅ Adicionado
+  instagram?: string; // ✅ Instagram do lead (buscado via RPC)
   dealValue: number;
   priority: 'high' | 'medium' | 'low';
   dueDate: string;

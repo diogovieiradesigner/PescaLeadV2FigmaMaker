@@ -208,6 +208,7 @@ export function useKanbanData(
             company: lead.company || '',
             email: lead.email || '',
             phone: lead.phone || '',
+            instagram: lead.instagram || '', // ✅ Instagram do lead
           dealValue: Number(lead.dealValue) || 0,
           priority: lead.priority || 'medium',
           dueDate: lead.dueDate || '',
@@ -1105,6 +1106,7 @@ export function useKanbanData(
             company: lead.company || '',
             email: lead.email || '',
             phone: lead.phone || '',
+            instagram: lead.instagram || '', // ✅ Instagram do lead
             dealValue: Number(lead.dealValue) || 0,
             priority: lead.priority || 'medium',
             dueDate: lead.dueDate || '',

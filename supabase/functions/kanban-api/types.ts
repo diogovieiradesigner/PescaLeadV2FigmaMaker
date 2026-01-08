@@ -14,6 +14,7 @@ export interface Lead {
   company: string;
   email?: string;
   phone?: string;
+  instagram?: string;
   avatar?: string;
   dealValue: number;
   priority: 'high' | 'medium' | 'low';

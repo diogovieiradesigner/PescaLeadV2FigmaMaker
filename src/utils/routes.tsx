@@ -49,6 +49,14 @@ export const router = createBrowserRouter([
     element: <App />,
   },
   {
+    path: '/pipeline/:funnelId',
+    element: <App />,
+  },
+  {
+    path: '/pipeline/:funnelId/lead/:leadId',
+    element: <App />,
+  },
+  {
     path: '/pipeline/lead/:leadId',
     element: <App />,
   },

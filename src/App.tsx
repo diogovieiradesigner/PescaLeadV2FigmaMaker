@@ -54,7 +54,7 @@ function AppContent() {
   const { user, currentWorkspace, workspaces, createWorkspace, switchWorkspace, accessToken, logout, refreshWorkspaces } = useAuth();
 
   // ✅ Navegação baseada em URL (sem hash #)
-  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, documentId, navigateToDocument, clearDocumentId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab } = useNavigation('dashboard');
+  const { currentView, setCurrentView, navigate, extractionRunId, setExtractionRunId, leadId, clearLeadId, documentId, navigateToDocument, clearDocumentId, conversationId, clearConversationId, eventId, clearEventId, campaignRunId, clearCampaignRunId, extractionTab, funnelId: urlFunnelId, setFunnelId: setUrlFunnelId } = useNavigation('dashboard');
 
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isEditLeadModalOpen, setIsEditLeadModalOpen] = useState(false);
@@ -93,8 +93,18 @@ function AppContent() {
   // Settings data (shared between ChatView and SettingsView)
   const settingsData = useSettingsData(currentWorkspace?.id || null);
 
-  // Current funnel ID
-  const [currentFunnelId, setCurrentFunnelId] = useState<string | null>(null);
+  // Current funnel ID - inicializa com o ID da URL se disponível
+  const [currentFunnelId, setCurrentFunnelIdState] = useState<string | null>(urlFunnelId);
+
+  // ✅ Wrapper para atualizar o estado E a URL quando o funil mudar
+  const setCurrentFunnelId = useCallback((funnelId: string | null) => {
+    setCurrentFunnelIdState(funnelId);
+    // Atualiza URL apenas se estiver na view pipeline
+    if (currentView === 'pipeline' && funnelId) {
+      setUrlFunnelId(funnelId);
+      window.history.replaceState({ view: 'pipeline', funnelId }, '', `/pipeline/${funnelId}`);
+    }
+  }, [currentView, setUrlFunnelId]);
 
   // ✅ Debounce no searchQuery (300ms) para evitar queries excessivas durante digitação
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -219,31 +229,52 @@ function AppContent() {
     onFunnelUpdated: handleFunnelUpdated,
   });
 
-  // Set first funnel as current when funnels load OR when current funnel is deleted
+  // Set funnel from URL or first funnel when funnels load
   useEffect(() => {
-    // Se não há funil selecionado mas existem funis, selecionar o primeiro
-    if (funnels.length > 0 && !currentFunnelId) {
+    if (funnels.length === 0) {
+      // Se não há funis, limpar seleção
+      if (currentFunnelId) {
+        console.log('[APP] ❌ Não há mais funis, limpando seleção');
+        setCurrentFunnelIdState(null);
+      }
+      return;
+    }
+
+    // Se tem funnelId na URL, usar ele (se existir na lista de funis)
+    if (urlFunnelId && !currentFunnelId) {
+      const funnelFromUrl = funnels.find(f => f.id === urlFunnelId);
+      if (funnelFromUrl) {
+        console.log('[APP] 🔗 Usando funil da URL:', urlFunnelId);
+        setCurrentFunnelIdState(urlFunnelId);
+        return;
+      }
+    }
+
+    // Se não há funil selecionado, selecionar o primeiro
+    if (!currentFunnelId) {
       console.log('[APP] 📌 Nenhum funil selecionado, selecionando primeiro:', funnels[0].id);
       setCurrentFunnelId(funnels[0].id);
       return;
     }
 
     // Se o funil atual não existe mais na lista (foi deletado), selecionar outro
-    if (currentFunnelId && funnels.length > 0) {
-      const funnelExists = funnels.some(f => f.id === currentFunnelId);
-      if (!funnelExists) {
-        console.log('[APP] ⚠️ Funil atual não existe mais, selecionando primeiro:', funnels[0].id);
-        setCurrentFunnelId(funnels[0].id);
-        return;
+    const funnelExists = funnels.some(f => f.id === currentFunnelId);
+    if (!funnelExists) {
+      console.log('[APP] ⚠️ Funil atual não existe mais, selecionando primeiro:', funnels[0].id);
+      setCurrentFunnelId(funnels[0].id);
+    }
+  }, [funnels, currentFunnelId, urlFunnelId, setCurrentFunnelId]);
+
+  // ✅ Sincronizar quando urlFunnelId mudar (ex: botão voltar do browser)
+  useEffect(() => {
+    if (urlFunnelId && urlFunnelId !== currentFunnelId && funnels.length > 0) {
+      const funnelExists = funnels.some(f => f.id === urlFunnelId);
+      if (funnelExists) {
+        console.log('[APP] 🔙 Sincronizando funil da URL (popstate):', urlFunnelId);
+        setCurrentFunnelIdState(urlFunnelId);
       }
     }
-
-    // Se não há mais funis, limpar seleção
-    if (funnels.length === 0 && currentFunnelId) {
-      console.log('[APP] ❌ Não há mais funis, limpando seleção');
-      setCurrentFunnelId(null);
-    }
-  }, [funnels, currentFunnelId]);
+  }, [urlFunnelId, currentFunnelId, funnels]);
 
   // ✅ Listener para navegação customizada (ex: botão "Ir para Configurações" do AgentConfigForm)
   useEffect(() => {

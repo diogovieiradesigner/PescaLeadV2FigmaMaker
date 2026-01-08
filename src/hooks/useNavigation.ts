@@ -31,6 +31,7 @@ export interface NavigationParams {
   eventId?: string;
   campaignRunId?: string;
   extractionTab?: ExtractionTab;
+  funnelId?: string;
 }
 
 // Mapeamento de URL path para view
@@ -190,6 +191,19 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     return match ? (match[1] as ExtractionTab) : null;
   });
 
+  // Estado para funnel aberto via URL (/pipeline/:funnelId)
+  const [funnelId, setFunnelId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+
+    const pathname = window.location.pathname;
+    // Match /pipeline/:funnelId mas não /pipeline/lead/:leadId
+    const match = pathname.match(/\/pipeline\/([^/]+)(?:\/|$)/);
+    if (match && match[1] !== 'lead') {
+      return match[1];
+    }
+    return null;
+  });
+
   /**
    * Navega para uma view, atualizando URL e estado
    */
@@ -204,12 +218,26 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
       setExtractionRunId(null);
     }
 
-    // Lead ID para pipeline
-    if (view === 'pipeline' && params?.leadId) {
-      path = `/pipeline/lead/${params.leadId}`;
-      setLeadId(params.leadId);
-    } else if (view !== 'pipeline') {
+    // Funnel ID e Lead ID para pipeline
+    if (view === 'pipeline') {
+      if (params?.funnelId && params?.leadId) {
+        // Ambos: /pipeline/:funnelId/lead/:leadId
+        path = `/pipeline/${params.funnelId}/lead/${params.leadId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(params.leadId);
+      } else if (params?.funnelId) {
+        // Só funnelId: /pipeline/:funnelId
+        path = `/pipeline/${params.funnelId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(null);
+      } else if (params?.leadId) {
+        // Só leadId (compatibilidade): /pipeline/lead/:leadId
+        path = `/pipeline/lead/${params.leadId}`;
+        setLeadId(params.leadId);
+      }
+    } else {
       setLeadId(null);
+      setFunnelId(null);
     }
 
     // Conversation ID para chat
@@ -262,12 +290,23 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
       setExtractionRunId(null);
     }
 
-    // Lead ID para pipeline
-    if (view === 'pipeline' && params?.leadId) {
-      path = `/pipeline/lead/${params.leadId}`;
-      setLeadId(params.leadId);
-    } else if (view !== 'pipeline') {
+    // Funnel ID e Lead ID para pipeline
+    if (view === 'pipeline') {
+      if (params?.funnelId && params?.leadId) {
+        path = `/pipeline/${params.funnelId}/lead/${params.leadId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(params.leadId);
+      } else if (params?.funnelId) {
+        path = `/pipeline/${params.funnelId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(null);
+      } else if (params?.leadId) {
+        path = `/pipeline/lead/${params.leadId}`;
+        setLeadId(params.leadId);
+      }
+    } else {
       setLeadId(null);
+      setFunnelId(null);
     }
 
     // Conversation ID para chat
@@ -354,6 +393,12 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         } else {
           setExtractionTab(null);
         }
+        // Funnel ID
+        if (event.state.funnelId) {
+          setFunnelId(event.state.funnelId);
+        } else {
+          setFunnelId(null);
+        }
       } else {
         // Fallback: extrai da URL
         const pathname = window.location.pathname;
@@ -364,11 +409,21 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
         const extractionMatch = pathname.match(/\/extracao\/progresso\/([^/]+)/);
         setExtractionRunId(extractionMatch ? extractionMatch[1] : null);
 
-        // Lead ID and Document ID
-        const leadMatch = pathname.match(/\/pipeline\/lead\/([^/]+)/);
-        setLeadId(leadMatch ? leadMatch[1] : null);
+        // Funnel ID - match /pipeline/:funnelId (não /pipeline/lead/:leadId)
+        const funnelMatch = pathname.match(/\/pipeline\/([^/]+)(?:\/|$)/);
+        if (funnelMatch && funnelMatch[1] !== 'lead') {
+          setFunnelId(funnelMatch[1]);
+        } else {
+          setFunnelId(null);
+        }
 
-        const documentMatch = pathname.match(/\/pipeline\/lead\/[^/]+\/document\/([^/]+)/);
+        // Lead ID - pode ser /pipeline/lead/:leadId ou /pipeline/:funnelId/lead/:leadId
+        const leadMatchOld = pathname.match(/\/pipeline\/lead\/([^/]+)/);
+        const leadMatchNew = pathname.match(/\/pipeline\/[^/]+\/lead\/([^/]+)/);
+        setLeadId(leadMatchNew ? leadMatchNew[1] : (leadMatchOld ? leadMatchOld[1] : null));
+
+        const documentMatch = pathname.match(/\/pipeline\/[^/]+\/lead\/[^/]+\/document\/([^/]+)/) ||
+                              pathname.match(/\/pipeline\/lead\/[^/]+\/document\/([^/]+)/);
         setDocumentId(documentMatch ? documentMatch[1] : null);
 
         // Conversation ID
@@ -409,14 +464,18 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
   }, [replaceView]);
 
   /**
-   * Limpa o leadId da URL (volta para /pipeline)
+   * Limpa o leadId da URL (volta para /pipeline ou /pipeline/:funnelId)
    */
   const clearLeadId = useCallback(() => {
     if (currentView === 'pipeline') {
       setLeadId(null);
-      window.history.replaceState({ view: 'pipeline' }, '', '/pipeline');
+      if (funnelId) {
+        window.history.replaceState({ view: 'pipeline', funnelId }, '', `/pipeline/${funnelId}`);
+      } else {
+        window.history.replaceState({ view: 'pipeline' }, '', '/pipeline');
+      }
     }
-  }, [currentView]);
+  }, [currentView, funnelId]);
 
   /**
    * Limpa o conversationId da URL (volta para /chat)
@@ -493,6 +552,8 @@ export function useNavigation(defaultView: AppView = 'dashboard') {
     clearCampaignRunId,
     extractionTab,
     setExtractionTab,
+    funnelId,
+    setFunnelId,
     // Utilitários
     getPathForView: (view: AppView) => VIEW_TO_PATH[view],
     getLabelForView: (view: AppView) => VIEW_LABELS[view],

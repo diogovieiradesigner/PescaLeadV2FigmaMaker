@@ -26,8 +26,26 @@ function ChatWrapper() {
   return <PublicChat slug={slug} />;
 }
 
+// Wrapper para extrair o slug da URL de documento público
+function DocumentWrapper() {
+  const { slug } = useParams<{ slug: string }>();
+
+  console.log('[DocumentWrapper] Slug:', slug);
+
+  if (!slug) {
+    console.log('[DocumentWrapper] No slug, redirecting to /');
+    return <Navigate to="/" replace />;
+  }
+
+  return <PublicDocument />;
+}
+
 export const router = createBrowserRouter([
-  // Rotas públicas
+  // Rotas públicas - DEVEM vir antes das rotas do App
+  {
+    path: '/doc/:slug',
+    element: <DocumentWrapper />,
+  },
   {
     path: '/agendar/:slug',
     element: <BookingWrapper />,
@@ -35,10 +53,6 @@ export const router = createBrowserRouter([
   {
     path: '/chat/:slug',
     element: <ChatWrapper />,
-  },
-  {
-    path: '/doc/:slug',
-    element: <PublicDocument />,
   },
   // Todas as rotas internas vão para o App (navegação é gerenciada internamente)
   {

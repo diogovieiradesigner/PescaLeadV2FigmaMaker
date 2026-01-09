@@ -832,11 +832,12 @@ export function DocumentEditor({
         />
 
         {/* Share Modal */}
-        {showShareModal && workspaceId && (
+        {console.log('[DocumentEditor] Render check - showShareModal:', showShareModal, 'workspaceId:', workspaceId)}
+        {showShareModal && (
           <ShareModal
             documentId={document.id}
             documentTitle={editingTitle}
-            workspaceId={workspaceId}
+            workspaceId={workspaceId || ''}
             userId={userId}
             onClose={() => setShowShareModal(false)}
           />
@@ -1060,7 +1061,10 @@ export function DocumentEditor({
 
               {/* Share Button */}
               <ToolbarButton
-                onClick={() => setShowShareModal(true)}
+                onClick={() => {
+                  console.log('[DocumentEditor] Share button clicked, workspaceId:', workspaceId);
+                  setShowShareModal(true);
+                }}
                 isDark={isDark}
                 title="Compartilhar"
               >

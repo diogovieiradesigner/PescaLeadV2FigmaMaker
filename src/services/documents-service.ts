@@ -9,6 +9,8 @@ import type {
   LeadDocumentFolder,
   LeadDocumentTemplate,
   LeadDocumentVersion,
+  LeadDocumentShare,
+  PublicDocumentData,
   CreateDocumentInput,
   UpdateDocumentInput,
   CreateFolderInput,
@@ -16,6 +18,8 @@ import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateVersionInput,
+  CreateShareInput,
+  UpdateShareInput,
 } from '../types/documents';
 
 // ============================================
@@ -636,4 +640,293 @@ export function contentToMarkdown(content: unknown): string {
   };
 
   return convertNode(content as Record<string, unknown>);
+}
+
+// ============================================
+// PUBLIC SHARING
+// ============================================
+
+/**
+ * Gerar slug único para compartilhamento
+ */
+async function generateShareSlug(): Promise<string> {
+  const { data, error } = await supabase.rpc('generate_share_slug');
+  if (error || !data) {
+    // Fallback: gerar no cliente
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 10; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+  return data;
+}
+
+/**
+ * Buscar compartilhamento de um documento
+ */
+export async function getShareByDocument(documentId: string): Promise<{
+  share: LeadDocumentShare | null;
+  error: Error | null;
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('lead_document_shares')
+      .select('*')
+      .eq('document_id', documentId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[DOCUMENTS] Error fetching share:', error);
+      return { share: null, error };
+    }
+
+    return { share: data, error: null };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { share: null, error: error as Error };
+  }
+}
+
+/**
+ * Criar ou atualizar compartilhamento de um documento
+ */
+export async function createOrUpdateShare(input: CreateShareInput): Promise<{
+  share: LeadDocumentShare | null;
+  error: Error | null;
+}> {
+  try {
+    // Verificar se já existe share para este documento
+    const { share: existingShare } = await getShareByDocument(input.document_id);
+
+    if (existingShare) {
+      // Atualizar existente
+      const updateData: Record<string, unknown> = {
+        is_active: true,
+        allow_edit: input.allow_edit || false,
+      };
+
+      if (input.edit_password !== undefined) {
+        updateData.edit_password_hash = input.edit_password || null;
+      }
+
+      const { data, error } = await supabase
+        .from('lead_document_shares')
+        .update(updateData)
+        .eq('id', existingShare.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[DOCUMENTS] Error updating share:', error);
+        return { share: null, error };
+      }
+
+      console.log('[DOCUMENTS] Share updated:', data?.id);
+      return { share: data, error: null };
+    }
+
+    // Criar novo
+    const slug = await generateShareSlug();
+
+    const { data, error } = await supabase
+      .from('lead_document_shares')
+      .insert({
+        document_id: input.document_id,
+        workspace_id: input.workspace_id,
+        share_slug: slug,
+        is_active: true,
+        allow_edit: input.allow_edit || false,
+        edit_password_hash: input.edit_password || null,
+        created_by: input.created_by,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[DOCUMENTS] Error creating share:', error);
+      return { share: null, error };
+    }
+
+    console.log('[DOCUMENTS] Share created:', data?.id);
+    return { share: data, error: null };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { share: null, error: error as Error };
+  }
+}
+
+/**
+ * Atualizar configurações de compartilhamento
+ */
+export async function updateShare(
+  shareId: string,
+  input: UpdateShareInput
+): Promise<{ share: LeadDocumentShare | null; error: Error | null }> {
+  try {
+    const updateData: Record<string, unknown> = {};
+
+    if (input.is_active !== undefined) updateData.is_active = input.is_active;
+    if (input.allow_edit !== undefined) updateData.allow_edit = input.allow_edit;
+    if (input.edit_password !== undefined) {
+      updateData.edit_password_hash = input.edit_password;
+    }
+
+    const { data, error } = await supabase
+      .from('lead_document_shares')
+      .update(updateData)
+      .eq('id', shareId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[DOCUMENTS] Error updating share:', error);
+      return { share: null, error };
+    }
+
+    console.log('[DOCUMENTS] Share updated:', shareId);
+    return { share: data, error: null };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { share: null, error: error as Error };
+  }
+}
+
+/**
+ * Desativar compartilhamento
+ */
+export async function disableShare(shareId: string): Promise<{ error: Error | null }> {
+  try {
+    const { error } = await supabase
+      .from('lead_document_shares')
+      .update({ is_active: false })
+      .eq('id', shareId);
+
+    if (error) {
+      console.error('[DOCUMENTS] Error disabling share:', error);
+      return { error };
+    }
+
+    console.log('[DOCUMENTS] Share disabled:', shareId);
+    return { error: null };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { error: error as Error };
+  }
+}
+
+/**
+ * Deletar compartilhamento
+ */
+export async function deleteShare(shareId: string): Promise<{ error: Error | null }> {
+  try {
+    const { error } = await supabase
+      .from('lead_document_shares')
+      .delete()
+      .eq('id', shareId);
+
+    if (error) {
+      console.error('[DOCUMENTS] Error deleting share:', error);
+      return { error };
+    }
+
+    console.log('[DOCUMENTS] Share deleted:', shareId);
+    return { error: null };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { error: error as Error };
+  }
+}
+
+// ============================================
+// PUBLIC ACCESS (sem autenticação)
+// ============================================
+
+/**
+ * Buscar documento público pelo slug (para página pública)
+ */
+export async function getPublicDocument(shareSlug: string): Promise<{
+  document: PublicDocumentData | null;
+  error: string | null;
+}> {
+  try {
+    const { data, error } = await supabase.rpc('get_public_document', {
+      p_share_slug: shareSlug,
+    });
+
+    if (error) {
+      console.error('[DOCUMENTS] Error fetching public document:', error);
+      return { document: null, error: error.message };
+    }
+
+    if (data?.error) {
+      return { document: null, error: data.error };
+    }
+
+    return { document: data as PublicDocumentData, error: null };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { document: null, error: (error as Error).message };
+  }
+}
+
+/**
+ * Verificar senha de edição
+ */
+export async function verifyEditPassword(
+  shareSlug: string,
+  password: string
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc('verify_document_edit_password', {
+      p_share_slug: shareSlug,
+      p_password: password,
+    });
+
+    if (error) {
+      console.error('[DOCUMENTS] Error verifying password:', error);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: data?.success === true,
+      error: data?.error || null,
+    };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Salvar documento público (após verificar senha)
+ */
+export async function savePublicDocument(
+  shareSlug: string,
+  password: string,
+  content: unknown,
+  contentText: string
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc('save_public_document', {
+      p_share_slug: shareSlug,
+      p_password: password,
+      p_content: content,
+      p_content_text: contentText,
+    });
+
+    if (error) {
+      console.error('[DOCUMENTS] Error saving public document:', error);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: data?.success === true,
+      error: data?.error || null,
+    };
+  } catch (error) {
+    console.error('[DOCUMENTS] Unexpected error:', error);
+    return { success: false, error: (error as Error).message };
+  }
 }

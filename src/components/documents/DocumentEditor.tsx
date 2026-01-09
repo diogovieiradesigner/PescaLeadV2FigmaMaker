@@ -47,12 +47,14 @@ import {
   X,
   Table as TableIcon,
   Copy,
+  Share2,
 } from 'lucide-react';
 import type { JSONContent } from '@tiptap/react';
 import type { SaveStatus, LeadDocument, LeadDocumentVersion } from '../../types/documents';
 import { SlashCommands } from './SlashCommands';
 import { ExportMenu } from './ExportMenu';
 import { VersionHistory } from './VersionHistory';
+import { ShareModal } from './ShareModal';
 
 // Tipos para espaçamento de linha
 type LineSpacing = 'compact' | 'normal' | 'relaxed' | 'loose';
@@ -578,6 +580,9 @@ export function DocumentEditor({
   // Expanded mode (Google Docs style) - start expanded if prop is true
   const [isExpanded, setIsExpanded] = useState(startExpanded);
 
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
+
   // Handler to close expanded mode - calls onBack if provided
   const handleCloseExpanded = useCallback(() => {
     if (onBack) {
@@ -826,6 +831,17 @@ export function DocumentEditor({
           theme={theme}
         />
 
+        {/* Share Modal */}
+        {showShareModal && workspaceId && (
+          <ShareModal
+            documentId={document.id}
+            documentTitle={editingTitle}
+            workspaceId={workspaceId}
+            userId={userId}
+            onClose={() => setShowShareModal(false)}
+          />
+        )}
+
         {/* Expanded Mode (Google Docs Style) */}
         <div
           className="fixed inset-0 flex flex-col"
@@ -1040,6 +1056,15 @@ export function DocumentEditor({
                 title="Histórico de Versões"
               >
                 <History className="w-4 h-4" />
+              </ToolbarButton>
+
+              {/* Share Button */}
+              <ToolbarButton
+                onClick={() => setShowShareModal(true)}
+                isDark={isDark}
+                title="Compartilhar"
+              >
+                <Share2 className="w-4 h-4" />
               </ToolbarButton>
 
               {/* Save as Template Button */}
@@ -1432,6 +1457,17 @@ export function DocumentEditor({
         onRestore={handleRestoreVersion}
         theme={theme}
       />
+
+      {/* Share Modal */}
+      {showShareModal && workspaceId && (
+        <ShareModal
+          documentId={document.id}
+          documentTitle={editingTitle}
+          workspaceId={workspaceId}
+          userId={userId}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
 
       {/* Expanded Mode (Google Docs Style) */}
       {isExpanded && (

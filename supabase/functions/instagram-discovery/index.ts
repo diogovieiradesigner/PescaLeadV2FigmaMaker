@@ -237,15 +237,30 @@ async function getSerperApiKeyWithFallback(supabase: any, preferredKeyIndex: num
 function extractCityFromLocation(location: string): string {
   if (!location) return '';
   const parts = location.split(',').map(p => p.trim());
-  // Primeira parte é sempre a cidade
-  return parts[0] || '';
+
+  // Filtrar partes irrelevantes (State of..., Brazil, etc)
+  const relevantParts = parts.filter(part => {
+    const partLower = part.toLowerCase();
+    if (partLower.startsWith('state of')) return false;
+    if (['brazil', 'brasil', 'br'].includes(partLower)) return false;
+    return true;
+  });
+
+  // Se tem 2+ partes relevantes (bairro + cidade), usar ambas
+  // Ex: "Manaira, Joao Pessoa" -> "Manaira, Joao Pessoa"
+  if (relevantParts.length >= 2) {
+    return `${relevantParts[0]}, ${relevantParts[1]}`;
+  }
+
+  // Se tem apenas 1 parte (só cidade), usar ela
+  return relevantParts[0] || parts[0] || '';
 }
 
 /**
  * Constrói uma query otimizada para busca de perfis do Instagram
  *
  * Estratégia de query qualificada:
- * 1. Termo de busca + "em [Cidade]" para contexto geográfico forte
+ * 1. Termo de busca + "em [Bairro, Cidade]" para contexto geográfico forte
  * 2. site:instagram.com para filtrar apenas Instagram
  * 3. Exclusões de URLs que não contêm username extraível:
  *    - /p/CODE (posts avulsos)
@@ -259,6 +274,8 @@ function extractCityFromLocation(location: string): string {
  * Exemplos:
  * - Input: "arquitetos", "Sao Paulo, State of Sao Paulo, Brazil"
  * - Output: 'arquitetos "em Sao Paulo" site:instagram.com -inurl:/p/ -inurl:/reel/ -inurl:/explore/'
+ * - Input: "dentista", "Manaira, Joao Pessoa, State of Paraiba, Brazil"
+ * - Output: 'dentista "em Manaira, Joao Pessoa" site:instagram.com -inurl:/p/ -inurl:/reel/ -inurl:/explore/'
  */
 function buildOptimizedQuery(searchTerm: string, location: string): string {
   const city = extractCityFromLocation(location);

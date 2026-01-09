@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, useParams } from 'react-router';
 import App from '../App';
 import { PublicBooking } from '../pages/PublicBooking';
 import { PublicChat } from '../pages/PublicChat';
+import PublicDocument from '../pages/PublicDocument';
 
 // Wrapper para extrair o slug da URL de agendamento
 function BookingWrapper() {
@@ -35,6 +36,10 @@ export const router = createBrowserRouter([
     path: '/chat/:slug',
     element: <ChatWrapper />,
   },
+  {
+    path: '/doc/:slug',
+    element: <PublicDocument />,
+  },
   // Todas as rotas internas vão para o App (navegação é gerenciada internamente)
   {
     path: '/',
@@ -58,6 +63,10 @@ export const router = createBrowserRouter([
   },
   {
     path: '/pipeline/lead/:leadId',
+    element: <App />,
+  },
+  {
+    path: '/pipeline/lead/:leadId/document/:documentId',
     element: <App />,
   },
   {

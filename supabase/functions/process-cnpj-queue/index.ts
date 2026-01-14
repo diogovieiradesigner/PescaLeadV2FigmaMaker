@@ -167,19 +167,30 @@ serve(async (req) => {
     let failed = 0;
 
     for (const msg of messages) {
-      const msgId = msg.msg_id;
-      const payload = msg.message;
-      const { lead_id, cnpj } = payload;
+      try {
+        const msgId = msg.msg_id;
+        const payload = msg.message;
+        const { lead_id, staging_id, cnpj } = payload;
 
-      console.log(`\n🚀 [CNPJ] Processando msg ${msgId} (lead: ${lead_id}, cnpj: ${cnpj})`);
+        // Usar staging_id se disponível, senão lead_id (compatibilidade)
+        const recordId = staging_id || lead_id;
 
-      // Validar CNPJ
-      if (!cnpj || !isValidCNPJ(cnpj)) {
+        if (!recordId) {
+          console.error(`❌ [CNPJ] Mensagem ${msgId} sem staging_id ou lead_id:`, payload);
+          await supabase.rpc('pgmq_delete', { queue_name: 'cnpj_queue', msg_id: msgId });
+          failed++;
+          continue;
+        }
+
+        console.log(`\n🚀 [CNPJ] Processando msg ${msgId} (staging: ${recordId}, cnpj: ${cnpj})`);
+
+        // Validar CNPJ
+        if (!cnpj || !isValidCNPJ(cnpj)) {
         console.log(`⚠️ [CNPJ] CNPJ inválido: ${cnpj}`);
         await supabase.from('lead_extraction_staging').update({
           cnpj_enriched: false,
           cnpj_checked_at: new Date().toISOString()
-        }).eq('id', lead_id);
+        }).eq('id', recordId);
         await supabase.rpc('pgmq_delete_msg', { queue_name: 'cnpj_queue', msg_id: msgId });
         failed++;
         continue;
@@ -193,7 +204,7 @@ serve(async (req) => {
         await supabase.from('lead_extraction_staging').update({
           cnpj_enriched: false,
           cnpj_checked_at: new Date().toISOString()
-        }).eq('id', lead_id);
+        }).eq('id', recordId);
         await supabase.rpc('pgmq_delete_msg', { queue_name: 'cnpj_queue', msg_id: msgId });
         failed++;
         continue;
@@ -533,9 +544,10 @@ serve(async (req) => {
         .update({
           cnpj_data: cnpjDataToSave,
           cnpj_enriched: true,
-          cnpj_checked_at: new Date().toISOString()
+          cnpj_checked_at: new Date().toISOString(),
+          cnpj_provider: cnpjResult.provider
         })
-        .eq('id', lead_id);
+        .eq('id', recordId);
 
       if (updateError) {
         console.error(`❌ [CNPJ] Erro ao salvar:`, updateError);
@@ -544,17 +556,23 @@ serve(async (req) => {
       }
 
       console.log(`✅ [CNPJ] Dados salvos (provider: ${cnpjResult.provider})`);
-      await supabase.rpc('pgmq_delete_msg', { queue_name: 'cnpj_queue', msg_id: msgId });
+      await supabase.rpc('pgmq_delete', { queue_name: 'cnpj_queue', msg_id: msgId });
       processed++;
-      
+
       results.push({
         msg_id: msgId,
-        lead_id,
+        staging_id: recordId,
         success: true,
         provider: cnpjResult.provider,
         emails_found: cnpjEmails.length,
         phones_found: cnpjPhones.length
       });
+      } catch (msgError: any) {
+        console.error(`❌ [CNPJ] Erro ao processar mensagem ${msg.msg_id}:`, msgError);
+        console.error(`❌ [CNPJ] Stack:`, msgError.stack);
+        failed++;
+        // Não deletar da fila se deu erro - deixar para retry
+      }
     }
 
     console.log('\n' + '='.repeat(60));

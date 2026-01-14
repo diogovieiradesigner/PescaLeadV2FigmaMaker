@@ -3,46 +3,47 @@
 // =============================================================================
 
 /**
- * Formata uma data no formato YYYY-MM-DD para DD/MM/YYYY
+ * Formata uma data no formato YYYY-MM-DD (ISO) para o PostgreSQL
  * @param date Data no formato YYYY-MM-DD ou objeto Date
- * @returns Data formatada no formato DD/MM/YYYY ou null se inválida
+ * @returns Data formatada no formato YYYY-MM-DD ou null se inválida
  */
 export function formatDateToDDMMYYYY(date: string | Date | null | undefined): string | null {
   if (!date) return null;
 
   try {
     let dateObj: Date;
-    
+
     if (date instanceof Date) {
       dateObj = date;
     } else {
       // Se for string, tentar parsear
       const dateStr = String(date);
-      
-      // Se já estiver no formato DD/MM/YYYY, retornar como está
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+
+      // Se já estiver no formato ISO YYYY-MM-DD, retornar como está
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
         return dateStr;
       }
-      
-      // Se estiver no formato YYYY-MM-DD, converter
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        dateObj = new Date(dateStr);
-      } else {
-        // Tentar criar data diretamente
-        dateObj = new Date(dateStr);
+
+      // Se estiver no formato DD/MM/YYYY, converter para ISO
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+        const [day, month, year] = dateStr.split('/');
+        return `${year}-${month}-${day}`;
       }
+
+      // Tentar criar data diretamente
+      dateObj = new Date(dateStr);
     }
-    
+
     // Verificar se a data é válida
     if (isNaN(dateObj.getTime())) {
       return null;
     }
-    
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+
     const year = dateObj.getFullYear();
-    
-    return `${day}/${month}/${year}`;
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
   } catch (error) {
     console.error('[formatDateToDDMMYYYY] Erro ao formatar data:', error);
     return null;

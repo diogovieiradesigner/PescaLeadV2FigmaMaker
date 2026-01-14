@@ -67,16 +67,158 @@ async function getWorkspaceAIModel(supabase: any, workspaceId: string): Promise<
   return agent?.model || null;
 }
 
-async function checkInstanceConnected(supabase: any, inboxId: string): Promise<{connected: boolean, status?: string, name?: string}> {
+interface InstanceStatus {
+  connected: boolean;
+  status?: string;
+  name?: string;
+  providerType?: string;
+  apiKey?: string;
+}
+
+async function checkInstanceConnected(supabase: any, inboxId: string): Promise<InstanceStatus> {
   const { data } = await supabase.rpc('check_campaign_instance_status', {
     p_inbox_id: inboxId
   });
-  
+
   return {
     connected: data?.connected === true,
     status: data?.status,
-    name: data?.instance_name
+    name: data?.instance_name,
+    providerType: data?.provider_type || 'evolution',
+    apiKey: data?.api_key
   };
+}
+
+/**
+ * Valida se um número tem WhatsApp usando a API do provider
+ * Retorna true se o número é válido, false se não tem WhatsApp
+ */
+async function checkWhatsAppNumber(
+  phone: string,
+  providerType: string,
+  apiKey: string
+): Promise<{ valid: boolean; error?: string }> {
+  // Só validamos para Uazapi por enquanto
+  if (providerType !== 'uazapi') {
+    return { valid: true }; // Evolution não tem API de validação, assume válido
+  }
+
+  if (!apiKey) {
+    console.warn('[WhatsApp Check] No API key for Uazapi, skipping validation');
+    return { valid: true };
+  }
+
+  // Sanitizar número para formato brasileiro
+  let cleanNumber = phone.replace(/\D/g, '');
+  if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+    cleanNumber = '55' + cleanNumber;
+  }
+
+  try {
+    const baseUrl = Deno.env.get('UAZAPI_API_URL')?.replace(/\/$/, '') || 'https://free.uazapi.com';
+
+    const response = await fetch(`${baseUrl}/chat/check`, {
+      method: 'POST',
+      headers: {
+        'token': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        numbers: [cleanNumber]
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[WhatsApp Check] API error:', errorText);
+      // Em caso de erro na API, permite continuar (não bloqueia)
+      return { valid: true, error: `API error: ${response.status}` };
+    }
+
+    const result = await response.json();
+    console.log('[WhatsApp Check] Result for', cleanNumber, ':', JSON.stringify(result));
+
+    // Uazapi retorna array com status de cada número
+    // Formato real: [{ "query": "5511999999999", "isInWhatsapp": true/false, "jid": "", "verifiedName": "" }]
+    if (Array.isArray(result) && result.length > 0) {
+      const check = result[0];
+      // ✅ Campo correto é "isInWhatsapp"
+      if (check.isInWhatsapp === false) {
+        return { valid: false, error: 'Número não possui WhatsApp' };
+      }
+    }
+
+    return { valid: true };
+  } catch (err: any) {
+    console.error('[WhatsApp Check] Exception:', err.message);
+    // Em caso de exceção, permite continuar
+    return { valid: true, error: err.message };
+  }
+}
+
+/**
+ * Busca telefones alternativos de um lead e encontra um com WhatsApp válido
+ * Retorna o primeiro telefone alternativo válido ou null se nenhum for encontrado
+ */
+async function findValidAlternativePhone(
+  supabase: any,
+  leadId: string,
+  excludePhone: string,
+  providerType: string,
+  apiKey: string
+): Promise<{ phone: string; source: string; fieldName: string } | null> {
+  // Só funciona para Uazapi (que tem API de validação)
+  if (providerType !== 'uazapi' || !apiKey) {
+    return null;
+  }
+
+  try {
+    // Buscar telefones alternativos via RPC
+    const { data: altPhones, error } = await supabase.rpc('get_lead_alternative_phones', {
+      p_lead_id: leadId,
+      p_exclude_phone: excludePhone
+    });
+
+    if (error) {
+      console.error('[Alt Phone] Error fetching alternative phones:', error);
+      return null;
+    }
+
+    if (!altPhones || altPhones.length === 0) {
+      console.log(`[Alt Phone] No alternative phones found for lead ${leadId}`);
+      return null;
+    }
+
+    console.log(`[Alt Phone] Found ${altPhones.length} alternative phones for lead ${leadId}`);
+
+    // Tentar cada telefone alternativo
+    for (const alt of altPhones) {
+      const phoneToCheck = alt.phone_normalized || alt.phone_number;
+      if (!phoneToCheck) continue;
+
+      console.log(`[Alt Phone] Checking alternative: ${phoneToCheck} (source: ${alt.source})`);
+
+      const whatsappCheck = await checkWhatsAppNumber(phoneToCheck, providerType, apiKey);
+
+      if (whatsappCheck.valid) {
+        console.log(`[Alt Phone] ✅ Found valid alternative: ${phoneToCheck}`);
+        return {
+          phone: phoneToCheck,
+          source: alt.source || 'alternative',
+          fieldName: alt.field_name || alt.source || 'alternative'
+        };
+      } else {
+        console.log(`[Alt Phone] ❌ Alternative ${phoneToCheck} has no WhatsApp`);
+      }
+    }
+
+    console.log(`[Alt Phone] No valid alternative phone found for lead ${leadId}`);
+    return null;
+  } catch (err: any) {
+    console.error('[Alt Phone] Exception:', err.message);
+    return null;
+  }
 }
 
 async function pauseRun(supabase: any, runId: string, reason: string) {
@@ -191,9 +333,9 @@ async function generateMessage(
             temperature: 0.7,
             messages: [
               { role: 'system', content: systemPrompt },
-              { 
-                role: 'user', 
-                content: `Gere uma mensagem de primeiro contato para este lead:\n\n${leadContext}\n\nRetorne APENAS a mensagem, sem explicações.` 
+              {
+                role: 'user',
+                content: `Gere uma mensagem de primeiro contato para este lead:\n\n${leadContext}\n\nIMPORTANTE: Retorne APENAS o texto da mensagem que será enviada ao cliente, sem aspas, sem formatação markdown, sem explicações ou comentários adicionais. A mensagem deve estar pronta para ser enviada diretamente no WhatsApp.`
               }
             ]
           })
@@ -220,9 +362,16 @@ async function generateMessage(
         }
         
         const data = await response.json();
-        const message = data.choices?.[0]?.message?.content?.trim() || '';
+        let message = data.choices?.[0]?.message?.content?.trim() || '';
         const tokens = data.usage?.total_tokens || 0;
-        
+
+        // Remover aspas no início e fim (simples ou duplas)
+        // A IA às vezes retorna: "mensagem aqui" ou 'mensagem aqui'
+        if ((message.startsWith('"') && message.endsWith('"')) ||
+            (message.startsWith("'") && message.endsWith("'"))) {
+          message = message.slice(1, -1).trim();
+        }
+
         return {
           message,
           tokens,
@@ -458,7 +607,7 @@ async function processSingleMessage(
   supabase: any,
   openrouterApiKey: string,
   modelCache: Map<string, string | null>,
-  inboxStatusCache: Map<string, {connected: boolean, status?: string, name?: string}>,
+  inboxStatusCache: Map<string, InstanceStatus>,
   contextMap: Map<string, any>,
   openrouterApiKeyForMsg: string
 ): Promise<{ processed: boolean; failed: boolean; paused: boolean; error?: any }> {
@@ -510,7 +659,11 @@ async function processSingleMessage(
       return { processed: false, failed: false, paused: true };
     }
   }
-  
+
+  // ✅ Variáveis de telefone no escopo da função para uso no catch block
+  let phoneToUse = msg.phone_normalized;
+  let phoneSource = 'primary';
+
   try {
     // Verificar instância
     let instanceStatus = inboxStatusCache.get(inboxId);
@@ -518,10 +671,71 @@ async function processSingleMessage(
       instanceStatus = await checkInstanceConnected(supabase, inboxId);
       inboxStatusCache.set(inboxId, instanceStatus);
     }
-    
+
     if (!instanceStatus.connected) {
       await pauseRun(supabase, runId, `Instância desconectada: ${instanceStatus.name}`);
       return { processed: false, failed: false, paused: true };
+    }
+
+    // ✅ Validar se o número tem WhatsApp (apenas Uazapi)
+    // Se não tiver, tentar telefones alternativos do lead
+
+    if (instanceStatus.providerType === 'uazapi' && instanceStatus.apiKey) {
+      const whatsappCheck = await checkWhatsAppNumber(
+        msg.phone_normalized,
+        instanceStatus.providerType,
+        instanceStatus.apiKey
+      );
+
+      if (!whatsappCheck.valid) {
+        console.log(`[Processor] Phone ${msg.phone_normalized} has no WhatsApp, trying alternatives...`);
+
+        // ✅ Tentar encontrar um telefone alternativo com WhatsApp
+        const altPhone = await findValidAlternativePhone(
+          supabase,
+          msg.lead_id,
+          msg.phone_normalized,
+          instanceStatus.providerType,
+          instanceStatus.apiKey
+        );
+
+        if (altPhone) {
+          console.log(`[Processor] ✅ Using alternative phone: ${altPhone.phone} (source: ${altPhone.source})`);
+          phoneToUse = altPhone.phone;
+          phoneSource = altPhone.source;
+
+          // Atualizar o telefone na mensagem da campanha
+          await supabase
+            .from('campaign_messages')
+            .update({
+              phone_normalized: altPhone.phone,
+              phone_source: altPhone.source,
+              phone_field_name: altPhone.fieldName,
+              error_message: `Telefone alternativo usado (${altPhone.source}). Original: ${msg.phone_normalized}`
+            })
+            .eq('id', msg.id);
+        } else {
+          // Nenhum telefone alternativo válido encontrado
+          console.log(`[Processor] ❌ No valid phone found for lead ${msg.lead_id}, skipping`);
+
+          await supabase
+            .from('campaign_messages')
+            .update({
+              status: 'skipped',
+              error_message: 'Número principal e alternativos não possuem WhatsApp'
+            })
+            .eq('id', msg.id);
+
+          await supabase.rpc('increment_campaign_run_metrics', {
+            p_run_id: runId,
+            p_success: 0,
+            p_failed: 0,
+            p_skipped: 1
+          });
+
+          return { processed: false, failed: false, paused: false };
+        }
+      }
     }
 
     // Buscar modelo
@@ -667,24 +881,35 @@ async function processSingleMessage(
     let conversationId: string | null = null;
     const { data: existingConv } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, campaign_run_id, contact_phone')
       .eq('lead_id', msg.lead_id)
       .maybeSingle();
 
     if (existingConv) {
       conversationId = existingConv.id;
-      // ✅ Atualizar campaign_run_id se ainda não estiver setado
-      await supabase
-        .from('conversations')
-        .update({ campaign_run_id: runId })
-        .eq('id', existingConv.id)
-        .is('campaign_run_id', null);
+      // ✅ Atualizar campaign_run_id e contact_phone se mudou (telefone alternativo)
+      const updateData: any = {};
+      if (!existingConv.campaign_run_id) {
+        updateData.campaign_run_id = runId;
+      }
+      // Se usou telefone alternativo, atualizar o contact_phone da conversa
+      if (phoneSource !== 'primary' && existingConv.contact_phone !== phoneToUse) {
+        updateData.contact_phone = phoneToUse;
+        console.log(`[Processor] Atualizando telefone da conversa de ${existingConv.contact_phone} para ${phoneToUse}`);
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await supabase
+          .from('conversations')
+          .update(updateData)
+          .eq('id', existingConv.id);
+      }
     } else {
       const { data: convByPhone } = await supabase
         .from('conversations')
         .select('id')
         .eq('workspace_id', config.workspace_id)
-        .eq('contact_phone', msg.phone_normalized)
+        .eq('contact_phone', phoneToUse)
         .maybeSingle();
 
       if (convByPhone) {
@@ -702,8 +927,8 @@ async function processSingleMessage(
           .from('conversations')
           .insert({
             workspace_id: config.workspace_id,
-            contact_phone: msg.phone_normalized,
-            contact_name: leadContext.client_name || msg.phone_normalized,
+            contact_phone: phoneToUse,
+            contact_name: leadContext.client_name || phoneToUse,
             channel: 'whatsapp',
             status: 'waiting',
             lead_id: msg.lead_id,
@@ -723,13 +948,14 @@ async function processSingleMessage(
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     let lastProviderMessageId: string | null = null;
     let allSent = true;
+    let lastSendError: string | null = null; // ✅ Guardar erro real da API
 
     for (let i = 0; i < messagesToSend.length; i++) {
       const partContent = messagesToSend[i];
-      
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
+
       try {
         const sendResponse = await fetch(`${supabaseUrl}/functions/v1/internal-send-ai-message`, {
           signal: controller.signal,
@@ -743,12 +969,19 @@ async function processSingleMessage(
             text: partContent
           })
         });
-        
+
         clearTimeout(timeoutId);
 
         if (!sendResponse.ok) {
           const errorText = await sendResponse.text();
           console.error(`[Processor] Send failed for part ${i + 1}:`, errorText);
+          // ✅ Extrair erro real do JSON se possível
+          try {
+            const errorJson = JSON.parse(errorText);
+            lastSendError = errorJson.error || errorJson.message || errorText;
+          } catch {
+            lastSendError = errorText;
+          }
           allSent = false;
           break;
         }
@@ -761,19 +994,20 @@ async function processSingleMessage(
         }
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
-        
+
         if (fetchError.name === 'AbortError') {
           console.error(`[Processor] Send timeout for part ${i + 1} after 10 seconds`);
+          lastSendError = 'Timeout: API não respondeu em 10 segundos';
           allSent = false;
           break;
         }
-        
+
         throw fetchError;
       }
     }
 
     if (!allSent) {
-      throw new Error('Failed to send one or more message parts');
+      throw new Error(lastSendError || 'Falha ao enviar mensagem');
     }
 
     // Operação atômica
@@ -899,7 +1133,9 @@ async function processSingleMessage(
           logMessage,
           {
             error: errorMsg.substring(0, 500) || 'Erro desconhecido',
-            phone: msg.phone_normalized,
+            phone: phoneToUse,
+            original_phone: phoneToUse !== msg.phone_normalized ? msg.phone_normalized : undefined,
+            phone_source: phoneSource,
             lead_id: msg.lead_id,
             retry_count: currentRetryCount,
             error_type: errorType,
@@ -917,7 +1153,9 @@ async function processSingleMessage(
         logMessage,
         {
           error: errorMsg.substring(0, 500) || 'Erro desconhecido',
-          phone: msg.phone_normalized,
+          phone: phoneToUse,
+          original_phone: phoneToUse !== msg.phone_normalized ? msg.phone_normalized : undefined,
+          phone_source: phoneSource,
           lead_id: msg.lead_id,
           retry_count: currentRetryCount,
           error_type: errorType
@@ -1012,7 +1250,7 @@ Deno.serve(async (req) => {
     let paused = 0;
 
     const modelCache: Map<string, string | null> = new Map();
-    const inboxStatusCache: Map<string, {connected: boolean, status?: string, name?: string}> = new Map();
+    const inboxStatusCache: Map<string, InstanceStatus> = new Map();
 
     // ✅ CORREÇÃO: Buscar contextos em batch antes do processamento paralelo
     const leadIds = messages.map(m => m.lead_id);

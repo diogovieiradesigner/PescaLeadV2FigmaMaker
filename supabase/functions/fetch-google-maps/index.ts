@@ -1,5 +1,23 @@
 // =============================================================================
-// EDGE FUNCTION: fetch-google-maps V18 (MÓDULO COMPARTILHADO)
+// EDGE FUNCTION: fetch-google-maps V22 (CIRCUIT BREAKER + ANTI-LOOP)
+// =============================================================================
+// V22 Melhorias (Circuit Breaker para API Keys):
+// 1. ✅ Circuit Breaker: Bloqueia chaves com erro temporariamente
+// 2. ✅ Função get_healthy_serpdev_key(): Busca apenas chaves saudáveis
+// 3. ✅ Função corrigida get_serpdev_api_key(): Remove fallback perigoso
+// 4. ✅ Bloqueio automático: 60min (sem créditos), 15min (rate limit), 24h (inválida)
+// 5. ✅ Marca chaves como saudáveis após sucesso
+// 6. ✅ FIX: Continua tentando se getApiKey retorna NULL (não throw imediato)
+// 7. ✅ Migration SQL: Tabela api_key_circuit_breaker + funções
+// 8. ✅ Logs detalhados de rotação e bloqueios
+// =============================================================================
+// V21 Melhorias (Anti-Loop Infinito):
+// 1. ✅ PROTEÇÃO #1: Parar quando meta é EXCEDIDA - Linha ~2050
+// 2. ✅ PROTEÇÃO #2: Parar após 5 páginas consecutivas sem novos leads - Linha ~2074
+// 3. ✅ PROTEÇÃO #3: Detectar loops (lastPage >= currentPage) - Linha ~2098
+// 4. ✅ PROTEÇÃO #4: Lógica melhorada de enfileiramento - Linha ~2121
+// 5. ✅ PROTEÇÃO #5: Verificar página já processada (tracking granular) - Linha 1535
+// 6. ✅ Migration SQL: Nova tabela neighborhood_pages_processed
 // =============================================================================
 // V18 Melhorias:
 // 1. ✅ Usa módulo compartilhado _shared/location-expansion.ts
@@ -304,58 +322,104 @@ async function fetchGoogleMapsPage(
         const errorText = await response.text();
         console.error(`[API] ❌ HTTP 400 - Bad Request: ${errorText}`);
 
-        // V20: Detectar falta de créditos e logar no frontend
+        // V22: Detectar falta de créditos e BLOQUEAR chave via circuit breaker
         const isCreditsError = errorText.toLowerCase().includes('credits');
+
         if (isCreditsError && run_id && supabase) {
+          // V22: BLOQUEAR chave por 60 minutos
+          await supabase.rpc('block_api_key', {
+            p_key_index: keyIndex,
+            p_status: 'no_credits',
+            p_error: errorText.substring(0, 200), // Limitar tamanho
+            p_block_duration_minutes: 60
+          });
+
           await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'warning',
-            `💳 Chave API #${keyIndex} sem créditos - Rotacionando (${triedKeys.size}/${TOTAL_API_KEYS} tentadas)`,
-            { key_index: keyIndex, error_type: 'no_credits', tried_keys: triedKeys.size, total_keys: TOTAL_API_KEYS }
+            `💳 V22 Chave #${keyIndex} SEM CRÉDITOS - Bloqueada por 60min (${triedKeys.size}/${TOTAL_API_KEYS} tentadas)`,
+            {
+              key_index: keyIndex,
+              error_type: 'no_credits',
+              blocked_duration_minutes: 60,
+              tried_keys: triedKeys.size,
+              total_keys: TOTAL_API_KEYS
+            }
           );
         }
 
-        // V20: Tentar próxima chave que ainda não foi testada
+        // V22: Tentar próxima chave que ainda não foi testada
         if (supabase && attempt < maxRetries) {
           let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
-          // V20: Pular chaves já tentadas
+
+          // V22: Pular chaves já tentadas
           while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
             nextKeyIndex = (nextKeyIndex % TOTAL_API_KEYS) + 1;
           }
+
           if (triedKeys.has(nextKeyIndex)) {
-            // V20: Log final quando todas as chaves falharam
+            // V22: Todas as chaves foram tentadas nesta execução
             if (isCreditsError && run_id) {
               await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'error',
-                `❌ TODAS as ${TOTAL_API_KEYS} chaves API estão sem créditos - Extração pausada`,
-                { tried_keys: TOTAL_API_KEYS, error_type: 'all_keys_no_credits' }
+                `❌ V22 TODAS as ${TOTAL_API_KEYS} chaves tentadas - Todas sem créditos ou bloqueadas`,
+                { tried_keys: TOTAL_API_KEYS, error_type: 'all_keys_exhausted_in_attempt' }
               );
             }
             throw new Error(`HTTP 400: Todas as ${TOTAL_API_KEYS} chaves foram tentadas - ${errorText}`);
           }
-          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
+
+          console.log(`[V22] 🔄 Rotacionando: #${keyIndex} → #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
+
           const nextKey = await getApiKey(supabase, nextKeyIndex);
+
           if (nextKey) {
             currentApiKey = nextKey;
             keyIndex = nextKeyIndex;
             triedKeys.add(keyIndex);
+            console.log(`[V22] ✅ Chave #${nextKeyIndex} obtida com sucesso - Tentando novamente`);
             await new Promise(r => setTimeout(r, 1000));
             continue;
+          } else {
+            // V22 FIX: Se getApiKey retornou NULL, NÃO fazer throw imediato
+            // Marcar como tentada e continuar para próxima chave
+            console.warn(`[V22] ⚠️ Chave #${nextKeyIndex} retornou NULL - Tentando próxima chave`);
+            triedKeys.add(nextKeyIndex);
+            await new Promise(r => setTimeout(r, 500));
+            continue; // ← FIX: Continuar loop em vez de throw
           }
         }
-        throw new Error(`HTTP 400: ${errorText}`);
+
+        // V22: Se chegou aqui, esgotou tentativas
+        throw new Error(`HTTP 400: Esgotadas ${attempt} tentativas - ${errorText}`);
       }
 
       if (response.status === 401 || response.status === 403) {
-        // Chave inválida ou sem créditos - rotacionar
-        console.error(`[API] ❌ HTTP ${response.status} - Chave #${keyIndex} inválida ou sem créditos`);
+        // V22: Chave inválida - BLOQUEAR permanentemente (24h)
+        console.error(`[V22] ❌ HTTP ${response.status} - Chave #${keyIndex} INVÁLIDA`);
 
+        if (supabase) {
+          await supabase.rpc('block_api_key', {
+            p_key_index: keyIndex,
+            p_status: 'invalid',
+            p_error: `HTTP ${response.status}`,
+            p_block_duration_minutes: 1440 // 24 horas
+          });
+
+          if (run_id) {
+            await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'error',
+              `❌ V22 Chave #${keyIndex} INVÁLIDA - Bloqueada por 24h`,
+              { key_index: keyIndex, error_type: 'invalid', http_status: response.status, blocked_duration_hours: 24 }
+            );
+          }
+        }
+
+        // Rotacionar
         if (supabase && attempt < maxRetries) {
           let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
           while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
             nextKeyIndex = (nextKeyIndex % TOTAL_API_KEYS) + 1;
           }
           if (triedKeys.has(nextKeyIndex)) {
-            throw new Error(`HTTP ${response.status}: Todas as ${TOTAL_API_KEYS} chaves inválidas ou sem créditos`);
+            throw new Error(`HTTP ${response.status}: Todas as ${TOTAL_API_KEYS} chaves inválidas`);
           }
-          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
           const nextKey = await getApiKey(supabase, nextKeyIndex);
           if (nextKey) {
             currentApiKey = nextKey;
@@ -363,15 +427,35 @@ async function fetchGoogleMapsPage(
             triedKeys.add(keyIndex);
             await new Promise(r => setTimeout(r, 1000));
             continue;
+          } else {
+            triedKeys.add(nextKeyIndex);
+            continue; // V22: Continuar tentando
           }
         }
-        throw new Error(`HTTP ${response.status}: Chave inválida ou sem créditos`);
+        throw new Error(`HTTP ${response.status}: Chave inválida`);
       }
 
       if (response.status === 429) {
-        // Rate limit - aguardar e tentar novamente
-        console.log(`[API] ⏳ Rate limit na chave #${keyIndex}, aguardando...`);
+        // V22: Rate limit - BLOQUEAR temporariamente (15 min)
+        console.log(`[V22] ⏳ Rate limit na chave #${keyIndex}`);
 
+        if (supabase) {
+          await supabase.rpc('block_api_key', {
+            p_key_index: keyIndex,
+            p_status: 'rate_limited',
+            p_error: 'HTTP 429',
+            p_block_duration_minutes: 15 // 15 minutos
+          });
+
+          if (run_id) {
+            await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'warning',
+              `⏳ V22 Chave #${keyIndex} com RATE LIMIT - Bloqueada por 15min`,
+              { key_index: keyIndex, error_type: 'rate_limited', blocked_duration_minutes: 15 }
+            );
+          }
+        }
+
+        // Rotacionar
         if (supabase && attempt < maxRetries) {
           let nextKeyIndex = (keyIndex % TOTAL_API_KEYS) + 1;
           while (triedKeys.has(nextKeyIndex) && triedKeys.size < TOTAL_API_KEYS) {
@@ -380,7 +464,6 @@ async function fetchGoogleMapsPage(
           if (triedKeys.has(nextKeyIndex)) {
             throw new Error(`HTTP 429: Todas as ${TOTAL_API_KEYS} chaves com rate limit`);
           }
-          console.log(`[API] 🔄 Rotacionando chave: #${keyIndex} -> #${nextKeyIndex} (tentadas: ${triedKeys.size}/${TOTAL_API_KEYS})`);
           const nextKey = await getApiKey(supabase, nextKeyIndex);
           if (nextKey) {
             currentApiKey = nextKey;
@@ -388,6 +471,9 @@ async function fetchGoogleMapsPage(
             triedKeys.add(keyIndex);
             await new Promise(r => setTimeout(r, 2000));
             continue;
+          } else {
+            triedKeys.add(nextKeyIndex);
+            continue; // V22: Continuar tentando
           }
         }
         throw new Error('HTTP 429: Rate limit');
@@ -1514,15 +1600,57 @@ serve(async (req) => {
         `⚠️ Tentativa de processar página ${page} após finalização - mensagem ignorada`,
         { run_id, page, status: runStatusCheck?.status, finished_at: runStatusCheck?.finished_at }
       );
-      return new Response(JSON.stringify({ 
-        success: true, 
+      return new Response(JSON.stringify({
+        success: true,
         message: 'Extração já finalizada',
         run_id,
         status: runStatusCheck?.status
-      }), { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
+    }
+
+    // V21 PROTEÇÃO #5: Verificar se esta página específica já foi processada
+    // Previne loop infinito quando a mesma página é enfileirada múltiplas vezes
+    if (is_segmented && segment_location) {
+      const { data: pageProcessed, error: checkError } = await supabase.rpc(
+        'check_page_already_processed',
+        {
+          p_workspace_id: workspace_id,
+          p_search_term: search_term_base || search_term,
+          p_location_formatted: segment_location,
+          p_page: page
+        }
+      );
+
+      if (checkError) {
+        console.error(`[V21] Erro ao verificar página processada:`, checkError);
+      } else if (pageProcessed === true) {
+        console.log(`🔁 [V21] LOOP DETECTADO: Página ${page} de ${segment_neighborhood} JÁ foi processada anteriormente`);
+        await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'error',
+          `❌ V21 LOOP INFINITO: Página ${page} de ${segment_neighborhood} já foi processada - Ignorando mensagem duplicada`,
+          {
+            page,
+            neighborhood: segment_neighborhood,
+            location: segment_location,
+            protection: 'page_already_processed'
+          }
+        );
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Página já processada - loop infinito prevenido',
+          run_id,
+          page,
+          protection: 'page_already_processed'
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } else {
+        console.log(`✅ [V21] Página ${page} de ${segment_neighborhood} nunca foi processada - OK para continuar`);
+      }
     }
 
     // V16 FIX #5: Se skip_standard_search está ativo ou trigger_expansion, ir direto para expansão (ANTES de processar página)
@@ -1647,26 +1775,53 @@ serve(async (req) => {
     const existingHashes = new Set(existingLeads?.map(l => l.deduplication_hash) || []);
     console.log(`Hashes existentes no workspace: ${existingHashes.size}`);
 
-    const keyIndex = ((page - 1) % TOTAL_API_KEYS) + 1;
-    console.log(`Usando API Key #${keyIndex}`);
-    
-    // V16 FIX #7: Tentar API key principal primeiro, depois outras se necessário
-    let apiKey = await getApiKey(supabase, keyIndex);
-    if (!apiKey) {
-      console.warn(`[API] Key #${keyIndex} não encontrada, tentando outras keys...`);
-      // Tentar próxima key disponível
-      for (let i = 1; i <= TOTAL_API_KEYS; i++) {
-        const nextKey = await getApiKey(supabase, i);
-        if (nextKey) {
-          apiKey = nextKey;
-          console.log(`[API] Key #${keyIndex} não encontrada, usando key #${i} como fallback`);
-          break;
+    // V22: Usar circuit breaker para buscar chave saudável
+    const preferredKeyIndex = ((page - 1) % TOTAL_API_KEYS) + 1;
+    console.log(`[V22] Chave preferida para página ${page}: #${preferredKeyIndex}`);
+
+    const { data: healthyKeyData, error: healthyKeyError } = await supabase.rpc(
+      'get_healthy_serpdev_key',
+      { p_preferred_index: preferredKeyIndex }
+    );
+
+    let apiKey: string | null = null;
+    let actualKeyIndex: number = preferredKeyIndex;
+
+    if (healthyKeyError) {
+      console.error(`[V22] Erro ao buscar chave saudável:`, healthyKeyError);
+      throw new Error(`Erro ao buscar API key: ${healthyKeyError.message}`);
+    }
+
+    if (!healthyKeyData || healthyKeyData.length === 0) {
+      console.error(`[V22] ❌ NENHUMA chave saudável disponível (todas bloqueadas ou sem configuração)`);
+
+      await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'error',
+        `❌ V22 CRÍTICO: Nenhuma API key saudável disponível - Todas as ${TOTAL_API_KEYS} chaves podem estar sem créditos ou bloqueadas`,
+        {
+          preferred_key: preferredKeyIndex,
+          total_keys: TOTAL_API_KEYS,
+          error: 'all_keys_blocked_or_missing'
         }
-      }
-      
-      if (!apiKey) {
-        throw new Error(`Nenhuma API key disponível (tentou ${TOTAL_API_KEYS} keys)`);
-      }
+      );
+
+      throw new Error('Nenhuma API key saudável disponível (todas podem estar bloqueadas ou sem créditos)');
+    }
+
+    apiKey = healthyKeyData[0].api_key;
+    actualKeyIndex = healthyKeyData[0].key_index;
+
+    const usedPreferred = actualKeyIndex === preferredKeyIndex;
+    console.log(`[V22] ✅ Usando chave #${actualKeyIndex} (preferida: #${preferredKeyIndex}, ${usedPreferred ? 'MESMA' : 'ALTERNATIVA'})`);
+
+    if (!usedPreferred) {
+      await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'info',
+        `🔄 V22 Chave #${preferredKeyIndex} bloqueada - Usando alternativa #${actualKeyIndex}`,
+        {
+          preferred_key: preferredKeyIndex,
+          actual_key: actualKeyIndex,
+          reason: 'preferred_blocked'
+        }
+      );
     }
 
     // Buscar progresso atual para exibir contexto (X de Y páginas)
@@ -1682,22 +1837,30 @@ serve(async (req) => {
     const targetQty = currentProgress?.target_quantity || target_quantity;
 
     await createExtractionLog(supabase, run_id, 3, 'Google Maps', 'info',
-      `📄 V19 Processando página ${page}/${totalPagesTarget} (key #${keyIndex})${is_compensation ? ' (compensação)' : ''}${is_segmented ? ` (segmentado: ${segment_neighborhood})` : ''}${expandState ? ' (estado expandido)' : ''} | Leads: ${createdSoFar}/${targetQty} | Loc: "${normalizedLocation}"`,
-      { page, page_progress: `${pagesConsumed}/${totalPagesTarget}`, location_original: location, location_normalized: normalizedLocation, workspace_id, is_compensation, is_segmented, segment_neighborhood, expand_state: expandState, api_key_index: keyIndex, created_so_far: createdSoFar, target: targetQty }
+      `📄 V22 Processando página ${page}/${totalPagesTarget} (key #${actualKeyIndex})${is_compensation ? ' (compensação)' : ''}${is_segmented ? ` (segmentado: ${segment_neighborhood})` : ''}${expandState ? ' (estado expandido)' : ''} | Leads: ${createdSoFar}/${targetQty} | Loc: "${normalizedLocation}"`,
+      { page, page_progress: `${pagesConsumed}/${totalPagesTarget}`, location_original: location, location_normalized: normalizedLocation, workspace_id, is_compensation, is_segmented, segment_neighborhood, expand_state: expandState, api_key_index: actualKeyIndex, created_so_far: createdSoFar, target: targetQty }
     );
 
-    // V20: Buscar página com rotação de chaves (coordenadas não são mais usadas - SerpDev recebe apenas location)
+    // V22: Buscar página com rotação de chaves + circuit breaker
     const { places: rawResults, apiEmpty, usedKeyIndex } = await fetchGoogleMapsPage(
       search_term,
       normalizedLocation,
       page,
       apiKey,
-      undefined, // coordinates - não usadas
-      supabase,  // V19: Passar supabase para rotação de chaves
-      keyIndex,  // V19: Passar índice da chave atual
-      run_id     // V20: Passar run_id para logs
+      undefined,        // coordinates - não usadas
+      supabase,         // V22: Passar supabase para rotação e circuit breaker
+      actualKeyIndex,   // V22: Passar índice da chave SAUDÁVEL (não bloqueada)
+      run_id            // V22: Passar run_id para logs
     );
-    console.log(`\n📥 Página ${page}: ${rawResults.length} resultados brutos, API esgotou: ${apiEmpty}, Key usada: #${usedKeyIndex || keyIndex}`);
+
+    const finalKeyUsed = usedKeyIndex || actualKeyIndex;
+    console.log(`\n📥 V22 Página ${page}: ${rawResults.length} resultados brutos, API esgotou: ${apiEmpty}, Key usada: #${finalKeyUsed}`);
+
+    // V22: Marcar chave como saudável após sucesso
+    if (!apiEmpty && rawResults.length > 0) {
+      await supabase.rpc('mark_api_key_healthy', { p_key_index: finalKeyUsed });
+      console.log(`[V22] ✅ Chave #${finalKeyUsed} marcada como saudável (${rawResults.length} resultados)`);
+    }
 
     const validResults: any[] = [];
     let preFilterDuplicates = 0;
@@ -1989,80 +2152,166 @@ serve(async (req) => {
           
           console.log(`📊 [V20] Bairro ${segment_neighborhood}: página ${page}, ${actuallyCreated} leads, API ${apiEmpty ? 'ESGOTADA' : 'ativa'}`);
           
-          // V20: CONTINUAR BUSCANDO SE BAIRRO AINDA TEM RESULTADOS
+          // V21: CONTINUAR BUSCANDO SE BAIRRO AINDA TEM RESULTADOS (COM PROTEÇÕES)
           if (!apiEmpty) {
             const nextPage = page + 1;
-            
+
             // Buscar quantidade atual de leads criados (pode ter mudado)
             const { data: freshRunData } = await supabase
               .from('lead_extraction_runs')
               .select('created_quantity')
               .eq('id', run_id)
               .single();
-            
+
             const currentCreatedNow = freshRunData?.created_quantity || totalCreated;
             const needMoreLeads = currentCreatedNow < targetQty;
-            
-            // V20: Limite máximo de páginas por bairro aumentado para 30
-            const maxPagesPerNeighborhood = 30;
-            
-            if (needMoreLeads && nextPage <= maxPagesPerNeighborhood) {
-              console.log(`🔄 [V20] Bairro ${segment_neighborhood} ainda tem resultados - Enfileirando página ${nextPage}`);
-              
-              const nextMessage = {
-                run_id: run_id,
-                page: nextPage,
-                search_term: search_term,
-                location: segment_location || location,
-                workspace_id: workspace_id,
-                target_quantity: targetQty,
-                pages_in_batch: 1,
-                is_last_page: false,
-                is_compensation: false,
-                is_segmented: true,
-                segment_location: segment_location,
-                segment_neighborhood: segment_neighborhood,
-                ai_round: ai_round || 1,
-                filters: filters,
-                // V20 FIX: Propagar search_term_base para próxima página
-                search_term_base: searchTermBase
-              };
-              
-              const { error: enqueueError } = await supabase.rpc('pgmq_send', {
-                queue_name: 'google_maps_queue',
-                message: nextMessage,
-                delay_seconds: 0
-              });
-              
-              if (!enqueueError) {
-                await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'info',
-                  `🔄 V20 Continuando: ${segment_neighborhood} página ${nextPage} enfileirada`,
-                  { neighborhood: segment_neighborhood, next_page: nextPage, current_created: currentCreatedNow, need_more: needMoreLeads }
-                );
-              } else {
-                console.error(`[V20] Erro ao enfileirar próxima página:`, enqueueError);
-              }
-            } else if (nextPage > maxPagesPerNeighborhood) {
-              // Marcar como esgotado se atingiu limite de páginas
-              await supabase.rpc('upsert_location_search_progress', {
-                p_workspace_id: workspace_id,
-                p_search_term: searchTermBase,
-                p_location_formatted: locationForHistory,
-                p_page: page,
-                p_leads_found: 0,
-                p_api_exhausted: true,
-                p_pages_with_zero: 0
-              });
-              
-              await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'info',
-                `⏹️ V20 Bairro ${segment_neighborhood}: Limite de ${maxPagesPerNeighborhood} páginas atingido`,
-                { neighborhood: segment_neighborhood, last_page: page, max_pages: maxPagesPerNeighborhood }
-              );
-            } else if (!needMoreLeads) {
+
+            // V21: PROTEÇÃO #1 - Parar se meta foi EXCEDIDA (não apenas atingida)
+            if (currentCreatedNow >= targetQty) {
+              console.log(`🎯 [V21] Meta atingida/excedida (${currentCreatedNow}/${targetQty}) - NÃO enfileirar mais páginas`);
               await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'success',
-                `✅ V20 Meta atingida! ${currentCreatedNow}/${targetQty} leads - Parando busca em ${segment_neighborhood}`,
-                { neighborhood: segment_neighborhood, current: currentCreatedNow, target: targetQty }
+                `✅ V21 Meta atingida! ${currentCreatedNow}/${targetQty} - Parando ${segment_neighborhood}`,
+                { neighborhood: segment_neighborhood, current: currentCreatedNow, target: targetQty, protection: 'goal_reached' }
               );
+              // Não enfileirar próxima página
+            }
+            // V21: PROTEÇÃO #2 - Verificar se está criando leads ou só duplicatas
+            else {
+              // Buscar histórico de páginas sem novos leads
+              const { data: historyCheck } = await supabase
+                .from('neighborhood_search_history')
+                .select('pages_with_zero_results, last_page')
+                .eq('workspace_id', workspace_id)
+                .ilike('search_term', searchTermBase)
+                .ilike('location_formatted', locationForHistory)
+                .single();
+
+              const consecutiveZeroPages = historyCheck?.pages_with_zero_results || 0;
+              const lastProcessedPage = historyCheck?.last_page || 0;
+
+              // V21: PROTEÇÃO #3 - Parar após 5 páginas consecutivas sem novos leads
+              const MAX_CONSECUTIVE_ZERO_PAGES = 5;
+              if (consecutiveZeroPages >= MAX_CONSECUTIVE_ZERO_PAGES) {
+                console.log(`⏹️ [V21] ${MAX_CONSECUTIVE_ZERO_PAGES}+ páginas consecutivas sem leads em ${segment_neighborhood} - PARANDO`);
+                await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'warning',
+                  `⏹️ V21 Parando ${segment_neighborhood}: ${MAX_CONSECUTIVE_ZERO_PAGES}+ páginas consecutivas sem novos leads (só duplicatas)`,
+                  {
+                    neighborhood: segment_neighborhood,
+                    consecutive_zero: consecutiveZeroPages,
+                    last_page: lastProcessedPage,
+                    protection: 'consecutive_duplicates'
+                  }
+                );
+                // Marcar como esgotado
+                await supabase.rpc('upsert_location_search_progress', {
+                  p_workspace_id: workspace_id,
+                  p_search_term: searchTermBase,
+                  p_location_formatted: locationForHistory,
+                  p_page: page,
+                  p_leads_found: 0,
+                  p_api_exhausted: true,
+                  p_pages_with_zero: 0
+                });
+              }
+              // V21: PROTEÇÃO #4 - Detectar se página atual está repetindo (loop infinito)
+              else if (lastProcessedPage >= page) {
+                console.log(`🔁 [V21] Página ${page} já foi processada (última: ${lastProcessedPage}) em ${segment_neighborhood} - PARANDO loop infinito`);
+                await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'error',
+                  `❌ V21 LOOP INFINITO detectado em ${segment_neighborhood}: página ${page} repetida (última: ${lastProcessedPage})`,
+                  {
+                    neighborhood: segment_neighborhood,
+                    current_page: page,
+                    last_page: lastProcessedPage,
+                    protection: 'infinite_loop_detected'
+                  }
+                );
+                // Marcar como esgotado para forçar parada
+                await supabase.rpc('upsert_location_search_progress', {
+                  p_workspace_id: workspace_id,
+                  p_search_term: searchTermBase,
+                  p_location_formatted: locationForHistory,
+                  p_page: page,
+                  p_leads_found: 0,
+                  p_api_exhausted: true,
+                  p_pages_with_zero: 0
+                });
+              }
+              // V20: Limite máximo de páginas por bairro aumentado para 30
+              else {
+                const maxPagesPerNeighborhood = 30;
+
+                if (needMoreLeads && nextPage <= maxPagesPerNeighborhood) {
+                    console.log(`🔄 [V21] Bairro ${segment_neighborhood} ainda tem resultados - Enfileirando página ${nextPage}`);
+
+                    const nextMessage = {
+                      run_id: run_id,
+                      page: nextPage,
+                      search_term: search_term,
+                      location: segment_location || location,
+                      workspace_id: workspace_id,
+                      target_quantity: targetQty,
+                      pages_in_batch: 1,
+                      is_last_page: false,
+                      is_compensation: false,
+                      is_segmented: true,
+                      segment_location: segment_location,
+                      segment_neighborhood: segment_neighborhood,
+                      ai_round: ai_round || 1,
+                      filters: filters,
+                      // V20 FIX: Propagar search_term_base para próxima página
+                      search_term_base: searchTermBase
+                    };
+
+                    const { error: enqueueError } = await supabase.rpc('pgmq_send', {
+                      queue_name: 'google_maps_queue',
+                      message: nextMessage,
+                      delay_seconds: 0
+                    });
+
+                    if (!enqueueError) {
+                      // ✅ CORREÇÃO CRÍTICA: Incrementar contador de enfileiradas
+                      const currentEnqueued = progressData.segmented_searches_enqueued || 0;
+                      await supabase
+                        .from('lead_extraction_runs')
+                        .update({
+                          progress_data: {
+                            ...progressData,
+                            segmented_searches_enqueued: currentEnqueued + 1
+                          }
+                        })
+                        .eq('id', run_id);
+
+                      await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'info',
+                        `🔄 V21 Continuando: ${segment_neighborhood} página ${nextPage} enfileirada (total enfileirado: ${currentEnqueued + 1})`,
+                        { neighborhood: segment_neighborhood, next_page: nextPage, current_created: currentCreatedNow, need_more: needMoreLeads, enqueued_total: currentEnqueued + 1 }
+                      );
+                    } else {
+                      console.error(`[V21] Erro ao enfileirar próxima página:`, enqueueError);
+                    }
+                  } else if (nextPage > maxPagesPerNeighborhood) {
+                    // Marcar como esgotado se atingiu limite de páginas
+                    await supabase.rpc('upsert_location_search_progress', {
+                      p_workspace_id: workspace_id,
+                      p_search_term: searchTermBase,
+                      p_location_formatted: locationForHistory,
+                      p_page: page,
+                      p_leads_found: 0,
+                      p_api_exhausted: true,
+                      p_pages_with_zero: 0
+                    });
+
+                    await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'info',
+                      `⏹️ V21 Bairro ${segment_neighborhood}: Limite de ${maxPagesPerNeighborhood} páginas atingido`,
+                      { neighborhood: segment_neighborhood, last_page: page, max_pages: maxPagesPerNeighborhood }
+                    );
+                  } else if (!needMoreLeads) {
+                    await createExtractionLog(supabase, run_id, 4, 'Segmentação', 'success',
+                      `✅ V21 Meta atingida! ${currentCreatedNow}/${targetQty} leads - Parando busca em ${segment_neighborhood}`,
+                      { neighborhood: segment_neighborhood, current: currentCreatedNow, target: targetQty }
+                    );
+                  }
+                }
+              }
             }
           } else {
             // API retornou vazio - bairro esgotado (já marcado acima via upsert_location_search_progress)
@@ -3069,24 +3318,23 @@ serve(async (req) => {
           }
         }
       }
-    }
 
     return new Response(JSON.stringify({
       success: true,
-      version: 'V16_SEGMENTATION',
+      version: 'V22_CIRCUIT_BREAKER',
       run_id, page,
-      api_key_used: keyIndex,
+      api_key_used: finalKeyUsed,
       is_segmented: is_segmented || false,
       segment_neighborhood: segment_neighborhood || null,
-      results: { 
-        raw: rawResults.length, 
-        valid: validResults.length, 
-        created: actuallyCreated, 
+      results: {
+        raw: rawResults.length,
+        valid: validResults.length,
+        created: actuallyCreated,
         duplicates_memory: preFilterDuplicates,
         duplicates_db: dbDuplicates,
         duplicates_total: totalDuplicates,
-        invalid: invalidResults, 
-        api_empty: apiEmpty 
+        invalid: invalidResults,
+        api_empty: apiEmpty
       }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
 

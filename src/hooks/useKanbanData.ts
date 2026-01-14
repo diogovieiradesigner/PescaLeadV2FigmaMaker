@@ -193,6 +193,7 @@ export function useKanbanData(
             company: lead.company || '',
             email: lead.email || '',
             phone: lead.phone || '',
+            instagram: lead.instagram || '', // ✅ Instagram do lead
           dealValue: Number(lead.dealValue) || 0,
           priority: lead.priority || 'medium',
           dueDate: lead.dueDate || '',
@@ -642,7 +643,20 @@ export function useKanbanData(
       }
 
       // ✅ NÃO buscar lead novamente - evita flickering
-      // ✅ NÃO recarregar stats - evita re-renders desnecessários
+      // ✅ Recarregar stats em background para atualizar taxa de conversão
+      if (currentFunnel?.id) {
+        funnelsService.getFunnelStats(currentFunnel.id).then(({ stats: optimizedStats, error: statsError }) => {
+          if (!statsError && optimizedStats) {
+            setStats({
+              totalLeads: optimizedStats?.totalLeads || 0,
+              totalValue: optimizedStats?.totalValue || 0,
+              highPriorityCount: optimizedStats?.highPriorityCount || 0,
+              activeLeads: optimizedStats?.activeLeads || 0,
+              conversionRate: optimizedStats?.conversionRate || 0,
+            });
+          }
+        });
+      }
 
       return movedLead;
     } catch (error: any) {
@@ -1031,6 +1045,7 @@ export function useKanbanData(
             company: lead.company || '',
             email: lead.email || '',
             phone: lead.phone || '',
+            instagram: lead.instagram || '', // ✅ Instagram do lead
             dealValue: Number(lead.dealValue) || 0,
             priority: lead.priority || 'medium',
             dueDate: lead.dueDate || '',

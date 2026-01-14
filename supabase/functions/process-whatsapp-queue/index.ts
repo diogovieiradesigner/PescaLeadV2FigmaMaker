@@ -1,8 +1,9 @@
 // =============================================================================
-// EDGE FUNCTION: process-whatsapp-queue V2 (MULTI-PROVIDER)
+// EDGE FUNCTION: process-whatsapp-queue V3 (MULTI-PROVIDER + MULTI-SOURCE)
 // =============================================================================
 // Valida números de WhatsApp usando a instância conectada do workspace
 // Suporta: Uazapi, Evolution API (e futuros providers)
+// Suporta: lead_extraction_staging (Google Maps/Instagram) e leads (CNPJ)
 // =============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
@@ -138,11 +139,15 @@ Deno.serve(async (req) => {
     // Parâmetros opcionais do body
     let workspace_id: string | null = null;
     let batch_size = 30;
-    
+    let source: 'staging' | 'leads' = 'staging'; // staging = lead_extraction_staging, leads = tabela leads (CNPJ)
+    let run_id: string | null = null;
+
     try {
       const body = await req.json();
       workspace_id = body.workspace_id || null;
       batch_size = body.batch_size || 30;
+      source = body.source || 'staging';
+      run_id = body.run_id || null;
     } catch {
       // Body vazio é OK, usa defaults
     }
@@ -150,8 +155,10 @@ Deno.serve(async (req) => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('📱 [WHATSAPP-QUEUE] STARTING VALIDATION');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`   Source: ${source === 'leads' ? 'leads (CNPJ)' : 'lead_extraction_staging (Google Maps/Instagram)'}`);
     console.log(`   Batch size: ${batch_size}`);
     console.log(`   Workspace filter: ${workspace_id || 'ALL'}`);
+    console.log(`   Run ID filter: ${run_id || 'ALL'}`);
 
     // ==========================================================================
     // PASSO 1: Buscar instância conectada
@@ -209,19 +216,50 @@ Deno.serve(async (req) => {
     // PASSO 2: Buscar leads pendentes de verificação
     // ==========================================================================
     console.log('\n🔍 [STEP 2] Fetching leads pending WhatsApp validation...');
-    
-    let leadsQuery = supabase
-      .from('lead_extraction_staging')
-      .select('id, phone_normalized, phones, workspace_id')
-      .not('phone_normalized', 'is', null)
-      .is('whatsapp_checked_at', null)
-      .limit(batch_size);
-    
-    // Filtrar pelo workspace da instância encontrada
-    // Isso garante que só processamos leads do mesmo workspace
-    leadsQuery = leadsQuery.eq('workspace_id', instance.workspace_id);
-    
-    const { data: leads, error: leadsError } = await leadsQuery;
+
+    let leads: any[] | null = null;
+    let leadsError: any = null;
+
+    if (source === 'leads') {
+      // ========================================
+      // TABELA: leads (para CNPJ)
+      // ========================================
+      let leadsQuery = supabase
+        .from('leads')
+        .select('id, phone, workspace_id, lead_extraction_run_id')
+        .not('phone', 'is', null)
+        .is('whatsapp_valid', null); // Ainda não validado
+
+      // Filtrar por run_id se fornecido (para leads CNPJ específicos)
+      // Quando run_id é fornecido, busca de qualquer workspace
+      if (run_id) {
+        leadsQuery = leadsQuery.eq('lead_extraction_run_id', run_id);
+      } else {
+        // Sem run_id, filtra pelo workspace da instância
+        leadsQuery = leadsQuery.eq('workspace_id', instance.workspace_id);
+      }
+
+      leadsQuery = leadsQuery.limit(batch_size);
+
+      const result = await leadsQuery;
+      leads = result.data;
+      leadsError = result.error;
+    } else {
+      // ========================================
+      // TABELA: lead_extraction_staging (Google Maps/Instagram)
+      // ========================================
+      let leadsQuery = supabase
+        .from('lead_extraction_staging')
+        .select('id, phone_normalized, phones, workspace_id')
+        .not('phone_normalized', 'is', null)
+        .is('whatsapp_checked_at', null)
+        .eq('workspace_id', instance.workspace_id)
+        .limit(batch_size);
+
+      const result = await leadsQuery;
+      leads = result.data;
+      leadsError = result.error;
+    }
     
     if (leadsError) {
       console.error('❌ Error fetching leads:', leadsError);
@@ -247,31 +285,32 @@ Deno.serve(async (req) => {
     // PASSO 3: Preparar números para verificação
     // ==========================================================================
     console.log('\n📞 [STEP 3] Preparing numbers for validation...');
-    
+
     // Criar mapa: número normalizado -> lead_id
     const numberToLeadMap = new Map<string, string>();
     const numbersToCheck: string[] = [];
-    
+
     for (const lead of leads) {
-      let phoneNumber = lead.phone_normalized;
-      
+      // Campo de telefone depende da fonte
+      let phoneNumber = source === 'leads' ? lead.phone : lead.phone_normalized;
+
       if (!phoneNumber) continue;
-      
+
       // Limpar número (remover caracteres especiais)
       phoneNumber = phoneNumber.replace(/\D/g, '');
-      
+
       // Normalizar para formato brasileiro: adicionar 55 se necessário
       if (phoneNumber.length <= 11) {
         phoneNumber = '55' + phoneNumber;
       }
-      
+
       // Mapeamento bidirecional (com e sem 55)
       numberToLeadMap.set(phoneNumber, lead.id);
       numberToLeadMap.set(phoneNumber.replace(/^55/, ''), lead.id);
-      
+
       numbersToCheck.push(phoneNumber);
     }
-    
+
     console.log(`✅ Prepared ${numbersToCheck.length} numbers`);
     console.log(`   Sample: ${numbersToCheck.slice(0, 3).join(', ')}...`);
 
@@ -326,37 +365,70 @@ Deno.serve(async (req) => {
     
     for (const lead of leads) {
       try {
-        let phoneNumber = (lead.phone_normalized || '').replace(/\D/g, '');
+        // Campo de telefone depende da fonte
+        const phoneField = source === 'leads' ? lead.phone : lead.phone_normalized;
+        let phoneNumber = (phoneField || '').replace(/\D/g, '');
         if (phoneNumber.length <= 11) {
           phoneNumber = '55' + phoneNumber;
         }
-        
+
         // Buscar resultado
         const result = resultMap.get(phoneNumber) || resultMap.get(phoneNumber.replace(/^55/, ''));
-        
+
         const isValid = result?.isInWhatsapp === true;
-        
-        const updateData: any = {
-          whatsapp_valid: isValid,
-          whatsapp_checked_at: new Date().toISOString()
-        };
-        
-        if (isValid && result) {
-          updateData.whatsapp_jid = result.jid || null;
-          updateData.whatsapp_name = result.verifiedName || null;
-          validCount++;
+
+        if (source === 'leads') {
+          // ========================================
+          // ATUALIZAR TABELA: leads
+          // ========================================
+          const updateData: any = {
+            whatsapp_valid: isValid,
+            whatsapp_checked_at: new Date().toISOString()
+          };
+
+          if (isValid && result) {
+            updateData.whatsapp_jid = result.jid || null;
+            updateData.whatsapp_name = result.verifiedName || null;
+            validCount++;
+          } else {
+            invalidCount++;
+          }
+
+          const { error: updateError } = await supabase
+            .from('leads')
+            .update(updateData)
+            .eq('id', lead.id);
+
+          if (updateError) {
+            console.error(`❌ Error updating lead ${lead.id}:`, updateError.message);
+            errorCount++;
+          }
         } else {
-          invalidCount++;
-        }
-        
-        const { error: updateError } = await supabase
-          .from('lead_extraction_staging')
-          .update(updateData)
-          .eq('id', lead.id);
-        
-        if (updateError) {
-          console.error(`❌ Error updating lead ${lead.id}:`, updateError.message);
-          errorCount++;
+          // ========================================
+          // ATUALIZAR TABELA: lead_extraction_staging
+          // ========================================
+          const updateData: any = {
+            whatsapp_valid: isValid,
+            whatsapp_checked_at: new Date().toISOString()
+          };
+
+          if (isValid && result) {
+            updateData.whatsapp_jid = result.jid || null;
+            updateData.whatsapp_name = result.verifiedName || null;
+            validCount++;
+          } else {
+            invalidCount++;
+          }
+
+          const { error: updateError } = await supabase
+            .from('lead_extraction_staging')
+            .update(updateData)
+            .eq('id', lead.id);
+
+          if (updateError) {
+            console.error(`❌ Error updating lead ${lead.id}:`, updateError.message);
+            errorCount++;
+          }
         }
       } catch (err) {
         console.error(`❌ Error processing lead ${lead.id}:`, err);
@@ -385,7 +457,9 @@ Deno.serve(async (req) => {
       errors: errorCount,
       duration_ms: duration,
       provider: providerType,
-      instance: instance.name
+      instance: instance.name,
+      source: source,
+      table: source === 'leads' ? 'leads' : 'lead_extraction_staging'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

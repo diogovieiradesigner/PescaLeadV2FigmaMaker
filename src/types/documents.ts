@@ -170,3 +170,47 @@ export interface SlashCommandItem {
   icon: string;
   command: (props: { editor: any; range: any }) => void;
 }
+
+// ============================================
+// PUBLIC SHARING
+// ============================================
+
+export interface LeadDocumentShare {
+  id: string;
+  document_id: string;
+  workspace_id: string;
+  share_slug: string;
+  is_active: boolean;
+  allow_edit: boolean;
+  edit_password_hash: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  view_count: number;
+  last_viewed_at: string | null;
+}
+
+export interface CreateShareInput {
+  document_id: string;
+  workspace_id: string;
+  allow_edit?: boolean;
+  edit_password?: string; // 4 dígitos
+  created_by?: string;
+}
+
+export interface UpdateShareInput {
+  is_active?: boolean;
+  allow_edit?: boolean;
+  edit_password?: string | null; // null para remover senha
+}
+
+export interface PublicDocumentData {
+  id: string;
+  title: string;
+  content: JSONContent;
+  content_text: string;
+  updated_at: string;
+  lead_name: string | null;
+  allow_edit: boolean;
+  has_password: boolean;
+}

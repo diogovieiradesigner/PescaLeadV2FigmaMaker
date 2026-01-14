@@ -39,7 +39,7 @@ export async function getColumnLeads(
     .eq('column_id', columnId)
     .eq('status', 'active');
   
-  // Query base para SELECT (todos os campos necessários)
+  // Query base para SELECT (todos os campos necessários - SEM instagram, será buscado via RPC)
   const selectBaseQuery = supabase
     .from('leads')
     .select('id,workspace_id,funnel_id,column_id,position,client_name,company,avatar_url,deal_value,priority,status,contact_date,expected_close_date,due_date,tags,notes,is_important,assigned_to,assignee_name,assignee_avatar,created_by,updated_by,created_at,updated_at,emails_count,calls_count,whatsapp_valid,whatsapp_jid,whatsapp_name')
@@ -85,12 +85,13 @@ export async function getColumnLeads(
     });
   }
   
-  // Buscar custom_fields para os leads (email e phone)
+  // Buscar custom_fields para os leads (email, phone e instagram)
   // IMPORTANTE: Não usar lead_extraction_staging - apenas custom_fields após extração
   const leadIds = (leadsResult.data || []).map((l: any) => l.id);
-  let customFieldsMap: Record<string, { email?: string; phone?: string }> = {};
-  
+  let customFieldsMap: Record<string, { email?: string; phone?: string; instagram?: string }> = {};
+
   if (leadIds.length > 0) {
+    // Buscar email e phone dos custom fields
     const { data: customFields } = await supabase
       .from('lead_custom_values')
       .select(`
@@ -100,20 +101,20 @@ export async function getColumnLeads(
       `)
       .in('lead_id', leadIds)
       .in('custom_fields.field_type', ['email', 'phone']);
-    
+
     if (customFields) {
       for (const cv of customFields) {
         const leadId = cv.lead_id;
         if (!customFieldsMap[leadId]) {
           customFieldsMap[leadId] = {};
         }
-        
+
         const fieldType = cv.custom_fields?.field_type;
         const fieldName = cv.custom_fields?.name?.toLowerCase() || '';
-        
+
         // Priorizar "Email Principal" e "Telefone Principal"
         const isPrincipal = fieldName.includes('principal');
-        
+
         if (fieldType === 'email' || fieldName.includes('email')) {
           if (cv.value && typeof cv.value === 'string' && cv.value.includes('@')) {
             // Se já tem email e encontrou um "principal", substituir
@@ -129,6 +130,22 @@ export async function getColumnLeads(
             }
           }
         }
+      }
+    }
+
+    // Buscar Instagram via RPC (busca em QUALQUER custom field que contenha instagram.com)
+    const { data: instagramData, error: instagramError } = await supabase
+      .rpc('get_leads_instagram', { p_lead_ids: leadIds });
+
+    if (instagramError) {
+      console.warn('[getColumnLeads] ⚠️ Erro ao buscar Instagram:', instagramError.message);
+    } else if (instagramData && instagramData.length > 0) {
+      console.log(`[getColumnLeads] 📷 Instagram encontrado para ${instagramData.length} leads`);
+      for (const ig of instagramData) {
+        if (!customFieldsMap[ig.lead_id]) {
+          customFieldsMap[ig.lead_id] = {};
+        }
+        customFieldsMap[ig.lead_id].instagram = ig.instagram_url;
       }
     }
   }

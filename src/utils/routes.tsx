@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, useParams } from 'react-router';
 import App from '../App';
 import { PublicBooking } from '../pages/PublicBooking';
 import { PublicChat } from '../pages/PublicChat';
+import PublicDocument from '../pages/PublicDocument';
 
 // Wrapper para extrair o slug da URL de agendamento
 function BookingWrapper() {
@@ -25,8 +26,26 @@ function ChatWrapper() {
   return <PublicChat slug={slug} />;
 }
 
+// Wrapper para extrair o slug da URL de documento público
+function DocumentWrapper() {
+  const { slug } = useParams<{ slug: string }>();
+
+  console.log('[DocumentWrapper] Slug:', slug);
+
+  if (!slug) {
+    console.log('[DocumentWrapper] No slug, redirecting to /');
+    return <Navigate to="/" replace />;
+  }
+
+  return <PublicDocument />;
+}
+
 export const router = createBrowserRouter([
-  // Rotas públicas
+  // Rotas públicas - DEVEM vir antes das rotas do App
+  {
+    path: '/doc/:slug',
+    element: <DocumentWrapper />,
+  },
   {
     path: '/agendar/:slug',
     element: <BookingWrapper />,
@@ -49,7 +68,19 @@ export const router = createBrowserRouter([
     element: <App />,
   },
   {
+    path: '/pipeline/:funnelId',
+    element: <App />,
+  },
+  {
+    path: '/pipeline/:funnelId/lead/:leadId',
+    element: <App />,
+  },
+  {
     path: '/pipeline/lead/:leadId',
+    element: <App />,
+  },
+  {
+    path: '/pipeline/lead/:leadId/document/:documentId',
     element: <App />,
   },
   {

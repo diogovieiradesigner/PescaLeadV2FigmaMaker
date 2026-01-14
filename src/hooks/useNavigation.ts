@@ -28,12 +28,12 @@ export type ExtractionTab = 'google-maps' | 'cnpj' | 'instagram';
 export interface NavigationParams {
   runId?: string;
   leadId?: string;
+  documentId?: string;
   conversationId?: string;
   eventId?: string;
   campaignRunId?: string;
   extractionTab?: ExtractionTab;
-  aiConversationId?: string;
-  aiAgentId?: string; // ID do agente para pré-selecionar no AI Assistant
+  funnelId?: string;
 }
 
 // Mapeamento de URL path para view
@@ -181,6 +181,15 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
     return match ? match[1] : null;
   });
 
+  // Estado para documento aberto via URL (/pipeline/lead/:leadId/document/:documentId)
+  const [documentId, setDocumentId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+
+    const pathname = window.location.pathname;
+    const match = pathname.match(/\/pipeline\/lead\/[^/]+\/document\/([^/]+)/);
+    return match ? match[1] : null;
+  });
+
   // Estado para conversa aberta via URL (/mensagens/:conversationId)
   const [conversationId, setConversationId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -217,21 +226,17 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
     return match ? (match[1] as ExtractionTab) : null;
   });
 
-  // Estado para conversa IA aberta via URL (/assistente-ia/:aiConversationId)
-  const [aiConversationId, setAiConversationId] = useState<string | null>(() => {
+  // Estado para funnel aberto via URL (/pipeline/:funnelId)
+  const [funnelId, setFunnelId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
 
     const pathname = window.location.pathname;
-    const match = pathname.match(/\/assistente-ia\/([^/]+)/);
-    return match ? match[1] : null;
-  });
-
-  // Estado para agente IA pré-selecionado via query param (?agent=xxx)
-  const [aiAgentId, setAiAgentId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-
-    const searchParams = new URLSearchParams(window.location.search);
-    return searchParams.get('agent');
+    // Match /pipeline/:funnelId mas não /pipeline/lead/:leadId
+    const match = pathname.match(/\/pipeline\/([^/]+)(?:\/|$)/);
+    if (match && match[1] !== 'lead') {
+      return match[1];
+    }
+    return null;
   });
 
   /**
@@ -261,12 +266,26 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
       setExtractionRunId(null);
     }
 
-    // Lead ID para pipeline
-    if (view === 'pipeline' && params?.leadId) {
-      path = `/pipeline/lead/${params.leadId}`;
-      setLeadId(params.leadId);
-    } else if (view !== 'pipeline') {
+    // Funnel ID e Lead ID para pipeline
+    if (view === 'pipeline') {
+      if (params?.funnelId && params?.leadId) {
+        // Ambos: /pipeline/:funnelId/lead/:leadId
+        path = `/pipeline/${params.funnelId}/lead/${params.leadId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(params.leadId);
+      } else if (params?.funnelId) {
+        // Só funnelId: /pipeline/:funnelId
+        path = `/pipeline/${params.funnelId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(null);
+      } else if (params?.leadId) {
+        // Só leadId (compatibilidade): /pipeline/lead/:leadId
+        path = `/pipeline/lead/${params.leadId}`;
+        setLeadId(params.leadId);
+      }
+    } else {
       setLeadId(null);
+      setFunnelId(null);
     }
 
     // Conversation ID para chat
@@ -350,12 +369,23 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
       setExtractionRunId(null);
     }
 
-    // Lead ID para pipeline
-    if (view === 'pipeline' && params?.leadId) {
-      path = `/pipeline/lead/${params.leadId}`;
-      setLeadId(params.leadId);
-    } else if (view !== 'pipeline') {
+    // Funnel ID e Lead ID para pipeline
+    if (view === 'pipeline') {
+      if (params?.funnelId && params?.leadId) {
+        path = `/pipeline/${params.funnelId}/lead/${params.leadId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(params.leadId);
+      } else if (params?.funnelId) {
+        path = `/pipeline/${params.funnelId}`;
+        setFunnelId(params.funnelId);
+        setLeadId(null);
+      } else if (params?.leadId) {
+        path = `/pipeline/lead/${params.leadId}`;
+        setLeadId(params.leadId);
+      }
+    } else {
       setLeadId(null);
+      setFunnelId(null);
     }
 
     // Conversation ID para chat
@@ -459,17 +489,11 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
         } else {
           setExtractionTab(null);
         }
-        // AI Conversation ID
-        if (event.state.aiConversationId) {
-          setAiConversationId(event.state.aiConversationId);
+        // Funnel ID
+        if (event.state.funnelId) {
+          setFunnelId(event.state.funnelId);
         } else {
-          setAiConversationId(null);
-        }
-        // AI Agent ID
-        if (event.state.aiAgentId) {
-          setAiAgentId(event.state.aiAgentId);
-        } else {
-          setAiAgentId(null);
+          setFunnelId(null);
         }
       } else {
         // Fallback: extrai da URL
@@ -481,9 +505,22 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
         const extractionMatch = pathname.match(/\/extracao\/progresso\/([^/]+)/);
         setExtractionRunId(extractionMatch ? extractionMatch[1] : null);
 
-        // Lead ID
-        const leadMatch = pathname.match(/\/pipeline\/lead\/([^/]+)/);
-        setLeadId(leadMatch ? leadMatch[1] : null);
+        // Funnel ID - match /pipeline/:funnelId (não /pipeline/lead/:leadId)
+        const funnelMatch = pathname.match(/\/pipeline\/([^/]+)(?:\/|$)/);
+        if (funnelMatch && funnelMatch[1] !== 'lead') {
+          setFunnelId(funnelMatch[1]);
+        } else {
+          setFunnelId(null);
+        }
+
+        // Lead ID - pode ser /pipeline/lead/:leadId ou /pipeline/:funnelId/lead/:leadId
+        const leadMatchOld = pathname.match(/\/pipeline\/lead\/([^/]+)/);
+        const leadMatchNew = pathname.match(/\/pipeline\/[^/]+\/lead\/([^/]+)/);
+        setLeadId(leadMatchNew ? leadMatchNew[1] : (leadMatchOld ? leadMatchOld[1] : null));
+
+        const documentMatch = pathname.match(/\/pipeline\/[^/]+\/lead\/[^/]+\/document\/([^/]+)/) ||
+                              pathname.match(/\/pipeline\/lead\/[^/]+\/document\/([^/]+)/);
+        setDocumentId(documentMatch ? documentMatch[1] : null);
 
         // Conversation ID
         const conversationMatch = pathname.match(/\/mensagens\/([^/]+)/);
@@ -541,14 +578,18 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
   }, [replaceView, hasPageAccess, currentView]);
 
   /**
-   * Limpa o leadId da URL (volta para /pipeline)
+   * Limpa o leadId da URL (volta para /pipeline ou /pipeline/:funnelId)
    */
   const clearLeadId = useCallback(() => {
     if (currentView === 'pipeline') {
       setLeadId(null);
-      window.history.replaceState({ view: 'pipeline' }, '', '/pipeline');
+      if (funnelId) {
+        window.history.replaceState({ view: 'pipeline', funnelId }, '', `/pipeline/${funnelId}`);
+      } else {
+        window.history.replaceState({ view: 'pipeline' }, '', '/pipeline');
+      }
     }
-  }, [currentView]);
+  }, [currentView, funnelId]);
 
   /**
    * Limpa o conversationId da URL (volta para /chat)
@@ -581,26 +622,24 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
   }, [currentView]);
 
   /**
-   * Limpa o aiConversationId da URL (volta para /assistente-ia)
+   * Navega para um documento dentro de um lead (/pipeline/lead/:leadId/document/:documentId)
    */
-  const clearAiConversationId = useCallback(() => {
-    if (currentView === 'ai-assistant') {
-      setAiConversationId(null);
-      window.history.replaceState({ view: 'ai-assistant' }, '', '/assistente-ia');
-    }
-  }, [currentView]);
+  const navigateToDocument = useCallback((leadIdParam: string, documentIdParam: string) => {
+    setLeadId(leadIdParam);
+    setDocumentId(documentIdParam);
+    const url = `/pipeline/lead/${leadIdParam}/document/${documentIdParam}`;
+    window.history.pushState({ view: 'pipeline', leadId: leadIdParam, documentId: documentIdParam }, '', url);
+  }, []);
 
   /**
-   * Limpa o aiAgentId da URL (remove query param ?agent=xxx)
+   * Limpa o documentId da URL (volta para /pipeline/lead/:leadId)
    */
-  const clearAiAgentId = useCallback(() => {
-    if (currentView === 'ai-assistant') {
-      setAiAgentId(null);
-      // Remove apenas o query param, mantém o path atual
-      const pathname = window.location.pathname;
-      window.history.replaceState({ view: 'ai-assistant' }, '', pathname);
+  const clearDocumentId = useCallback(() => {
+    if (leadId && currentView === 'pipeline') {
+      setDocumentId(null);
+      window.history.replaceState({ view: 'pipeline', leadId }, '', `/pipeline/lead/${leadId}`);
     }
-  }, [currentView]);
+  }, [currentView, leadId]);
 
   return {
     currentView,
@@ -612,6 +651,10 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
     leadId,
     setLeadId,
     clearLeadId,
+    documentId,
+    setDocumentId,
+    navigateToDocument,
+    clearDocumentId,
     conversationId,
     setConversationId,
     clearConversationId,
@@ -623,12 +666,8 @@ export function useNavigation(optionsOrDefaultView: AppView | UseNavigationOptio
     clearCampaignRunId,
     extractionTab,
     setExtractionTab,
-    aiConversationId,
-    setAiConversationId,
-    clearAiConversationId,
-    aiAgentId,
-    setAiAgentId,
-    clearAiAgentId,
+    funnelId,
+    setFunnelId,
     // Utilitários
     getPathForView: (view: AppView) => VIEW_TO_PATH[view],
     getLabelForView: (view: AppView) => VIEW_LABELS[view],

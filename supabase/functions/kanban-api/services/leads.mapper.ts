@@ -24,7 +24,13 @@ export function mapLeadFromDB(dbLead: any): Lead {
   if (dbLead.customFields?.phone) {
     phone = dbLead.customFields.phone;
   }
-  
+
+  // Extrair Instagram de custom_fields (buscado via RPC get_leads_instagram)
+  let instagram = '';
+  if (dbLead.customFields?.instagram) {
+    instagram = dbLead.customFields.instagram;
+  }
+
   // 🔍 DEBUG: Log se client_name estiver vazio/null
   if (!dbLead.client_name || dbLead.client_name === '' || dbLead.client_name === 'Sem nome') {
     console.warn('[LEADS MAPPER] ⚠️ Lead sem client_name válido:', {
@@ -45,6 +51,7 @@ export function mapLeadFromDB(dbLead: any): Lead {
     company: dbLead.company || '',
     email: email,
     phone: phone,
+    instagram: instagram,
     avatar: dbLead.avatar_url || '',
     dealValue: parseFloat(dbLead.deal_value || 0),
     priority: dbLead.priority || 'medium',

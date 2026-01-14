@@ -80,7 +80,9 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('18:00');
   const [dailyLimit, setDailyLimit] = useState(50);
-  const [inboxId, setInboxId] = useState('');
+  const [inboxId, setInboxId] = useState(''); // Principal
+  const [reserveInboxIds, setReserveInboxIds] = useState<string[]>([]); // ✅ NOVO: Reservas
+  const [fallbackBehavior, setFallbackBehavior] = useState<'pause' | 'switch_to_reserve'>('pause'); // ✅ NOVO
   const [funnelId, setFunnelId] = useState('');
   const [sourceColumnId, setSourceColumnId] = useState('');
   const [targetColumnId, setTargetColumnId] = useState('');
@@ -105,6 +107,9 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
   }>>([]);
   const [funnels, setFunnels] = useState<Array<{ id: string; name: string }>>([]);
   const [columns, setColumns] = useState<Array<{ id: string; title: string; position: number }>>([]);
+
+  // Estado para rastrear inboxes com agente de IA
+  const [inboxesWithAI, setInboxesWithAI] = useState<Set<string>>(new Set());
 
   // Estados para paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -390,12 +395,31 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       setEndTime(config.end_time || '18:00');
       setDailyLimit(config.daily_limit || 50);
       setInboxId(config.inbox_id || '');
+      setFallbackBehavior(config.fallback_behavior || 'pause'); // ✅ NOVO
       setFunnelId(config.source_funnel_id || '');
       setSourceColumnId(config.source_column_id || '');
       setTargetColumnId(config.target_column_id || '');
       setAiInstructions(config.ai_instructions || '');
       setSplitMessages(config.split_messages || false);
       setMaxSplitParts(config.max_split_parts || 3);
+
+      // ✅ NOVO: Carregar inboxes reserva
+      if (config.id) {
+        const { data: instanceConfigs } = await supabase
+          .from('campaign_instance_config')
+          .select('inbox_id, priority')
+          .eq('campaign_config_id', config.id)
+          .eq('is_active', true)
+          .order('priority');
+
+        if (instanceConfigs && instanceConfigs.length > 0) {
+          // Separar principal (priority=1) das reservas (priority>1)
+          const reserves = instanceConfigs
+            .filter(ic => ic.priority > 1)
+            .map(ic => ic.inbox_id);
+          setReserveInboxIds(reserves);
+        }
+      }
 
       // Carregar colunas se houver funil selecionado
       if (config.source_funnel_id) {
@@ -476,13 +500,14 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
         end_time: endTime,
         daily_limit: dailyLimit,
         min_interval_seconds: MIN_INTERVAL_SECONDS,
-        inbox_id: inboxId,
+        inbox_id: inboxId, // Manter compatibilidade
         source_funnel_id: funnelId,
         source_column_id: sourceColumnId,
         target_column_id: targetColumnId,
         ai_instructions: aiInstructions,
         split_messages: splitMessages,
-        max_split_parts: maxSplitParts
+        max_split_parts: maxSplitParts,
+        fallback_behavior: fallbackBehavior // ✅ NOVO
       }, { onConflict: 'workspace_id' })
       .select()
       .single();
@@ -491,14 +516,73 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       console.error('Erro ao salvar configuração:', error);
       setValidationErrors(['Erro ao salvar configuração. Tente novamente.']);
       toast.error('Erro ao salvar configuração');
-    } else {
-      setValidationErrors([]);
-      toast.success('Configuração salva com sucesso!');
-      
-      // Atualizar configId
-      if (data?.id) {
-        setConfigId(data.id);
+      setSaving(false);
+      return;
+    }
+
+    // ✅ NOVO: Salvar configuração de múltiplos inboxes
+    if (data?.id) {
+      try {
+        // 1. Buscar inboxes existentes
+        const { data: existingConfigs } = await supabase
+          .from('campaign_instance_config')
+          .select('inbox_id')
+          .eq('campaign_config_id', data.id);
+
+        const existingInboxIds = existingConfigs?.map(c => c.inbox_id) || [];
+        const newInboxIds = [inboxId, ...reserveInboxIds];
+
+        // 2. Remover inboxes que não estão mais selecionados
+        const toRemove = existingInboxIds.filter(id => !newInboxIds.includes(id));
+        if (toRemove.length > 0) {
+          await supabase
+            .from('campaign_instance_config')
+            .delete()
+            .eq('campaign_config_id', data.id)
+            .in('inbox_id', toRemove);
+        }
+
+        // 3. Upsert principal + reservas
+        const inboxConfigs = [
+          {
+            campaign_config_id: data.id,
+            inbox_id: inboxId,
+            priority: 1,
+            is_active: true
+          },
+          ...reserveInboxIds.map((id, idx) => ({
+            campaign_config_id: data.id,
+            inbox_id: id,
+            priority: idx + 2,
+            is_active: true
+          }))
+        ];
+
+        const { error: instanceError } = await supabase
+          .from('campaign_instance_config')
+          .upsert(inboxConfigs, {
+            onConflict: 'campaign_config_id,inbox_id'
+          });
+
+        if (instanceError) {
+          console.error('Erro ao salvar inboxes de reserva:', instanceError);
+          toast.error('Erro ao salvar números reserva');
+        } else {
+          console.log(`✅ Salvos: 1 principal + ${reserveInboxIds.length} reservas`);
+        }
+      } catch (err) {
+        console.error('Erro ao processar inboxes:', err);
+        toast.error('Erro ao salvar configuração de inboxes');
       }
+    }
+
+    console.log('Configuração salva com sucesso!');
+    setValidationErrors([]);
+    toast.success('Configuração salva com sucesso!');
+
+    // Atualizar configId
+    if (data?.id) {
+      setConfigId(data.id);
     }
 
     setSaving(false);
@@ -617,6 +701,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       toast.success(`${data.leads_scheduled} leads agendados!`);
 
       // Resetar para página 1 e recarregar lista de execuções
+      console.log('🔄 [EXECUTE NOW] Recarregando lista de execuções...');
       setCurrentPage(1);
       await loadCampaignRuns();
 
@@ -670,6 +755,18 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
       console.error('Erro ao carregar funnels:', funnelsError);
     } else {
       setFunnels(funnelsData || []);
+    }
+
+    // Carregar inboxes que têm agente de IA vinculado
+    const { data: aiInboxesData, error: aiInboxesError } = await supabase
+      .from('ai_agent_inboxes')
+      .select('inbox_id')
+      .eq('is_active', true);
+    if (aiInboxesError) {
+      console.error('Erro ao carregar inboxes com IA:', aiInboxesError);
+    } else {
+      const aiInboxIds = new Set(aiInboxesData?.map(item => item.inbox_id) || []);
+      setInboxesWithAI(aiInboxIds);
     }
 
     // Não carregar colunas aqui - elas dependem do funil selecionado
@@ -818,6 +915,25 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
+          {/* Save Configuration Button */}
+          <button
+            onClick={saveConfig}
+            disabled={saving}
+            className="px-4 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Salvando...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>Salvar</span>
+              </>
+            )}
+          </button>
+
           {/* Execute Now Button */}
           <div className="flex flex-col items-end gap-1">
             <button
@@ -837,7 +953,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 </>
               )}
             </button>
-            
+
             {/* ✅ NOVA: Nota informativa sobre restrição de horário */}
             {!canExecuteNow().canExecute && canExecuteNow().reason && (
               <div className="flex items-center gap-1 text-xs text-red-400">
@@ -845,7 +961,7 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                 <span>{canExecuteNow().reason}</span>
               </div>
             )}
-            
+
             {canExecuteNow().canExecute && canExecuteNow().timeRemaining > 0 && (
               <div className="flex items-center gap-1 text-xs text-white/60">
                 <Clock className="w-3 h-3" />
@@ -1084,23 +1200,147 @@ export function CampaignView({ theme, onThemeToggle, onNavigateToSettings, onNav
                   style={isDark ? { colorScheme: 'dark' } : undefined}
                   className={`w-full px-4 py-2 border-b transition-all ${
                     isDark
-                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9]'
+                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] [&>option]:bg-zinc-900 [&>option]:text-white'
                       : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
                   } focus:outline-none`}
                 >
-                  <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione uma caixa de entrada...</option>
+                  <option value="" className={isDark ? 'bg-zinc-900 text-white' : ''}>
+                    Selecione uma caixa de entrada...
+                  </option>
                   {inboxes.map(inbox => {
                     const instanceStatus = inbox.inbox_instances?.[0]?.instances?.status;
                     const isConnected = instanceStatus === 'connected';
                     return (
-                      <option key={inbox.id} value={inbox.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
+                      <option key={inbox.id} value={inbox.id} className={isDark ? 'bg-zinc-900 text-white' : ''}>
                         {isConnected ? '🟢' : '🔴'} {inbox.name}
                       </option>
                     );
                   })}
                 </select>
                 <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
-                  WhatsApp usado para enviar mensagens (🟢 conectado / 🔴 desconectado)
+                  WhatsApp principal para enviar mensagens (🟢 conectado / 🔴 desconectado)
+                </p>
+
+                {/* Aviso: Inbox sem agente de IA */}
+                {inboxId && !inboxesWithAI.has(inboxId) && (
+                  <div className={`mt-3 p-3 rounded-lg border flex items-start gap-2 ${
+                    isDark
+                      ? 'bg-yellow-500/10 border-yellow-500/30'
+                      : 'bg-yellow-50 border-yellow-200'
+                  }`}>
+                    <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                      isDark ? 'text-yellow-400' : 'text-yellow-600'
+                    }`} />
+                    <div>
+                      <p className={`text-sm font-medium ${
+                        isDark ? 'text-yellow-400' : 'text-yellow-700'
+                      }`}>
+                        Esta caixa de entrada não possui agente de I.A configurado
+                      </p>
+                      <p className={`text-xs mt-1 ${
+                        isDark ? 'text-yellow-400/70' : 'text-yellow-600'
+                      }`}>
+                        Quando leads responderem, serão transferidos automaticamente para atendimento humano.
+                        Para respostas automáticas, configure um agente de I.A nas configurações da caixa de entrada.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ✅ NOVO: Números Reserva */}
+              <div>
+                <label className={`block mb-2 text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                  Números Reserva (Opcional)
+                </label>
+                <div className={`w-full border rounded-md ${
+                  isDark
+                    ? 'bg-black border-white/[0.2]'
+                    : 'bg-white border-border-light'
+                } p-2`}
+                  style={{ maxHeight: '150px', overflowY: 'auto' }}
+                >
+                  {inboxes
+                    .filter(i => i.id !== inboxId) // Excluir o principal
+                    .map(inbox => {
+                      const instanceStatus = inbox.inbox_instances?.[0]?.instances?.status;
+                      const isConnected = instanceStatus === 'connected';
+                      const isSelected = reserveInboxIds.includes(inbox.id);
+
+                      return (
+                        <label
+                          key={inbox.id}
+                          className={`flex items-center gap-2 px-2 py-2 rounded cursor-pointer transition-colors ${
+                            isDark
+                              ? 'hover:bg-white/[0.05]'
+                              : 'hover:bg-zinc-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setReserveInboxIds([...reserveInboxIds, inbox.id]);
+                              } else {
+                                setReserveInboxIds(reserveInboxIds.filter(id => id !== inbox.id));
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <span className={`flex-1 text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                            {inbox.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  {inboxes.filter(i => i.id !== inboxId).length === 0 && (
+                    <p className={`text-xs text-center py-4 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                      Nenhum outro WhatsApp disponível
+                    </p>
+                  )}
+                </div>
+                <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                  {reserveInboxIds.length > 0
+                    ? `${reserveInboxIds.length} número(s) reserva selecionado(s)`
+                    : 'Clique para selecionar números de backup'
+                  }
+                </p>
+              </div>
+
+              {/* ✅ NOVO: Comportamento em Desconexão */}
+              <div>
+                <label className={`block mb-2 text-sm ${isDark ? 'text-white' : 'text-text-primary-light'}`}>
+                  Comportamento em Desconexão
+                </label>
+                <select
+                  value={fallbackBehavior}
+                  onChange={(e) => setFallbackBehavior(e.target.value as 'pause' | 'switch_to_reserve')}
+                  className={`w-full px-4 py-2 border-b transition-all ${
+                    isDark
+                      ? 'bg-black border-white/[0.2] text-white focus:bg-white/[0.1] focus:border-[#0169D9] [&>option]:bg-zinc-900 [&>option]:text-white'
+                      : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
+                  } focus:outline-none`}
+                  disabled={reserveInboxIds.length === 0}
+                >
+                  <option value="pause" className={isDark ? 'bg-zinc-900 text-white' : ''}>
+                    Pausar campanha
+                  </option>
+                  <option value="switch_to_reserve" className={isDark ? 'bg-zinc-900 text-white' : ''}>
+                    Trocar para número reserva automaticamente
+                  </option>
+                </select>
+                <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
+                  {fallbackBehavior === 'pause'
+                    ? 'A campanha será pausada se o número principal desconectar'
+                    : 'A campanha continuará usando os números reserva se o principal desconectar'
+                  }
+                  {reserveInboxIds.length === 0 && fallbackBehavior === 'switch_to_reserve' && (
+                    <span className="block text-yellow-500 mt-1">
+                      ⚠️ Configure ao menos 1 número reserva para usar este comportamento
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -1298,27 +1538,6 @@ NUNCA:
                   </div>
                 </div>
               )}
-
-              {/* Botão Salvar */}
-              <div className="flex items-center gap-3 pt-4">
-                <button
-                  onClick={saveConfig}
-                  disabled={saving}
-                  className="px-6 py-2 bg-[#0169D9] hover:bg-[#0159c9] text-white rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Salvando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>Salvar Configuração</span>
-                    </>
-                  )}
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1385,7 +1604,8 @@ NUNCA:
                               isDark ? 'text-white/70' : 'text-text-primary-light'
                             }`}>
                               <div className="font-medium">
-                                {format(new Date(run.run_date), 'dd/MM/yyyy', { locale: ptBR })}
+                                {/* Parse run_date como string local (YYYY-MM-DD) sem conversão de timezone */}
+                                {run.run_date.split('-').reverse().join('/')}
                               </div>
                               <div className={`text-xs ${
                                 isDark ? 'text-white/40' : 'text-text-secondary-light'

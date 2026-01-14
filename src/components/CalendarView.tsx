@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -10,6 +10,10 @@ import {
   Phone,
   Monitor,
   Bell,
+  Zap,
+  CheckSquare,
+  Square,
+  CheckCircle,
   Clock,
   MapPin,
   User,
@@ -22,6 +26,7 @@ import {
   X,
   ChevronDown,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { ProfileMenu } from './ProfileMenu';
@@ -41,6 +46,10 @@ import { GoogleCalendarModal } from './GoogleCalendarModal';
 import { GoogleSyncBadge } from './CalendarSyncStatus';
 import { GOOGLE_EVENT_DEFAULT_COLOR } from '../types/google-calendar.types';
 import { isGoogleEvent } from '../services/google-calendar-service';
+import { WeeklyCalendarGrid } from './calendar/WeeklyCalendarGrid';
+
+// Tipo de visualização do calendário
+type CalendarViewMode = 'month' | 'week';
 
 interface CalendarViewProps {
   theme: Theme;
@@ -57,6 +66,8 @@ const EVENT_ICONS: Record<EventType, React.ElementType> = {
   call: Phone,
   demo: Monitor,
   reminder: Bell,
+  action: Zap,
+  task: CheckSquare,
 };
 
 // Cores predefinidas para responsáveis
@@ -118,6 +129,18 @@ export function CalendarView({
     event: null,
     isLoading: false,
   });
+  const [togglingEventId, setTogglingEventId] = useState<string | null>(null);
+
+  // View mode state (month or week)
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
+
+  // Sidebar resize state
+  const SIDEBAR_MIN_WIDTH = 280;
+  const SIDEBAR_MAX_WIDTH = 500;
+  const SIDEBAR_DEFAULT_WIDTH = 320;
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   // Check for Google Calendar callback params
   useEffect(() => {
@@ -147,10 +170,12 @@ export function CalendarView({
     closeEventModal,
     isEventModalOpen,
     selectedEvent,
+    selectedDateForModal,
     createEvent,
     updateEvent,
     cancelEvent,
     resumeEvent,
+    completeEvent,
     deleteEvent,
     refetchEvents,
   } = useCalendar({
@@ -181,6 +206,83 @@ export function CalendarView({
     closeEventModal();
     onEventChange?.(null);
   }, [closeEventModal, onEventChange]);
+
+  // Navegação semanal
+  const goToPreviousWeek = useCallback(() => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(newDate.getDate() - 7);
+    goToDate(newDate);
+  }, [currentDate, goToDate]);
+
+  const goToNextWeek = useCallback(() => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(newDate.getDate() + 7);
+    goToDate(newDate);
+  }, [currentDate, goToDate]);
+
+  // Navegação unificada baseada no viewMode
+  const goToPrevious = useCallback(() => {
+    if (viewMode === 'week') {
+      goToPreviousWeek();
+    } else {
+      goToPreviousMonth();
+    }
+  }, [viewMode, goToPreviousWeek, goToPreviousMonth]);
+
+  const goToNext = useCallback(() => {
+    if (viewMode === 'week') {
+      goToNextWeek();
+    } else {
+      goToNextMonth();
+    }
+  }, [viewMode, goToNextWeek, goToNextMonth]);
+
+  // Handler para clique em slot do grid semanal
+  const handleWeekSlotClick = useCallback((date: Date, hour: number) => {
+    // Criar novo Date com a hora específica
+    const slotDate = new Date(date);
+    slotDate.setHours(hour, 0, 0, 0);
+    openCreateEventModal(slotDate);
+  }, [openCreateEventModal]);
+
+  // Sidebar resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+
+    const containerRect = sidebarRef.current?.parentElement?.getBoundingClientRect();
+    if (!containerRect) return;
+
+    // Calculate new width from the right edge
+    const newWidth = containerRect.right - e.clientX;
+    const clampedWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, newWidth));
+    setSidebarWidth(clampedWidth);
+  }, [isResizing, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH]);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Add/remove mouse event listeners for resize
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleResizeMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
 
   // Mapa de cores por responsável (memoizado)
   const assigneeColorMap = useMemo(() => {
@@ -242,6 +344,55 @@ export function CalendarView({
     month: 'long',
     year: 'numeric',
   });
+
+  // Nome da semana (para visualização semanal)
+  const weekName = useMemo(() => {
+    const startOfWeek = new Date(currentDate);
+    const dayOfWeek = startOfWeek.getDay();
+    startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+    const startMonth = startOfWeek.toLocaleDateString('pt-BR', { month: 'short' });
+    const endMonth = endOfWeek.toLocaleDateString('pt-BR', { month: 'short' });
+    const year = endOfWeek.getFullYear();
+
+    if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
+      return `${startOfWeek.getDate()} - ${endOfWeek.getDate()} de ${endMonth} ${year}`;
+    }
+    return `${startOfWeek.getDate()} de ${startMonth} - ${endOfWeek.getDate()} de ${endMonth} ${year}`;
+  }, [currentDate]);
+
+  // Label de navegação baseado no viewMode
+  const navigationLabel = viewMode === 'week' ? weekName : monthName;
+
+  // Função para obter cor do evento (exposta para o WeeklyCalendarGrid)
+  const getEventColorForGrid = useCallback((event: InternalEventWithRelations): string => {
+    if (isGoogleEvent(event)) {
+      return GOOGLE_EVENT_DEFAULT_COLOR;
+    }
+    if (event.assigned_to) {
+      return getAssigneeColor(event.assigned_to, assigneeColorMap);
+    }
+    return EVENT_TYPE_CONFIG[event.event_type as EventType]?.color || '#3b82f6';
+  }, [assigneeColorMap]);
+
+  // Handler para mover eventos na visualização semanal (drag and drop)
+  const handleWeeklyEventMove = useCallback(async (
+    event: InternalEventWithRelations,
+    newStartTime: Date,
+    newEndTime: Date
+  ) => {
+    try {
+      await updateEvent(event.id, {
+        start_time: newStartTime.toISOString(),
+        end_time: newEndTime.toISOString(),
+      });
+    } catch (error) {
+      console.error('[CalendarView] Erro ao mover evento:', error);
+    }
+  }, [updateEvent]);
 
   // Formatar hora
   const formatTime = (dateStr: string) => {
@@ -365,6 +516,9 @@ export function CalendarView({
     const statusConfig = EVENT_STATUS_CONFIG[event.event_status];
     const Icon = EVENT_ICONS[event.event_type];
     const isCancelled = event.event_status === 'cancelled';
+    const isCompleted = event.event_status === 'completed';
+    const isInactive = isCancelled || isCompleted;
+    const isToggling = togglingEventId === event.id;
     // Usar cor do responsável se tiver, senão usar cor do tipo
     const eventColor = event.assigned_to
       ? getAssigneeColor(event.assigned_to, assigneeColorMap)
@@ -375,12 +529,29 @@ export function CalendarView({
       setDeleteConfirm({ isOpen: true, event, isLoading: false });
     };
 
+    // Handler para toggle de concluído/pendente (na sidebar, não fecha modal)
+    const handleToggleComplete = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (isCancelled || isToggling) return;
+
+      setTogglingEventId(event.id);
+      try {
+        if (isCompleted) {
+          await resumeEvent(event.id, false); // false = não fechar modal
+        } else {
+          await completeEvent(event.id, false); // false = não fechar modal
+        }
+      } finally {
+        setTogglingEventId(null);
+      }
+    };
+
     return (
       <div
         key={event.id}
         className={cn(
           'p-3 rounded-lg transition-all group relative',
-          isCancelled && 'opacity-60',
+          isInactive && 'opacity-60',
           isDark
             ? 'bg-white/5 hover:bg-white/10 border border-white/10'
             : 'bg-white hover:bg-gray-50 border border-gray-200 shadow-sm'
@@ -400,79 +571,108 @@ export function CalendarView({
           <Trash2 className="w-3.5 h-3.5" />
         </button>
 
-        <div
-          onClick={() => handleOpenEditEventModal(event)}
-          className="cursor-pointer"
-        >
-          <div className="flex items-start gap-3">
-            <div
-              className="p-2 rounded-lg"
-              style={{ backgroundColor: isCancelled ? (isDark ? 'rgba(107,114,128,0.2)' : 'rgba(156,163,175,0.2)') : `${eventColor}20` }}
-            >
-              <Icon className="w-4 h-4" style={{ color: isCancelled ? '#9ca3af' : eventColor }} />
-            </div>
-            <div className="flex-1 min-w-0 pr-6">
-              <div className="flex items-center justify-between gap-2">
-                <h4
-                  className={cn(
-                    'font-medium truncate',
-                    isCancelled && 'line-through',
-                    isDark ? 'text-white' : 'text-gray-900'
-                  )}
-                >
-                  {event.title}
-                </h4>
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
-                  style={{
-                    backgroundColor: `${statusConfig.color}20`,
-                    color: statusConfig.color,
-                  }}
-                >
-                  {statusConfig.label}
-                </span>
-              </div>
+        <div className="flex items-start gap-3">
+          {/* Checkbox para concluir/reabrir evento */}
+          <button
+            onClick={handleToggleComplete}
+            disabled={isCancelled || isToggling}
+            className={cn(
+              'p-2 rounded-lg transition-all flex-shrink-0',
+              isCancelled
+                ? 'cursor-not-allowed opacity-50'
+                : 'cursor-pointer hover:scale-110',
+              isCompleted
+                ? isDark
+                  ? 'bg-green-500/20 hover:bg-green-500/30'
+                  : 'bg-green-100 hover:bg-green-200'
+                : isDark
+                  ? 'bg-white/5 hover:bg-white/10'
+                  : 'bg-gray-100 hover:bg-gray-200'
+            )}
+            style={{
+              backgroundColor: !isCancelled && !isCompleted
+                ? (isDark ? 'rgba(107,114,128,0.2)' : 'rgba(156,163,175,0.2)')
+                : undefined
+            }}
+            title={isCancelled ? 'Evento cancelado' : isCompleted ? 'Reabrir evento' : 'Marcar como concluído'}
+          >
+            {isToggling ? (
+              <Loader2 className="w-4 h-4 animate-spin" style={{ color: eventColor }} />
+            ) : isCompleted ? (
+              <CheckCircle className="w-4 h-4 text-green-500" />
+            ) : isCancelled ? (
+              <X className="w-4 h-4 text-gray-400" />
+            ) : (
+              <Square className="w-4 h-4" style={{ color: eventColor }} />
+            )}
+          </button>
 
+          {/* Conteúdo do evento (clicável para abrir modal) */}
+          <div
+            onClick={() => handleOpenEditEventModal(event)}
+            className="cursor-pointer flex-1 min-w-0 pr-6"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h4
+                className={cn(
+                  'font-medium truncate',
+                  isCancelled && 'line-through',
+                  isCompleted && 'line-through',
+                  isDark ? 'text-white' : 'text-gray-900'
+                )}
+              >
+                {event.title}
+              </h4>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                style={{
+                  backgroundColor: `${statusConfig.color}20`,
+                  color: statusConfig.color,
+                }}
+              >
+                {statusConfig.label}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 mt-1">
+              <Clock className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
+              <span className={cn('text-xs', isInactive && 'line-through', isDark ? 'text-white/50' : 'text-gray-500')}>
+                {formatTime(event.start_time)} - {formatTime(event.end_time)}
+              </span>
+            </div>
+
+            {event.lead && (
               <div className="flex items-center gap-2 mt-1">
-                <Clock className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
-                <span className={cn('text-xs', isCancelled && 'line-through', isDark ? 'text-white/50' : 'text-gray-500')}>
-                  {formatTime(event.start_time)} - {formatTime(event.end_time)}
+                <User className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
+                <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
+                  {event.lead.client_name}
                 </span>
               </div>
+            )}
 
-              {event.lead && (
-                <div className="flex items-center gap-2 mt-1">
-                  <User className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
-                  <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
-                    {event.lead.client_name}
-                  </span>
-                </div>
-              )}
+            {event.assignee && (
+              <div className="flex items-center gap-2 mt-1">
+                <UserCheck className={cn('w-3 h-3', isDark ? 'text-blue-400' : 'text-blue-500')} />
+                <span className={cn('text-xs truncate', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                  {event.assignee.name}
+                </span>
+              </div>
+            )}
 
-              {event.assignee && (
-                <div className="flex items-center gap-2 mt-1">
-                  <UserCheck className={cn('w-3 h-3', isDark ? 'text-blue-400' : 'text-blue-500')} />
-                  <span className={cn('text-xs truncate', isDark ? 'text-blue-400' : 'text-blue-600')}>
-                    {event.assignee.name}
-                  </span>
-                </div>
-              )}
+            {event.location && (
+              <div className="flex items-center gap-2 mt-1">
+                <MapPin className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
+                <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
+                  {event.location}
+                </span>
+              </div>
+            )}
 
-              {event.location && (
-                <div className="flex items-center gap-2 mt-1">
-                  <MapPin className={cn('w-3 h-3', isDark ? 'text-white/50' : 'text-gray-400')} />
-                  <span className={cn('text-xs truncate', isDark ? 'text-white/50' : 'text-gray-500')}>
-                    {event.location}
-                  </span>
-                </div>
-              )}
-
-              {isCancelled && event.cancelled_reason && (
-                <div className={cn('text-xs mt-2 italic', isDark ? 'text-white/40' : 'text-gray-400')}>
-                  Motivo: {event.cancelled_reason}
-                </div>
-              )}
-            </div>
+            {isCancelled && event.cancelled_reason && (
+              <div className={cn('text-xs mt-2 italic', isDark ? 'text-white/40' : 'text-gray-400')}>
+                Motivo: {event.cancelled_reason}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -605,7 +805,7 @@ export function CalendarView({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <button
-                onClick={goToPreviousMonth}
+                onClick={goToPrevious}
                 className={cn(
                   'p-2 rounded-lg transition-colors',
                   isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'
@@ -615,14 +815,14 @@ export function CalendarView({
               </button>
 
               <h2 className={cn(
-                'text-lg font-semibold capitalize min-w-[180px] text-center',
+                'text-lg font-semibold capitalize min-w-[220px] text-center',
                 isDark ? 'text-white' : 'text-gray-900'
               )}>
-                {monthName}
+                {navigationLabel}
               </h2>
 
               <button
-                onClick={goToNextMonth}
+                onClick={goToNext}
                 className={cn(
                   'p-2 rounded-lg transition-colors',
                   isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100'
@@ -642,6 +842,39 @@ export function CalendarView({
               >
                 Hoje
               </button>
+
+              {/* View Mode Selector */}
+              <div className={cn(
+                'flex items-center rounded-lg p-0.5 ml-2',
+                isDark ? 'bg-white/5' : 'bg-gray-100'
+              )}>
+                <button
+                  onClick={() => setViewMode('month')}
+                  className={cn(
+                    'px-3 py-1.5 text-sm rounded-md transition-colors',
+                    viewMode === 'month'
+                      ? 'bg-blue-600 text-white'
+                      : isDark
+                        ? 'text-white/70 hover:text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                  )}
+                >
+                  Mensal
+                </button>
+                <button
+                  onClick={() => setViewMode('week')}
+                  className={cn(
+                    'px-3 py-1.5 text-sm rounded-md transition-colors',
+                    viewMode === 'week'
+                      ? 'bg-blue-600 text-white'
+                      : isDark
+                        ? 'text-white/70 hover:text-white'
+                        : 'text-gray-600 hover:text-gray-900'
+                  )}
+                >
+                  Semanal
+                </button>
+              </div>
 
               {/* Filtro por responsável */}
               <div className="relative ml-2">
@@ -787,132 +1020,170 @@ export function CalendarView({
             </button>
           </div>
 
-          {/* Calendar Grid */}
-          <div className={cn(
-            'flex-1 rounded-xl border overflow-hidden',
-            isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white'
-          )}>
-            {/* Weekday Headers */}
+          {/* Calendar Grid - Conditional render based on viewMode */}
+          {viewMode === 'month' ? (
             <div className={cn(
-              'grid grid-cols-7 border-b',
-              isDark ? 'border-white/10' : 'border-gray-200'
+              'flex-1 rounded-xl border overflow-hidden',
+              isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white'
             )}>
-              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
-                <div
-                  key={day}
-                  className={cn(
-                    'p-2 text-center text-sm font-medium',
-                    isDark ? 'text-white/50' : 'text-gray-500'
-                  )}
-                >
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            {/* Days Grid */}
-            <div className="grid grid-cols-7 flex-1">
-              {calendarDays.map(({ date, isCurrentMonth, isToday }, index) => {
-                const dayEvents = getEventsForDay(date);
-                const isSelected =
-                  date.toDateString() === currentDate.toDateString();
-                const maxVisibleEvents = 2; // Número máximo de eventos visíveis por dia
-                const dateKey = formatLocalDate(date);
-                const isDragOver = dragOverDate === dateKey;
-
-                return (
+              {/* Weekday Headers */}
+              <div className={cn(
+                'grid grid-cols-7 border-b',
+                isDark ? 'border-white/10' : 'border-gray-200'
+              )}>
+                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
                   <div
-                    key={index}
-                    onClick={() => goToDate(date)}
-                    onDragOver={(e) => handleDragOver(e, dateKey)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, date)}
+                    key={day}
                     className={cn(
-                      'min-h-[80px] md:min-h-[110px] p-1 md:p-2 border-b border-r cursor-pointer transition-all overflow-hidden',
-                      isDark ? 'border-white/5' : 'border-gray-100',
-                      !isCurrentMonth && (isDark ? 'bg-white/[0.02]' : 'bg-gray-50'),
-                      isSelected && (isDark ? 'bg-blue-500/10' : 'bg-blue-50'),
-                      isToday && 'ring-1 ring-inset ring-blue-500',
-                      isDragOver && (isDark ? 'bg-blue-500/20 ring-2 ring-blue-500' : 'bg-blue-100 ring-2 ring-blue-500')
+                      'p-2 text-center text-sm font-medium',
+                      isDark ? 'text-white/50' : 'text-gray-500'
                     )}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={cn(
-                          'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
-                          isToday && 'bg-blue-600 text-white',
-                          !isToday && !isCurrentMonth && (isDark ? 'text-white/30' : 'text-gray-400'),
-                          !isToday && isCurrentMonth && (isDark ? 'text-white' : 'text-gray-900')
-                        )}
-                      >
-                        {date.getDate()}
-                      </span>
-                    </div>
-
-                    {/* Event lines */}
-                    <div className="space-y-0.5">
-                      {dayEvents.slice(0, maxVisibleEvents).map((event) => {
-                        const config = EVENT_TYPE_CONFIG[event.event_type];
-                        const isCancelled = event.event_status === 'cancelled';
-                        const isDraggable = !isCancelled;
-                        // Usar cor do responsável se tiver, senão usar cor do tipo
-                        const eventColor = event.assigned_to
-                          ? getAssigneeColor(event.assigned_to, assigneeColorMap)
-                          : config.color;
-                        return (
-                          <div
-                            key={event.id}
-                            draggable={isDraggable}
-                            onDragStart={(e) => isDraggable && handleDragStart(e, event)}
-                            onDragEnd={handleDragEnd}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditEventModal(event);
-                            }}
-                            className={cn(
-                              'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate transition-all group',
-                              isCancelled
-                                ? 'line-through opacity-60 cursor-pointer'
-                                : 'text-white font-medium cursor-grab active:cursor-grabbing hover:opacity-90',
-                              draggedEvent?.id === event.id && 'opacity-50 ring-2 ring-white'
-                            )}
-                            style={{
-                              backgroundColor: isCancelled
-                                ? (isDark ? 'rgba(107, 114, 128, 0.5)' : 'rgba(156, 163, 175, 0.5)')
-                                : eventColor,
-                              color: isCancelled
-                                ? (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(75, 85, 99, 1)')
-                                : 'white'
-                            }}
-                            title={`${formatTime(event.start_time)} - ${event.title}${event.assignee ? ` (${event.assignee.name})` : ''}${isCancelled ? ' (Cancelado)' : ''}\n${isDraggable ? 'Arraste para mover' : ''}`}
-                          >
-                            <span className="hidden md:inline">{formatTime(event.start_time)} </span>
-                            {event.title}
-                            {isCancelled && <span className="ml-1 text-[8px] md:text-[10px]">✕</span>}
-                          </div>
-                        );
-                      })}
-                      {dayEvents.length > maxVisibleEvents && (
-                        <div className={cn(
-                          'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate',
-                          isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'
-                        )}>
-                          +{dayEvents.length - maxVisibleEvents} mais
-                        </div>
-                      )}
-                    </div>
+                    {day}
                   </div>
-                );
-              })}
+                ))}
+              </div>
+
+              {/* Days Grid */}
+              <div className="grid grid-cols-7 flex-1">
+                {calendarDays.map(({ date, isCurrentMonth, isToday }, index) => {
+                  const dayEvents = getEventsForDay(date);
+                  const isSelected =
+                    date.toDateString() === currentDate.toDateString();
+                  const maxVisibleEvents = 2; // Número máximo de eventos visíveis por dia
+                  const dateKey = formatLocalDate(date);
+                  const isDragOver = dragOverDate === dateKey;
+
+                  return (
+                    <div
+                      key={index}
+                      onClick={() => {
+                        goToDate(date);
+                        // Abrir modal de criação ao clicar no dia
+                        openCreateEventModal(date);
+                      }}
+                      onDragOver={(e) => handleDragOver(e, dateKey)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, date)}
+                      className={cn(
+                        'min-h-[80px] md:min-h-[110px] p-1 md:p-2 border-b border-r cursor-pointer transition-all overflow-hidden',
+                        isDark ? 'border-white/5' : 'border-gray-100',
+                        !isCurrentMonth && (isDark ? 'bg-white/[0.02]' : 'bg-gray-50'),
+                        isSelected && (isDark ? 'bg-blue-500/10' : 'bg-blue-50'),
+                        isToday && 'ring-1 ring-inset ring-blue-500',
+                        isDragOver && (isDark ? 'bg-blue-500/20 ring-2 ring-blue-500' : 'bg-blue-100 ring-2 ring-blue-500')
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={cn(
+                            'text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full',
+                            isToday && 'bg-blue-600 text-white',
+                            !isToday && !isCurrentMonth && (isDark ? 'text-white/30' : 'text-gray-400'),
+                            !isToday && isCurrentMonth && (isDark ? 'text-white' : 'text-gray-900')
+                          )}
+                        >
+                          {date.getDate()}
+                        </span>
+                      </div>
+
+                      {/* Event lines */}
+                      <div className="space-y-0.5">
+                        {dayEvents.slice(0, maxVisibleEvents).map((event) => {
+                          const config = EVENT_TYPE_CONFIG[event.event_type];
+                          const isCancelled = event.event_status === 'cancelled';
+                          const isDraggable = !isCancelled;
+                          // Usar cor do responsável se tiver, senão usar cor do tipo
+                          const eventColor = event.assigned_to
+                            ? getAssigneeColor(event.assigned_to, assigneeColorMap)
+                            : config.color;
+                          return (
+                            <div
+                              key={event.id}
+                              draggable={isDraggable}
+                              onDragStart={(e) => isDraggable && handleDragStart(e, event)}
+                              onDragEnd={handleDragEnd}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditEventModal(event);
+                              }}
+                              className={cn(
+                                'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate transition-all group',
+                                isCancelled
+                                  ? 'line-through opacity-60 cursor-pointer'
+                                  : 'text-white font-medium cursor-grab active:cursor-grabbing hover:opacity-90',
+                                draggedEvent?.id === event.id && 'opacity-50 ring-2 ring-white'
+                              )}
+                              style={{
+                                backgroundColor: isCancelled
+                                  ? (isDark ? 'rgba(107, 114, 128, 0.5)' : 'rgba(156, 163, 175, 0.5)')
+                                  : eventColor,
+                                color: isCancelled
+                                  ? (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(75, 85, 99, 1)')
+                                  : 'white'
+                              }}
+                              title={`${formatTime(event.start_time)} - ${event.title}${event.assignee ? ` (${event.assignee.name})` : ''}${isCancelled ? ' (Cancelado)' : ''}\n${isDraggable ? 'Arraste para mover' : ''}`}
+                            >
+                              <span className="hidden md:inline">{formatTime(event.start_time)} </span>
+                              {event.title}
+                              {isCancelled && <span className="ml-1 text-[8px] md:text-[10px]">✕</span>}
+                            </div>
+                          );
+                        })}
+                        {dayEvents.length > maxVisibleEvents && (
+                          <div className={cn(
+                            'text-[10px] md:text-xs px-1.5 py-0.5 rounded truncate',
+                            isDark ? 'bg-white/10 text-white/70' : 'bg-gray-200 text-gray-600'
+                          )}>
+                            +{dayEvents.length - maxVisibleEvents} mais
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          ) : (
+            <WeeklyCalendarGrid
+              theme={theme}
+              currentDate={currentDate}
+              events={events}
+              onEventClick={handleOpenEditEventModal}
+              onSlotClick={handleWeekSlotClick}
+              getEventColor={getEventColorForGrid}
+              onEventMove={handleWeeklyEventMove}
+            />
+          )}
         </div>
 
         {/* Sidebar - Events for selected day */}
-        <div className={cn(
-          'w-80 border-l flex-col hidden lg:flex',
-          isDark ? 'border-white/10 bg-white/[0.02]' : 'border-gray-200 bg-gray-50'
-        )}>
+        <div
+          ref={sidebarRef}
+          className={cn(
+            'border-l flex-col hidden lg:flex relative',
+            isDark ? 'border-white/10 bg-white/[0.02]' : 'border-gray-200 bg-gray-50'
+          )}
+          style={{ width: sidebarWidth }}
+        >
+          {/* Resize handle */}
+          <div
+            onMouseDown={handleResizeStart}
+            className={cn(
+              'absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-20 group',
+              'hover:bg-blue-500/50 transition-colors',
+              isResizing && 'bg-blue-500'
+            )}
+            title="Arraste para redimensionar"
+          >
+            {/* Visual indicator line */}
+            <div className={cn(
+              'absolute left-0 top-0 bottom-0 w-[2px] opacity-0 group-hover:opacity-100 transition-opacity',
+              isDark ? 'bg-blue-400' : 'bg-blue-500',
+              isResizing && 'opacity-100'
+            )} />
+          </div>
+
           {/* Selected Day Header */}
           <div className={cn(
             'p-4 border-b',
@@ -1029,13 +1300,14 @@ export function CalendarView({
           isOpen={isEventModalOpen}
           onClose={handleCloseEventModal}
           event={selectedEvent}
-          selectedDate={currentDate}
+          selectedDate={selectedDateForModal}
           settings={settings}
           workspaceId={currentWorkspace?.id || ''}
           onCreate={createEvent}
           onUpdate={updateEvent}
           onCancel={cancelEvent}
           onResume={resumeEvent}
+          onComplete={completeEvent}
           onDelete={deleteEvent}
         />
       )}

@@ -34,8 +34,6 @@ export function FiltersModal({
   if (!isOpen) return null;
 
   const handleAssigneeToggle = (assigneeId: string) => {
-    console.log('🔵 handleAssigneeToggle chamado com:', assigneeId);
-    console.log('🔵 Filtros atuais:', filters);
     
     if (assigneeId === 'all') {
       // Se "Tudo" já está marcado, desmarcar e permitir seleções individuais
@@ -66,7 +64,6 @@ export function FiltersModal({
       onFiltersChange({ ...filters, assignees: newAssignees });
     }
     
-    console.log('🔵 Novos filtros enviados');
   };
 
   const handleInboxToggle = (inboxId: string) => {
@@ -202,7 +199,7 @@ export function FiltersModal({
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto max-h-[calc(80vh-140px)] p-6">
+        <div className="overflow-y-auto scrollbar-thin max-h-[calc(80vh-140px)] p-6">
           <div className="grid grid-cols-2 gap-6">
             {/* Atendentes */}
             <div>
@@ -212,7 +209,6 @@ export function FiltersModal({
               <div className="space-y-2">
                 <label 
                   onClick={(e) => {
-                    console.log('🟢 LABEL CLICADO - Tudo');
                     e.stopPropagation();
                   }}
                   className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
@@ -223,7 +219,6 @@ export function FiltersModal({
                     type="checkbox"
                     checked={filters.assignees.includes('all')}
                     onChange={(e) => {
-                      console.log('🟡 CHECKBOX CHANGED - Tudo', e.target.checked);
                       handleAssigneeToggle('all');
                     }}
                     className="w-4 h-4 rounded border-2 accent-[#0169D9] cursor-pointer"

@@ -305,7 +305,7 @@ export function CalendarSettingsModal({
         </div>
 
         {/* Body */}
-        <div className={`flex-1 overflow-y-auto ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
+        <div className={`flex-1 overflow-y-auto scrollbar-thin ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
           <div className="p-6 space-y-6">
 
             {/* Public Booking Link Section */}
@@ -608,18 +608,19 @@ export function CalendarSettingsModal({
                             [type]: Number(e.target.value),
                           }))
                         }
+                        style={isDark ? { colorScheme: 'dark' } : undefined}
                         className={`w-full px-3 py-2.5 rounded-lg border text-sm transition-all focus:outline-none focus:border-[#0169D9] ${
                           isDark
                             ? 'bg-elevated border-white/[0.08] text-white'
                             : 'bg-white border-border-light text-text-primary-light'
                         }`}
                       >
-                        <option value={15}>15 minutos</option>
-                        <option value={30}>30 minutos</option>
-                        <option value={45}>45 minutos</option>
-                        <option value={60}>1 hora</option>
-                        <option value={90}>1h 30min</option>
-                        <option value={120}>2 horas</option>
+                        <option value={15} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>15 minutos</option>
+                        <option value={30} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>30 minutos</option>
+                        <option value={45} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>45 minutos</option>
+                        <option value={60} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>1 hora</option>
+                        <option value={90} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>1h 30min</option>
+                        <option value={120} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>2 horas</option>
                       </select>
                     </div>
                   );

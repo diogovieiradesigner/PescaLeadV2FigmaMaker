@@ -348,10 +348,8 @@ export async function deleteEvent(eventId: string, workspaceId?: string): Promis
       // Importar dinamicamente para evitar dependência circular
       const { deleteGoogleEvent } = await import('./google-calendar-service');
       await deleteGoogleEvent(eventId, event.workspace_id);
-      console.log('[calendar-service] Event deleted from Google Calendar:', event.google_event_id);
     } catch (googleError: any) {
       // Log mas não falhar - o evento pode já ter sido deletado no Google
-      console.warn('[calendar-service] Failed to delete from Google (continuing with local delete):', googleError.message);
     }
   }
 
@@ -378,7 +376,6 @@ export async function fetchCalendarSettings(
   workspaceId: string,
   calendarId?: string
 ): Promise<CalendarSettings | null> {
-  console.log('[calendar-service] fetchCalendarSettings called:', { workspaceId, calendarId });
 
   let query = supabase
     .from('calendar_settings')
@@ -393,13 +390,6 @@ export async function fetchCalendarSettings(
 
   const { data, error } = await query.maybeSingle();
 
-  console.log('[calendar-service] fetchCalendarSettings result:', {
-    hasData: !!data,
-    dataId: data?.id,
-    availability: data?.availability,
-    buffer_between_events: data?.buffer_between_events,
-    error
-  });
 
   if (error) {
     console.error('[calendar-service] Error fetching settings:', error);
@@ -415,7 +405,6 @@ export async function fetchCalendarSettings(
 export async function upsertCalendarSettings(
   data: CalendarSettingsCreate
 ): Promise<CalendarSettings> {
-  console.log('[calendar-service] upsertCalendarSettings called with:', data);
 
   // Primeiro, tentar buscar configuração existente
   // Usar a mesma lógica do fetchCalendarSettings para consistência
@@ -432,15 +421,9 @@ export async function upsertCalendarSettings(
 
   const { data: existing, error: fetchError } = await query.maybeSingle();
 
-  console.log('[calendar-service] upsertCalendarSettings existing check:', {
-    hasExisting: !!existing,
-    existingId: existing?.id,
-    fetchError
-  });
 
   if (existing) {
     // Atualizar existente
-    console.log('[calendar-service] Updating existing settings with id:', existing.id);
     const { data: settings, error } = await supabase
       .from('calendar_settings')
       .update(data)
@@ -448,11 +431,6 @@ export async function upsertCalendarSettings(
       .select()
       .single();
 
-    console.log('[calendar-service] Update result:', {
-      success: !!settings,
-      settingsId: settings?.id,
-      error
-    });
 
     if (error) {
       console.error('[calendar-service] Error updating settings:', error);
@@ -462,18 +440,12 @@ export async function upsertCalendarSettings(
     return settings;
   } else {
     // Criar novo
-    console.log('[calendar-service] Creating new settings');
     const { data: settings, error } = await supabase
       .from('calendar_settings')
       .insert(data)
       .select()
       .single();
 
-    console.log('[calendar-service] Insert result:', {
-      success: !!settings,
-      settingsId: settings?.id,
-      error
-    });
 
     if (error) {
       console.error('[calendar-service] Error creating settings:', error);

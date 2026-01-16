@@ -44,7 +44,6 @@ export function useLeadsByChannel(workspaceId: string, filters: LeadsFilters) {
       let result = data as any;
       
       if (!result || typeof result !== 'object') {
-        console.warn('[useLeadsByChannel] Dados inválidos recebidos do RPC:', data);
         return {
           total: 0,
           channels: {},
@@ -74,13 +73,11 @@ export function useLeadsByChannel(workspaceId: string, filters: LeadsFilters) {
 
       // Garantir que chart_data seja sempre um array
       if (!Array.isArray(result.chart_data)) {
-        console.warn('[useLeadsByChannel] chart_data não é um array:', result.chart_data);
         result.chart_data = [];
       }
       
       // Garantir que channels seja um objeto
       if (!result.channels || typeof result.channels !== 'object') {
-        console.warn('[useLeadsByChannel] channels não é um objeto:', result.channels);
         result.channels = {};
       }
 

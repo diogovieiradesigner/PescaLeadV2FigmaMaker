@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { supabase } from '../utils/supabase/client';
 
-const RAG_MANAGE_URL = 'https://nlbcwaxkeaddfocigwuk.supabase.co/functions/v1/ai-rag-manage';
+const RAG_MANAGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-manage`;
 
 // MIME types permitidos
 const ALLOWED_MIME_TYPES: Record<string, string> = {
@@ -23,7 +24,7 @@ interface UploadResult {
   error?: string;
 }
 
-export function useRagUpload(agentId: string | null, storeName: string) {
+export function useRagUpload(agentId: string | null, defaultStoreName: string) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
@@ -61,12 +62,16 @@ export function useRagUpload(agentId: string | null, storeName: string) {
     });
   };
 
-  const uploadDocument = async (file: File): Promise<UploadResult> => {
+  // storeName pode ser passado como parâmetro para usar um valor atualizado
+  // (útil quando o store é criado durante o upload)
+  const uploadDocument = async (file: File, storeName?: string): Promise<UploadResult> => {
+    const storeToUse = storeName || defaultStoreName;
+
     if (!agentId) {
       return { success: false, error: 'Agent ID não encontrado' };
     }
 
-    if (!storeName) {
+    if (!storeToUse) {
       return { success: false, error: 'Store não configurado' };
     }
 
@@ -80,8 +85,12 @@ export function useRagUpload(agentId: string | null, storeName: string) {
     setUploadProgress(10);
 
     try {
-      console.log('[useRagUpload] Starting upload:', file.name);
-      
+      // Obter token de autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        return { success: false, error: 'Usuário não autenticado' };
+      }
+
       // Converter para base64
       setUploadProgress(30);
       const base64Content = await fileToBase64(file);
@@ -91,11 +100,14 @@ export function useRagUpload(agentId: string | null, storeName: string) {
       // Fazer upload
       const response = await fetch(RAG_MANAGE_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           action: 'upload_document',
           agent_id: agentId,
-          store_name: storeName,
+          store_name: storeToUse,
           file_name: file.name,
           file_type: file.type,
           file_base64: base64Content
@@ -110,7 +122,6 @@ export function useRagUpload(agentId: string | null, storeName: string) {
         throw new Error(result.error || 'Falha no upload');
       }
 
-      console.log('[useRagUpload] Upload successful:', file.name);
       setUploadProgress(100);
 
       return {

@@ -169,7 +169,7 @@ function PipelineStepItem({ step, isLast, isDark, onCopy }: { step: PipelineStep
           {step.config && Object.keys(step.config).length > 0 && (
             <div className="text-xs">
               <span className="font-semibold opacity-70 mb-1 block">Configuração:</span>
-              <div className={cn("p-2 rounded font-mono overflow-x-auto", isDark ? "bg-black/30 text-zinc-400" : "bg-zinc-100 text-zinc-600")}>
+              <div className={cn("p-2 rounded font-mono overflow-x-auto scrollbar-thin", isDark ? "bg-black/30 text-zinc-400" : "bg-zinc-100 text-zinc-600")}>
                 {JSON.stringify(step.config, null, 1).replace(/[\{\}"]/g, '').trim()}
               </div>
             </div>

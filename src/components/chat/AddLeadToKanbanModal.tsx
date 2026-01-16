@@ -51,7 +51,6 @@ export function AddLeadToKanbanModal({
   const loadContactProfile = async () => {
     setLoadingProfile(true);
     try {
-      console.log('[AddLeadModal] Buscando perfil do contato...');
       const { profile, error: profileError } = await fetchContactProfile(
         workspaceId,
         conversationId,
@@ -59,10 +58,8 @@ export function AddLeadToKanbanModal({
       );
 
       if (profileError) {
-        console.warn('[AddLeadModal] Não foi possível buscar o perfil:', profileError);
         // Não mostrar erro para o usuário, apenas log
       } else if (profile) {
-        console.log('[AddLeadModal] Perfil encontrado:', profile);
         setContactProfile(profile);
       }
     } catch (err) {
@@ -147,17 +144,14 @@ export function AddLeadToKanbanModal({
       // ✅ Adicionar campos personalizados se disponíveis no perfil
       if (contactProfile?.email) {
         leadData.email = contactProfile.email;
-        console.log('[AddLeadModal] Adicionando email ao lead:', contactProfile.email);
       }
       
       if (contactProfile?.description) {
         leadData.description = contactProfile.description;
-        console.log('[AddLeadModal] Adicionando descrição ao lead:', contactProfile.description);
       }
       
       if (contactProfile?.website) {
         leadData.website = contactProfile.website;
-        console.log('[AddLeadModal] Adicionando website ao lead:', contactProfile.website);
       }
       
       const { leadId, error: createError } = await createLeadFromConversation(leadData);
@@ -168,7 +162,6 @@ export function AddLeadToKanbanModal({
         return;
       }
 
-      console.log('[AddLeadModal] Lead criado com sucesso:', leadId);
       onLeadCreated(leadId);
       if (onKanbanRefresh) { // ✅ Chama o callback para refresh do kanban
         onKanbanRefresh();
@@ -290,6 +283,7 @@ export function AddLeadToKanbanModal({
               <select
                 value={selectedFunnelId}
                 onChange={(e) => setSelectedFunnelId(e.target.value)}
+                style={isDark ? { colorScheme: 'dark' } : undefined}
                 className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:border-[#0169D9] ${
                   isDark
                     ? 'bg-elevated border-white/[0.08] text-white'
@@ -298,7 +292,7 @@ export function AddLeadToKanbanModal({
                 required
               >
                 {funnels.map((funnel) => (
-                  <option key={funnel.id} value={funnel.id}>
+                  <option key={funnel.id} value={funnel.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                     {funnel.name}
                   </option>
                 ))}
@@ -320,6 +314,7 @@ export function AddLeadToKanbanModal({
                 <select
                   value={selectedColumnId}
                   onChange={(e) => setSelectedColumnId(e.target.value)}
+                  style={isDark ? { colorScheme: 'dark' } : undefined}
                   className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:border-[#0169D9] ${
                     isDark
                       ? 'bg-elevated border-white/[0.08] text-white'
@@ -328,7 +323,7 @@ export function AddLeadToKanbanModal({
                   required
                 >
                   {columns.map((column) => (
-                    <option key={column.id} value={column.id}>
+                    <option key={column.id} value={column.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                       {column.title}
                     </option>
                   ))}

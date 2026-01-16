@@ -22,7 +22,6 @@ export function useFunnelAnalytics(
       let result = data as any;
       
       if (!result) {
-        console.warn('[useFunnelAnalytics] Dados null/undefined recebidos do RPC');
         return {
           funnel_id: '',
           period: { start: filters.startDate.toISOString(), end: filters.endDate.toISOString() },
@@ -71,12 +70,10 @@ export function useFunnelAnalytics(
       
       // Validar que os arrays foram parseados corretamente
       if (!Array.isArray(result.columns)) {
-        console.warn('[useFunnelAnalytics] columns não é um array após parse:', result.columns);
         result.columns = [];
       }
       
       if (!Array.isArray(result.conversion_rates)) {
-        console.warn('[useFunnelAnalytics] conversion_rates não é um array após parse:', result.conversion_rates);
         result.conversion_rates = [];
       }
       

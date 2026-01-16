@@ -50,13 +50,11 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
   });
 
   useEffect(() => {
-    console.log('[FollowUpModelsManager] Trigger de categorias mudou:', categoriesRefreshTrigger);
     loadData();
   }, [categoriesRefreshTrigger, workspaceId]); // ✅ Recarregar quando workspace mudar
 
   const loadData = async () => {
     if (!workspaceId) {
-      console.warn('[FollowUpModelsManager] Workspace ID não disponível');
       setLoading(false);
       return;
     }
@@ -74,7 +72,6 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
 
       if (categoriesError) throw categoriesError;
       
-      console.log('[FollowUpModelsManager] Categorias carregadas:', categoriesData?.length || 0);
       setCategories(categoriesData || []);
 
       // Load models with category names - ✅ FILTRAR POR WORKSPACE
@@ -230,6 +227,7 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
           <select
             value={selectedCategoryFilter}
             onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             className={cn(
               "px-4 py-2 border rounded-lg text-sm focus:outline-none transition-all",
               isDark
@@ -237,9 +235,9 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
                 : "bg-white border-zinc-300 text-zinc-900 focus:border-[#0169D9]"
             )}
           >
-            <option value="">Todas as categorias</option>
+            <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Todas as categorias</option>
             {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
+              <option key={cat.id} value={cat.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                 {cat.name}
               </option>
             ))}
@@ -382,6 +380,7 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
                 id="category_id"
                 value={formData.category_id}
                 onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                style={isDark ? { colorScheme: 'dark' } : undefined}
                 className={cn(
                   "w-full px-4 py-2 border-b transition-all text-sm focus:outline-none",
                   isDark
@@ -389,9 +388,9 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
                     : "bg-white border-zinc-300 text-zinc-900 focus:border-[#0169D9]"
                 )}
               >
-                <option value="">Selecione uma categoria</option>
+                <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione uma categoria</option>
                 {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
+                  <option key={cat.id} value={cat.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                     {cat.name}
                   </option>
                 ))}
@@ -450,6 +449,7 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
                   id="time_unit"
                   value={formData.time_unit}
                   onChange={(e) => setFormData({ ...formData, time_unit: e.target.value as 'minutes' | 'hours' | 'days' })}
+                  style={isDark ? { colorScheme: 'dark' } : undefined}
                   className={cn(
                     "w-full px-4 py-2 border-b transition-all text-sm focus:outline-none",
                     isDark
@@ -457,9 +457,9 @@ export function FollowUpModelsManager({ isDark, workspaceId, categoriesRefreshTr
                       : "bg-white border-zinc-300 text-zinc-900 focus:border-[#0169D9]"
                   )}
                 >
-                  <option value="minutes">Minutos</option>
-                  <option value="hours">Horas</option>
-                  <option value="days">Dias</option>
+                  <option value="minutes" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Minutos</option>
+                  <option value="hours" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Horas</option>
+                  <option value="days" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Dias</option>
                 </select>
               </div>
             </div>

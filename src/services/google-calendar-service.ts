@@ -14,8 +14,8 @@ import {
 } from '../types/google-calendar.types';
 
 // URL base das Edge Functions
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://nlbcwaxkeaddfocigwuk.supabase.co';
-const FUNCTIONS_URL = SUPABASE_URL.replace('.supabase.co', '.supabase.co/functions/v1');
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 
 // Timeout padrão para requisições (30 segundos)
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -35,7 +35,6 @@ async function fetchWithAuth(
   }
 
   const url = `${FUNCTIONS_URL}${endpoint}`;
-  console.log('[google-calendar-service] Calling:', url);
 
   // Extrair timeoutMs das options
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
@@ -112,12 +111,9 @@ export async function getGoogleAuthUrl(workspaceId: string): Promise<string> {
   }
 
   const data = await response.json();
-  console.log('[google-calendar-service] Auth URL response:', data);
 
   // Log debug info if available
   if (data.debug) {
-    console.log('[google-calendar-service] Redirect URI being used:', data.debug.redirect_uri);
-    console.log('[google-calendar-service] Client ID prefix:', data.debug.client_id_prefix);
   }
 
   return data.auth_url;

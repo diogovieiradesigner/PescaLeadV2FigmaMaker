@@ -127,6 +127,7 @@ export function AITab({ isDark }: AITabProps) {
             <select
               value={periodDays}
               onChange={(e) => setPeriodDays(Number(e.target.value))}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={cn(
                 "px-3 py-2 rounded-lg text-sm border",
                 isDark
@@ -134,10 +135,10 @@ export function AITab({ isDark }: AITabProps) {
                   : "bg-white border-zinc-300 text-zinc-900"
               )}
             >
-              <option value={7}>Últimos 7 dias</option>
-              <option value={15}>Últimos 15 dias</option>
-              <option value={30}>Últimos 30 dias</option>
-              <option value={90}>Últimos 90 dias</option>
+              <option value={7} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 7 dias</option>
+              <option value={15} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 15 dias</option>
+              <option value={30} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 30 dias</option>
+              <option value={90} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 90 dias</option>
             </select>
           </div>
 

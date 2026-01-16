@@ -54,7 +54,6 @@ export function OverviewTab({ isDark }: OverviewTabProps) {
   // Handler para abrir conversa
   const handleOpenConversation = (conversationId: string) => {
     // TODO: Implementar navegação para a conversa (mudança de aba)
-    console.log('Abrir conversa:', conversationId);
   };
 
   // Período de comparação formatado
@@ -74,6 +73,7 @@ export function OverviewTab({ isDark }: OverviewTabProps) {
           <select
             value={periodDays}
             onChange={(e) => setPeriodDays(e.target.value)}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             className={cn(
               'h-9 px-3 py-2 rounded-lg text-sm border transition-colors',
               isDark
@@ -81,10 +81,10 @@ export function OverviewTab({ isDark }: OverviewTabProps) {
                 : 'bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400'
             )}
           >
-            <option value="7">Últimos 7 dias</option>
-            <option value="15">Últimos 15 dias</option>
-            <option value="30">Últimos 30 dias</option>
-            <option value="90">Últimos 90 dias</option>
+            <option value="7" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 7 dias</option>
+            <option value="15" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 15 dias</option>
+            <option value="30" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 30 dias</option>
+            <option value="90" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Últimos 90 dias</option>
           </select>
         </div>
 
@@ -96,6 +96,7 @@ export function OverviewTab({ isDark }: OverviewTabProps) {
           <select
             value={funnelFilter}
             onChange={(e) => setFunnelFilter(e.target.value as 'all' | 'inbound' | 'outbound')}
+            style={isDark ? { colorScheme: 'dark' } : undefined}
             className={cn(
               'h-9 px-3 py-2 rounded-lg text-sm border transition-colors',
               isDark
@@ -103,9 +104,9 @@ export function OverviewTab({ isDark }: OverviewTabProps) {
                 : 'bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400'
             )}
           >
-            <option value="all">Todos</option>
-            <option value="inbound">Inbound</option>
-            <option value="outbound">Outbound</option>
+            <option value="all" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Todos</option>
+            <option value="inbound" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Inbound</option>
+            <option value="outbound" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Outbound</option>
           </select>
         </div>
 

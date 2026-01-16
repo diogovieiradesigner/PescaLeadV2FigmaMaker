@@ -40,7 +40,6 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
     
     setLoadingColumns(true);
     try {
-      console.log('[EDIT LEAD MODAL] 🔄 Buscando colunas do funil para workspace:', currentWorkspace.id);
       
       // Buscar o funil ativo do workspace
       const { data: funnels, error: funnelError } = await supabase
@@ -56,7 +55,6 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
       }
 
       if (!funnels?.id) {
-        console.log('[EDIT LEAD MODAL] ⚠️ Nenhum funil encontrado');
         return;
       }
 
@@ -80,7 +78,6 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
           color: col.color || undefined
         }));
         
-        console.log('[EDIT LEAD MODAL] ✅ Colunas carregadas:', mappedColumns.length);
         setFunnelColumns(mappedColumns);
       }
     } catch (error) {
@@ -139,13 +136,11 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
     
     setLoadingCustomFields(true);
     try {
-      console.log('[EDIT LEAD MODAL] 🔄 Carregando custom fields para lead:', leadId);
       const { customFields, error } = await loadCustomFieldsForLead(leadId, currentWorkspace.id);
       
       if (error) {
         console.error('[EDIT LEAD MODAL] ❌ Erro ao carregar custom fields:', error);
       } else if (customFields.length > 0) {
-        console.log('[EDIT LEAD MODAL] ✅ Custom fields carregados:', customFields.length);
         setFormData(prev => prev ? { ...prev, customFields } : null);
       }
     } catch (error) {
@@ -161,7 +156,6 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[EDIT LEAD MODAL] Saving lead:', { formData, mode, initialStatus });
     onSave(formData);
     onClose();
   };
@@ -277,7 +271,7 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
 
         {/* Form */}
         <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto scrollbar-thin">
             {/* Basic Information */}
             <div>
               <h3 className={`text-sm mb-4 ${
@@ -350,16 +344,17 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value as CRMLead['priority'] })}
+                    style={isDark ? { colorScheme: 'dark' } : undefined}
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.08] text-white'
                         : 'bg-light-elevated border-border-light text-text-primary-light'
                     }`}
                   >
-                    <option value="">Selecione...</option>
-                    <option value="low">Baixa</option>
-                    <option value="medium">Média</option>
-                    <option value="high">Alta</option>
+                    <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione...</option>
+                    <option value="low" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Baixa</option>
+                    <option value="medium" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Média</option>
+                    <option value="high" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Alta</option>
                   </select>
                 </div>
 
@@ -392,6 +387,7 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                     onChange={(e) => setFormData({ ...formData, columnId: e.target.value })}
                     required
                     disabled={loadingColumns || funnelColumns.length === 0}
+                    style={isDark ? { colorScheme: 'dark' } : undefined}
                     className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.08] text-white disabled:opacity-50'
@@ -399,14 +395,14 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                     }`}
                   >
                     {loadingColumns ? (
-                      <option value="">Carregando colunas...</option>
+                      <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Carregando colunas...</option>
                     ) : funnelColumns.length === 0 ? (
-                      <option value="">Nenhuma coluna disponível</option>
+                      <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Nenhuma coluna disponível</option>
                     ) : (
                       <>
-                        <option value="">Selecione a etapa...</option>
+                        <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione a etapa...</option>
                         {funnelColumns.map((column) => (
-                          <option key={column.id} value={column.id}>
+                          <option key={column.id} value={column.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                             {column.title}
                           </option>
                         ))}
@@ -537,6 +533,7 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                       <select
                         value={newFieldType}
                         onChange={(e) => setNewFieldType(e.target.value as CustomField['fieldType'])}
+                        style={isDark ? { colorScheme: 'dark' } : undefined}
                         className={`w-full px-3 py-1.5 rounded-lg border text-sm transition-colors focus:outline-none focus:border-[#0169D9] ${
                           isDark
                             ? 'bg-white/[0.05] border-white/[0.08] text-white'
@@ -544,7 +541,7 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                         }`}
                       >
                         {Object.entries(fieldTypeLabels).map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
+                          <option key={value} value={value} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>{label}</option>
                         ))}
                       </select>
                     </div>
@@ -602,14 +599,15 @@ export function EditLeadModal({ lead, isOpen, onClose, onSave, mode, initialStat
                         <select
                           value={field.fieldType}
                           onChange={(e) => handleCustomFieldChange(field.id, e.target.value as any, 'fieldType')}
+                          style={isDark ? { colorScheme: 'dark' } : undefined}
                           className={`bg-transparent border rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:border-[#0169D9] transition-colors ${
-                            isDark 
-                              ? 'border-white/20 text-white/70' 
+                            isDark
+                              ? 'border-white/20 text-white/70'
                               : 'border-gray-300 text-gray-600'
                           }`}
                         >
                           {Object.entries(fieldTypeLabels).map(([type, label]) => (
-                            <option key={type} value={type} className={isDark ? 'bg-gray-800' : 'bg-white'}>
+                            <option key={type} value={type} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                               {label}
                             </option>
                           ))}

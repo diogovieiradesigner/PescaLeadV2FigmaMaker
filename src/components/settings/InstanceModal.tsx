@@ -306,6 +306,7 @@ export function InstanceModal({ theme, instance, inboxes, onClose, onSave }: Ins
             <select
               value={formData.provider}
               onChange={(e) => setFormData({ ...formData, provider: e.target.value as any })}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={`w-full border px-3 py-2 rounded-lg transition-all focus:outline-none focus:border-[#0169D9] ${
                 isDark
                   ? 'bg-true-black border-white/[0.08] text-white'
@@ -313,8 +314,8 @@ export function InstanceModal({ theme, instance, inboxes, onClose, onSave }: Ins
               }`}
               required
             >
-              <option value="evolution">Evolution API</option>
-              <option value="uazapi">Uazapi</option>
+              <option value="evolution" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Evolution API</option>
+              <option value="uazapi" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Uazapi</option>
             </select>
           </div>
 

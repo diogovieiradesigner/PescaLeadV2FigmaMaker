@@ -21,7 +21,7 @@ export interface LeadDocumentFolder {
 }
 
 export interface CreateFolderInput {
-  lead_id: string;
+  lead_id: string | null;
   workspace_id: string;
   name: string;
   color?: string;
@@ -56,7 +56,7 @@ export interface LeadDocument {
 }
 
 export interface CreateDocumentInput {
-  lead_id: string;
+  lead_id: string | null;
   workspace_id: string;
   folder_id?: string | null;
   title?: string;
@@ -66,6 +66,7 @@ export interface CreateDocumentInput {
 }
 
 export interface UpdateDocumentInput {
+  lead_id?: string | null;
   folder_id?: string | null;
   title?: string;
   content?: JSONContent;

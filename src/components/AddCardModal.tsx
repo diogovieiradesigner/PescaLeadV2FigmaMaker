@@ -152,15 +152,16 @@ export function AddCardModal({ isOpen, onClose, columnTitle, onAdd, theme }: Add
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value as 'high' | 'medium' | 'low' })}
+                    style={isDark ? { colorScheme: 'dark' } : undefined}
                     className={`w-full border px-4 py-2 rounded-lg focus:outline-none focus:border-[#0169D9] transition-all ${
                       isDark
                         ? 'bg-true-black border-white/[0.08] text-white'
                         : 'bg-light-elevated border-border-light text-text-primary-light'
                     }`}
                   >
-                    <option value="high">Alta</option>
-                    <option value="medium">Média</option>
-                    <option value="low">Baixa</option>
+                    <option value="high" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Alta</option>
+                    <option value="medium" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Média</option>
+                    <option value="low" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Baixa</option>
                   </select>
                 </div>
 

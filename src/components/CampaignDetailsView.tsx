@@ -443,7 +443,6 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
 
     // Se o workspace mudou, voltar para a lista
     if (currentWorkspace.id !== initialWorkspaceId.current) {
-      console.log('🔄 Workspace mudou, voltando para a lista de campanhas...');
       toast.info('Workspace alterado. Redirecionando...');
       onBack();
     }
@@ -477,7 +476,6 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
         return;
       }
 
-      console.log('Analytics carregado:', data);
       setAnalytics(data);
     } catch (err) {
       console.error('Erro ao buscar analytics:', err);
@@ -501,7 +499,6 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
     }
 
     const interval = setInterval(() => {
-      console.log('Auto-refresh: recarregando dados da campanha...');
       loadRunDetails();
     }, 20000); // 20 segundos
 
@@ -613,7 +610,6 @@ export function CampaignDetailsView({ theme, onThemeToggle, runId, onBack, onNav
           return;
         }
 
-        console.log('Logs carregados:', data);
         
         if (reset) {
           setLogs(data.logs || []);

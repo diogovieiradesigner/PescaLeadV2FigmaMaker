@@ -21,7 +21,6 @@ export function useEngagementHeatmap(
       let result = data as any;
       
       if (!result || typeof result !== 'object') {
-        console.warn('[useEngagementHeatmap] Dados inválidos recebidos do RPC:', data);
         return {
           heatmap: {},
           best_slot: null,

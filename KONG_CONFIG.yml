@@ -1,0 +1,194 @@
+# Kong Configuration - Supabase Self-Hosted
+# Arquivo: kong-custom.yml
+# Aplicar em: /data/coolify/services/e400cgo4408ockg8oco4sk8w/kong-custom.yml
+# Data: 2026-01-05
+
+_format_version: "2.1"
+
+services:
+  # ============================================================================
+  # EDGE FUNCTIONS
+  # ============================================================================
+  - name: edge-functions
+    url: http://supabase-edge-functions:9999
+
+    routes:
+      # ==========================================================================
+      # ROTAS PÚBLICAS (SEM JWT, COM RATE LIMIT)
+      # ==========================================================================
+
+      # Health checks (monitoramento)
+      - name: health-checks
+        paths:
+          - ~/functions/v1/.*/health$
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "OPTIONS"]
+              headers: ["Content-Type", "Authorization", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+
+      # Widgets públicos (chat, booking, ai)
+      - name: public-widgets
+        paths:
+          - /functions/v1/widget-chat
+          - /functions/v1/public-booking
+          - /functions/v1/ai-public-chat
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "OPTIONS"]
+              headers: ["Content-Type", "Authorization", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 30
+              hour: 500
+              day: 5000
+              policy: local
+              fault_tolerant: true
+
+      # Webhooks externos (Make.com, Evolution, Uazapi)
+      - name: webhooks
+        paths:
+          - ~/functions/v1/.*-webhook$
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["POST", "OPTIONS"]
+              headers: ["Content-Type", "Authorization", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 60
+              hour: 1000
+              day: 10000
+              policy: local
+              fault_tolerant: true
+
+      # CNPJ API - Consultas públicas (apenas GET)
+      - name: cnpj-public-query
+        paths:
+          - /functions/v1/cnpj-api
+        methods: ["GET"]
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "OPTIONS"]
+              headers: ["Content-Type", "Authorization", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 60
+              hour: 500
+              day: 3000
+              policy: local
+              fault_tolerant: true
+
+      # ==========================================================================
+      # ROTAS AUTENTICADAS (JWT OBRIGATÓRIO)
+      # ==========================================================================
+
+      - name: authenticated-functions
+        paths:
+          - /functions/v1
+        strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              secret_is_base64: false
+              key_claim_name: iss
+              header_names:
+                - authorization
+          - name: cors
+            config:
+              origins:
+                - https://pescalead.com.br
+                - https://www.pescalead.com.br
+                - https://app.pescalead.com.br
+                - https://supabase.pescalead.com.br
+              credentials: true
+              methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+              headers: ["Content-Type", "Authorization", "apikey", "x-client-info"]
+          - name: rate-limiting
+            config:
+              minute: 600
+              hour: 20000
+              day: 200000
+              policy: local
+              fault_tolerant: true
+
+  # ============================================================================
+  # AUTH API (Login/Signup)
+  # ============================================================================
+  - name: auth-api
+    url: http://supabase-auth:9999
+
+    routes:
+      # Rate limiting agressivo para login (brute-force protection)
+      - name: auth-token
+        paths:
+          - /auth/v1/token
+        methods: ["POST"]
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["POST", "OPTIONS"]
+              headers: ["Content-Type", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 5
+              hour: 20
+              day: 100
+              policy: local
+              fault_tolerant: false
+              hide_client_headers: false
+
+      # Signup também precisa rate limit
+      - name: auth-signup
+        paths:
+          - /auth/v1/signup
+        methods: ["POST"]
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["POST", "OPTIONS"]
+              headers: ["Content-Type", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 2
+              hour: 10
+              day: 50
+              policy: local
+
+      # Outras rotas de auth (health, verify, etc)
+      - name: auth-other
+        paths:
+          - /auth/v1
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+              headers: ["Content-Type", "Authorization", "apikey"]
+          - name: rate-limiting
+            config:
+              minute: 60
+              hour: 500
+              policy: local

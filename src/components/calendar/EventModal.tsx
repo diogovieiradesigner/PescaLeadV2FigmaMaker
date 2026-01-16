@@ -7,9 +7,6 @@ import {
   Phone,
   Monitor,
   Bell,
-  Zap,
-  CheckSquare,
-  CheckCircle,
   MapPin,
   User,
   UserCheck,
@@ -88,7 +85,6 @@ interface EventModalProps {
   onCancel: (eventId: string, reason?: string) => Promise<void>;
   onDelete: (eventId: string) => Promise<void>;
   onResume?: (eventId: string) => Promise<void>;
-  onComplete?: (eventId: string) => Promise<void>;
 }
 
 const EVENT_ICONS: Record<EventType, React.ElementType> = {
@@ -96,8 +92,6 @@ const EVENT_ICONS: Record<EventType, React.ElementType> = {
   call: Phone,
   demo: Monitor,
   reminder: Bell,
-  action: Zap,
-  task: CheckSquare,
 };
 
 export function EventModal({
@@ -113,7 +107,6 @@ export function EventModal({
   onCancel,
   onDelete,
   onResume,
-  onComplete,
 }: EventModalProps) {
   const isDark = theme === 'dark';
   const isEditing = !!event;
@@ -131,7 +124,6 @@ export function EventModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [dateError, setDateError] = useState<string | null>(null);
-  const [timeError, setTimeError] = useState<string | null>(null);
 
   // Lead search state
   const [selectedLead, setSelectedLead] = useState<LeadOption | null>(null);
@@ -299,64 +291,8 @@ export function EventModal({
       setTitle('');
       setDescription('');
       setEventType('meeting');
-
-      // Use today's date and next valid time for new events
-      const now = new Date();
-      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const selectedDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
-
-      // Check if selectedDate has a specific time set (not midnight default)
-      const selectedHours = selectedDate.getHours();
-      const selectedMinutes = selectedDate.getMinutes();
-      const hasSpecificTime = selectedHours !== 0 || selectedMinutes !== 0;
-
-      // If selected date is today or in the past, use today with appropriate time
-      if (selectedDateStr <= todayStr) {
-        setDate(todayStr);
-
-        if (hasSpecificTime) {
-          // Use the specific time from selectedDate if it's in the future
-          const selectedTimeStr = `${String(selectedHours).padStart(2, '0')}:${String(selectedMinutes).padStart(2, '0')}`;
-          const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-          if (selectedDateStr === todayStr && selectedTimeStr >= currentTimeStr) {
-            setStartTime(selectedTimeStr);
-          } else {
-            // Round up to next 15-minute interval
-            const minutes = now.getMinutes();
-            const roundedMinutes = Math.ceil(minutes / 15) * 15;
-            if (roundedMinutes >= 60) {
-              now.setHours(now.getHours() + 1);
-              now.setMinutes(0);
-            } else {
-              now.setMinutes(roundedMinutes);
-            }
-            setStartTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-          }
-        } else {
-          // Round up to next 15-minute interval
-          const minutes = now.getMinutes();
-          const roundedMinutes = Math.ceil(minutes / 15) * 15;
-          if (roundedMinutes >= 60) {
-            now.setHours(now.getHours() + 1);
-            now.setMinutes(0);
-          } else {
-            now.setMinutes(roundedMinutes);
-          }
-          setStartTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-        }
-      } else {
-        // Future date selected
-        setDate(selectedDateStr);
-        if (hasSpecificTime) {
-          // Use the specific time from selectedDate
-          setStartTime(`${String(selectedHours).padStart(2, '0')}:${String(selectedMinutes).padStart(2, '0')}`);
-        } else {
-          // Default to 09:00
-          setStartTime('09:00');
-        }
-      }
-
+      setDate(selectedDate.toISOString().split('T')[0]);
+      setStartTime('09:00');
       setDuration(settings?.default_durations?.meeting || 60);
       setLocation('');
       setSelectedLead(null);
@@ -370,7 +306,6 @@ export function EventModal({
     setLeadSearchResults([]);
     setShowLeadDropdown(false);
     setDateError(null);
-    setTimeError(null);
   }, [event, selectedDate, settings, loadReminders]);
 
   // Update duration when event type changes
@@ -386,47 +321,12 @@ export function EventModal({
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   }, []);
 
-  // Helper: Get current time string in HH:MM format
-  const getCurrentTimeString = useCallback(() => {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  }, []);
-
-  // Helper: Get next valid time (rounds up to next 15-minute interval)
-  const getNextValidTime = useCallback(() => {
-    const now = new Date();
-    const minutes = now.getMinutes();
-    const roundedMinutes = Math.ceil(minutes / 15) * 15;
-
-    if (roundedMinutes >= 60) {
-      now.setHours(now.getHours() + 1);
-      now.setMinutes(0);
-    } else {
-      now.setMinutes(roundedMinutes);
-    }
-
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  }, []);
-
   // Helper: Check if a date string is in the past (comparing only dates, not times)
   const isDateInPast = useCallback((dateStr: string) => {
     if (!dateStr) return false;
     const today = getTodayString();
     return dateStr < today;
   }, [getTodayString]);
-
-  // Helper: Check if a date is today
-  const isToday = useCallback((dateStr: string) => {
-    if (!dateStr) return false;
-    return dateStr === getTodayString();
-  }, [getTodayString]);
-
-  // Helper: Check if a time is in the past for today's date
-  const isTimeInPastForToday = useCallback((timeStr: string, dateStr: string) => {
-    if (!timeStr || !dateStr) return false;
-    if (!isToday(dateStr)) return false;
-    return timeStr < getCurrentTimeString();
-  }, [isToday, getCurrentTimeString]);
 
   // Helper: Handle date change with validation
   const handleDateChange = useCallback((newDate: string) => {
@@ -437,26 +337,7 @@ export function EventModal({
     }
     setDateError(null);
     setDate(newDate);
-
-    // Re-validate time when date changes
-    if (!isEditing && isToday(newDate) && isTimeInPastForToday(startTime, newDate)) {
-      setTimeError('Não é possível selecionar horários passados');
-    } else {
-      setTimeError(null);
-    }
-  }, [isEditing, isDateInPast, isToday, isTimeInPastForToday, startTime]);
-
-  // Helper: Handle time change with validation
-  const handleTimeChange = useCallback((newTime: string) => {
-    if (!isEditing && isTimeInPastForToday(newTime, date)) {
-      setTimeError('Não é possível selecionar horários passados');
-      // Still update time but show error
-      setStartTime(newTime);
-      return;
-    }
-    setTimeError(null);
-    setStartTime(newTime);
-  }, [isEditing, isTimeInPastForToday, date]);
+  }, [isEditing, isDateInPast]);
 
   // Helper: Check if event date/time is in the past
   const isEventInPast = useCallback(() => {
@@ -553,14 +434,14 @@ export function EventModal({
       if (isEditing && event) {
         await onUpdate(event.id, {
           title: title.trim(),
-          description: description.trim() || null,
+          description: description.trim() || undefined,
           event_type: eventType,
           start_time: startDateTime.toISOString(),
           end_time: endDateTime.toISOString(),
-          location: location.trim() || null,
-          lead_id: selectedLead?.id || null,
-          inbox_id: selectedLead && selectedInboxId ? selectedInboxId : null,
-          assigned_to: selectedAssignee?.id || null,
+          location: location.trim() || undefined,
+          lead_id: selectedLead?.id || undefined,
+          inbox_id: selectedLead && selectedInboxId ? selectedInboxId : undefined,
+          assigned_to: selectedAssignee?.id || undefined,
         });
 
         // Save reminders if lead is selected
@@ -656,44 +537,19 @@ export function EventModal({
           )}>
             {isEditing ? 'Editar Evento' : 'Novo Evento'}
           </h2>
-          <div className="flex items-center gap-2">
-            {/* Botão Concluir - apenas para eventos editáveis (não cancelados/concluídos) */}
-            {isEditing && event?.event_status !== 'cancelled' && event?.event_status !== 'completed' && onComplete && (
-              <button
-                type="button"
-                onClick={async () => {
-                  setIsSubmitting(true);
-                  try {
-                    await onComplete(event!.id);
-                  } finally {
-                    setIsSubmitting(false);
-                  }
-                }}
-                disabled={isSubmitting}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                  'bg-green-600 hover:bg-green-700 text-white',
-                  'disabled:opacity-50 disabled:cursor-not-allowed'
-                )}
-              >
-                <CheckCircle className="w-4 h-4" />
-                Concluir
-              </button>
+          <button
+            onClick={onClose}
+            className={cn(
+              'p-2 rounded-lg transition-colors',
+              isDark ? 'hover:bg-white/5 text-white/70' : 'hover:bg-gray-100 text-gray-500'
             )}
-            <button
-              onClick={onClose}
-              className={cn(
-                'p-2 rounded-lg transition-colors',
-                isDark ? 'hover:bg-white/5 text-white/70' : 'hover:bg-gray-100 text-gray-500'
-              )}
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin">
           {/* Event Type Selector */}
           <div>
             <label className={cn(
@@ -804,22 +660,15 @@ export function EventModal({
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                min={!isEditing && isToday(date) ? getCurrentTimeString() : undefined}
+                onChange={(e) => setStartTime(e.target.value)}
                 required
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
                   isDark
                     ? 'bg-white/5 border-white/10 text-white focus:border-blue-500'
-                    : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500',
-                  timeError && (isDark ? 'border-red-500' : 'border-red-500')
+                    : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
                 )}
               />
-              {timeError && (
-                <p className={cn('mt-1 text-xs', isDark ? 'text-red-400' : 'text-red-500')}>
-                  {timeError}
-                </p>
-              )}
             </div>
           </div>
 
@@ -834,6 +683,7 @@ export function EventModal({
             <select
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
                 isDark
@@ -842,7 +692,7 @@ export function EventModal({
               )}
             >
               {DURATION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+                <option key={opt.value} value={opt.value} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                   {opt.label}
                 </option>
               ))}
@@ -965,7 +815,7 @@ export function EventModal({
                 {/* Dropdown Results */}
                 {showLeadDropdown && leadSearchResults.length > 0 && (
                   <div className={cn(
-                    'absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-48 overflow-y-auto',
+                    'absolute z-10 w-full mt-1 rounded-lg border shadow-lg max-h-48 overflow-y-auto scrollbar-thin',
                     isDark ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-gray-200'
                   )}>
                     {leadSearchResults.map((lead) => (
@@ -1072,6 +922,7 @@ export function EventModal({
                     setSelectedAssignee(member);
                   }
                 }}
+                style={isDark ? { colorScheme: 'dark' } : undefined}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
                   isDark
@@ -1079,9 +930,9 @@ export function EventModal({
                     : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
                 )}
               >
-                <option value="">Selecionar responsável...</option>
+                <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecionar responsável...</option>
                 {members.map((member) => (
-                  <option key={member.id} value={member.id}>
+                  <option key={member.id} value={member.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                     {member.name}
                   </option>
                 ))}
@@ -1144,6 +995,7 @@ export function EventModal({
                       value={selectedInboxId}
                       onChange={(e) => setSelectedInboxId(e.target.value)}
                       disabled={isLoadingInboxes || inboxes.length === 0}
+                      style={isDark ? { colorScheme: 'dark' } : undefined}
                       className={cn(
                         'w-full px-3 py-2 rounded-lg border text-sm transition-colors',
                         isDark
@@ -1153,12 +1005,12 @@ export function EventModal({
                       )}
                     >
                       {isLoadingInboxes ? (
-                        <option value="">Carregando...</option>
+                        <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Carregando...</option>
                       ) : inboxes.length === 0 ? (
-                        <option value="">Nenhuma caixa disponível</option>
+                        <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Nenhuma caixa disponível</option>
                       ) : (
                         inboxes.map((inbox) => (
-                          <option key={inbox.id} value={inbox.id}>
+                          <option key={inbox.id} value={inbox.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                             {inbox.name}
                           </option>
                         ))
@@ -1354,45 +1206,6 @@ export function EventModal({
                   Excluir
                 </button>
               </>
-            ) : isEditing && event?.event_status === 'completed' ? (
-              <>
-                {onResume && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setIsSubmitting(true);
-                      try {
-                        await onResume(event.id);
-                      } finally {
-                        setIsSubmitting(false);
-                      }
-                    }}
-                    disabled={isSubmitting}
-                    className={cn(
-                      'px-3 py-2 rounded-lg text-sm transition-colors',
-                      isDark
-                        ? 'text-amber-400 hover:bg-amber-500/10'
-                        : 'text-amber-600 hover:bg-amber-50'
-                    )}
-                  >
-                    <RotateCcw className="w-4 h-4 inline mr-1" />
-                    Reabrir evento
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className={cn(
-                    'px-3 py-2 rounded-lg text-sm transition-colors',
-                    isDark
-                      ? 'text-red-400 hover:bg-red-500/10'
-                      : 'text-red-600 hover:bg-red-50'
-                  )}
-                >
-                  <Trash2 className="w-4 h-4 inline mr-1" />
-                  Excluir
-                </button>
-              </>
             ) : isEditing ? (
               <>
                 <button
@@ -1438,10 +1251,10 @@ export function EventModal({
             >
               Fechar
             </button>
-            {event?.event_status !== 'cancelled' && event?.event_status !== 'completed' && (
+            {event?.event_status !== 'cancelled' && (
               <button
                 onClick={handleSubmit}
-                disabled={isSubmitting || !title.trim() || !!dateError || !!timeError}
+                disabled={isSubmitting || !title.trim()}
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                   'bg-blue-600 hover:bg-blue-700 text-white',

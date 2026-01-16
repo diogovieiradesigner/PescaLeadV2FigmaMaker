@@ -33,7 +33,6 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   const [selectedEvent, setSelectedEvent] = useState<InternalEventWithRelations | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(initialAssigneeFilter || null);
-  const [selectedDateForModal, setSelectedDateForModal] = useState<Date>(initialDate || new Date());
 
   // Calcular range do mês atual
   const dateRange = useMemo(() => {
@@ -59,7 +58,6 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
 
       // Se não houver calendário, criar o padrão
       if (existing.length === 0) {
-        console.log('[useCalendar] No calendar found, creating default...');
         const defaultCalendar = await calendarService.ensureDefaultCalendar(workspaceId);
         return [defaultCalendar];
       }
@@ -111,27 +109,14 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   } = useQuery({
     queryKey: ['calendar-settings', workspaceId],
     queryFn: async () => {
-      console.log('[useCalendar] Fetching calendar settings for workspace:', workspaceId);
       // Buscar settings do workspace (sem filtro de calendário específico)
       const result = await calendarService.fetchCalendarSettings(workspaceId);
-      console.log('[useCalendar] Calendar settings fetched:', {
-        hasResult: !!result,
-        resultId: result?.id,
-        availability: result?.availability,
-        buffer_between_events: result?.buffer_between_events,
-      });
       return result;
     },
     enabled: !!workspaceId,
   });
 
   // DEBUG: Log quando settings muda
-  console.log('[useCalendar] Current settings state:', {
-    hasSettings: !!settings,
-    settingsId: settings?.id,
-    dataUpdatedAt,
-    isLoadingSettings,
-  });
 
   // ============================================
   // MUTATIONS
@@ -186,44 +171,21 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
 
   // Retomar evento cancelado
   const resumeEventMutation = useMutation({
-    mutationFn: ({ eventId }: { eventId: string; closeModal?: boolean }) =>
+    mutationFn: (eventId: string) =>
       calendarService.updateEvent(eventId, {
         event_status: 'tentative',
         cancelled_at: undefined,
         cancelled_reason: undefined,
       }),
-    onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
       toast.success('Evento retomado!');
-      if (variables.closeModal !== false) {
-        setIsEventModalOpen(false);
-        setSelectedEvent(null);
-      }
+      setIsEventModalOpen(false);
+      setSelectedEvent(null);
     },
     onError: (error: any) => {
       console.error('[useCalendar] Error resuming event:', error);
       toast.error('Erro ao retomar evento');
-    },
-  });
-
-  // Concluir evento
-  const completeEventMutation = useMutation({
-    mutationFn: ({ eventId }: { eventId: string; closeModal?: boolean }) =>
-      calendarService.updateEvent(eventId, {
-        event_status: 'completed',
-        completed_at: new Date().toISOString(),
-      }),
-    onSuccess: async (_data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: ['calendar-events', workspaceId] });
-      toast.success('Evento concluído!');
-      if (variables.closeModal !== false) {
-        setIsEventModalOpen(false);
-        setSelectedEvent(null);
-      }
-    },
-    onError: (error: any) => {
-      console.error('[useCalendar] Error completing event:', error);
-      toast.error('Erro ao concluir evento');
     },
   });
 
@@ -297,13 +259,11 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   // Abrir modal para criar evento
   const openCreateEventModal = useCallback((date?: Date) => {
     setSelectedEvent(null);
-    const dateToUse = date || currentDate;
-    setSelectedDateForModal(dateToUse);
     if (date) {
       setCurrentDate(date);
     }
     setIsEventModalOpen(true);
-  }, [currentDate]);
+  }, []);
 
   // Abrir modal para editar evento
   const openEditEventModal = useCallback((event: InternalEventWithRelations) => {
@@ -357,14 +317,9 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   }, [cancelEventMutation]);
 
   // Retomar evento cancelado
-  const resumeEvent = useCallback(async (eventId: string, closeModal: boolean = true) => {
-    await resumeEventMutation.mutateAsync({ eventId, closeModal });
+  const resumeEvent = useCallback(async (eventId: string) => {
+    await resumeEventMutation.mutateAsync(eventId);
   }, [resumeEventMutation]);
-
-  // Concluir evento
-  const completeEvent = useCallback(async (eventId: string, closeModal: boolean = true) => {
-    await completeEventMutation.mutateAsync({ eventId, closeModal });
-  }, [completeEventMutation]);
 
   // Confirmar evento
   const confirmEvent = useCallback(async (eventId: string, method: 'manual' | 'whatsapp' | 'email' | 'ai' = 'manual') => {
@@ -443,7 +398,6 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
   const isMutating = createEventMutation.isPending ||
                      updateEventMutation.isPending ||
                      cancelEventMutation.isPending ||
-                     completeEventMutation.isPending ||
                      deleteEventMutation.isPending;
 
   return {
@@ -452,7 +406,6 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
     selectedEvent,
     isEventModalOpen,
     assigneeFilter,
-    selectedDateForModal,
 
     // Data
     calendars,
@@ -495,7 +448,6 @@ export function useCalendar({ workspaceId, calendarId, initialDate, initialAssig
     updateEvent,
     cancelEvent,
     resumeEvent,
-    completeEvent,
     confirmEvent,
     deleteEvent,
     checkAvailability,

@@ -114,8 +114,6 @@ export function PublicBooking({ slug }: PublicBookingProps) {
       setError(null);
 
       const result = await getWorkspaceBySlug(slug);
-      console.log('[PublicBooking] Loaded settings:', result?.settings);
-      console.log('[PublicBooking] Theme from settings:', result?.settings?.booking_page_theme);
       if (result) {
         setWorkspace(result.workspace);
         setSettings(result.settings);

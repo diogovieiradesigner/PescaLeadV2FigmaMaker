@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase/client';
 
-const RAG_MANAGE_URL = 'https://nlbcwaxkeaddfocigwuk.supabase.co/functions/v1/ai-rag-manage';
+const RAG_MANAGE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-rag-manage`;
 
 interface RagCollection {
   id: string;
@@ -47,7 +47,6 @@ export function useRagStore(agentId: string | null): UseRagStoreReturn {
           throw fetchError;
         }
 
-        console.log('[useRagStore] Collection loaded:', data?.name || 'None');
         setCollection(data);
       } catch (err: any) {
         console.error('[useRagStore] Error:', err);
@@ -68,13 +67,21 @@ export function useRagStore(agentId: string | null): UseRagStoreReturn {
       throw new Error('Agent ID is required');
     }
 
-    console.log('[useRagStore] Creating new store for agent:', agentId);
     setIsLoading(true);
-    
+
     try {
+      // Obter token de autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Usuário não autenticado');
+      }
+
       const response = await fetch(RAG_MANAGE_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           action: 'create_store',
           agent_id: agentId
@@ -87,16 +94,38 @@ export function useRagStore(agentId: string | null): UseRagStoreReturn {
         throw new Error(result.error || 'Falha ao criar store');
       }
 
-      console.log('[useRagStore] Store created successfully');
+      // Aguardar um pouco para o banco atualizar
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Buscar collection criada
-      const { data, error: fetchError } = await supabase
-        .from('ai_rag_collections')
-        .select('*')
-        .eq('agent_id', agentId)
-        .single();
+      // Buscar collection criada com retry
+      let retries = 3;
+      let data = null;
 
-      if (fetchError) throw fetchError;
+      while (retries > 0 && !data) {
+        const { data: fetchedData, error: fetchError } = await supabase
+          .from('ai_rag_collections')
+          .select('*')
+          .eq('agent_id', agentId)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.error('[useRagStore] Fetch error:', fetchError);
+        }
+
+        if (fetchedData) {
+          data = fetchedData;
+          break;
+        }
+
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      if (!data) {
+        throw new Error('Store criado mas collection não encontrada. Tente novamente.');
+      }
 
       setCollection(data);
       return data;

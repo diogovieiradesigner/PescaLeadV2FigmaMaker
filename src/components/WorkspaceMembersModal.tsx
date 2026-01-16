@@ -139,7 +139,7 @@ export function WorkspaceMembersModal({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-6 max-h-[70vh] overflow-y-auto">
+        <div className="px-6 py-6 max-h-[70vh] overflow-y-auto scrollbar-thin">
           {/* Create Invite Section - Only for admins */}
           {isAdmin && (
             <div className="mb-6 p-4 rounded-lg bg-white/[0.03] border border-white/[0.08]">
@@ -156,10 +156,11 @@ export function WorkspaceMembersModal({
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
+                    style={{ colorScheme: 'dark' }}
                     className="w-full px-3 py-2 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white focus:outline-none focus:border-[#0169D9] transition-colors"
                   >
-                    <option value="member">Membro</option>
-                    <option value="admin">Administrador</option>
+                    <option value="member" className="bg-[#0a0a0a] text-white">Membro</option>
+                    <option value="admin" className="bg-[#0a0a0a] text-white">Administrador</option>
                   </select>
                 </div>
 

@@ -154,6 +154,31 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     return () => window.removeEventListener('keydown', handleEscape);
   }, [expandedImage]);
 
+  // ✅ Handle paste for images (Ctrl+V) - movido para antes do return condicional
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          // Inline processing para evitar dependência circular
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            setImagePreview(dataUrl);
+            setSelectedFile(null);
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  }, []);
+
   if (!conversation) {
     return (
       <div
@@ -205,12 +230,10 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
           hasContent &&
           (now - lastAttendantTypeChange) > DEBOUNCE_TIME) {
         
-        console.log('[ChatArea] 🤖→👤 Humano enviou mensagem, alterando para atendimento humano');
         
         try {
           await onAttendantTypeChange?.(conversation.id, 'human');
           setLastAttendantTypeChange(now);
-          console.log('[ChatArea] ✅ Tipo de atendimento alterado para humano');
         } catch (error) {
           console.error('[ChatArea] ❌ Erro ao alterar tipo de atendimento:', error);
           // Continuar mesmo com erro - a mensagem ainda deve ser enviada
@@ -223,7 +246,6 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
 
       // Se há imagem + texto, usar sendMedia com caption
       if (hasImage && hasText) {
-        console.log('[ChatArea] 📷+📝 Detectado imagem + texto simultâneo, enviando com caption');
         
         if (imagePreview) {
           // ✅ Limpar preview imediatamente (otimistic UI)
@@ -241,7 +263,6 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
           const fileToSend = selectedFile;
           setSelectedFile(null);
           
-          console.log(`[ChatArea] Sending image with caption: ${fileToSend.fileName}`);
           
           await onSendMessage({
             contentType: 'image',
@@ -271,7 +292,6 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
         const fileToSend = selectedFile;
         setSelectedFile(null);
 
-        console.log(`[ChatArea] Sending ${fileToSend.mediaType}: ${fileToSend.fileName}`);
 
         await onSendMessage({
           contentType: fileToSend.mediaType,
@@ -308,7 +328,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     if (e.metaKey || e.ctrlKey) {
       return; // Não interferir com atalhos do sistema
     }
-    
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -318,19 +338,15 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
   const startRecording = async () => {
     try {
       // ✅ Verificar permissão do microfone primeiro
-      console.log('[ChatArea] Requesting microphone permission...');
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      console.log('[ChatArea] Microphone permission granted!');
       
       // ✅ Tentar gravar em OGG (WhatsApp compatível), se não suportar usa WEBM
       let mimeType = 'audio/ogg; codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm; codecs=opus';
-        console.log('[ChatArea] Browser does not support audio/ogg, using audio/webm');
       } else {
-        console.log('[ChatArea] Recording in audio/ogg format');
       }
       
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
@@ -354,28 +370,10 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
         reader.onloadend = () => {
           const base64Audio = reader.result as string;
           
-          console.log('[ChatArea] Audio captured:', {
-            originalSize: audioBlob.size,
-            mimeType: audioBlob.type,
-            base64Length: base64Audio.length,
-            base64Prefix: base64Audio.substring(0, 50),
-            duration: actualDuration,
-            recordingTimeState: recordingTime,
-            recordingTimeRef: recordingTimeRef.current
-          });
           
           // ⚠️ IMPORTANTE: Garantir que a duração seja pelo menos 1 segundo
           const finalDuration = Math.max(actualDuration, 1);
           
-          console.log('🎤 [ChatArea] ==========================================');
-          console.log('🎤 [ChatArea] SENDING AUDIO MESSAGE');
-          console.log('🎤 [ChatArea] ==========================================');
-          console.log('   Final Duration:', finalDuration);
-          console.log('   Final Duration Type:', typeof finalDuration);
-          console.log('   Actual Duration:', actualDuration);
-          console.log('   Recording Time State:', recordingTime);
-          console.log('   Recording Time Ref:', recordingTimeRef.current);
-          console.log('🎤 [ChatArea] ==========================================');
           
           onSendMessage({
             contentType: 'audio',
@@ -403,7 +401,6 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
       
       // ✅ Feedback específico baseado no tipo de erro
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        console.warn('[ChatArea] ⚠️ Microfone bloqueado pelo usuário');
         // Mostrar toast se disponível, senão alert
         if (typeof window !== 'undefined' && (window as any).showToast) {
           (window as any).showToast('Permissão do microfone negada. Por favor, permita o acesso ao microfone nas configurações do navegador.', 'error');
@@ -464,7 +461,6 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
     const mimeType = file.type || 'application/octet-stream';
     const mediaType = getMediaType(mimeType);
 
-    console.log(`[ChatArea] Processing file: ${file.name}, type: ${mimeType}, mediaType: ${mediaType}`);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -787,6 +783,7 @@ export function ChatArea({ conversation, theme, onSendMessage, onMarkAsResolved,
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             onKeyDown={handleKeyPress}
+            onPaste={handlePaste}
             disabled={isRecording}
             className={`flex-1 border px-4 py-2 rounded-lg transition-all focus:outline-none focus:border-[#0169D9] ${
               isDark

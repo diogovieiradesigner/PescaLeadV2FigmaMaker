@@ -170,7 +170,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
     }
 
     return (
-      <div className="bg-elevated border border-white/[0.08] rounded-lg shadow-xl overflow-hidden min-w-[200px] max-h-[300px] overflow-y-auto">
+      <div className="bg-elevated border border-white/[0.08] rounded-lg shadow-xl overflow-hidden min-w-[200px] max-h-[300px] overflow-y-auto scrollbar-thin">
         {items.map((item, index) => (
           <button
             key={item.title}

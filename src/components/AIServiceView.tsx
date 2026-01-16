@@ -168,16 +168,10 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
       try {
         // ✅ Usar workspace do contexto de autenticação
         if (!currentWorkspace?.id) {
-          console.log('[AIServiceView] ⚠️ No current workspace in context');
           return;
         }
 
         const wsId = currentWorkspace.id;
-        console.log('[AIServiceView] ✅ Using workspace from context:', {
-          id: wsId,
-          name: currentWorkspace.name,
-          role: currentWorkspace.role
-        });
         setWorkspaceId(wsId);
 
         // Buscar agente existente para este workspace
@@ -195,14 +189,8 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
         }
 
         if (existingAgent) {
-          console.log('[AIServiceView] ✅ Agente existente encontrado:', {
-            id: existingAgent.id,
-            name: existingAgent.name,
-            created_at: existingAgent.created_at
-          });
           setExistingAgentId(existingAgent.id);
         } else {
-          console.log('[AIServiceView] ℹ️ Nenhum agente encontrado. Modo CRIAÇÃO ativado.');
           setExistingAgentId(null);
         }
 
@@ -343,7 +331,6 @@ function AgentsList({ isDark, theme }: { isDark: boolean; theme: 'dark' | 'light
                 isDark={isDark} 
                 agentId={existingAgentId}
                 onSaved={(savedId) => {
-                  console.log('[AIServiceView] Agent saved:', savedId);
                   setExistingAgentId(savedId);
                 }}
                 onHasChanges={setHasUnsavedChanges}
@@ -512,7 +499,6 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
         setWidgetConfigModalLink({ ...widgetConfigModalLink, [updateField]: publicUrl });
       }
 
-      console.log(`✅ Widget ${iconType} icon uploaded:`, publicUrl);
     } catch (err) {
       console.error('Error uploading widget icon:', err);
       alert('Erro ao fazer upload do ícone. Tente novamente.');
@@ -818,7 +804,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
                      </button>
 
                      {/* Conversations List */}
-                     <div className="max-h-[300px] overflow-y-auto">
+                     <div className="max-h-[300px] overflow-y-auto scrollbar-thin">
                        {previewConversations.length === 0 ? (
                          <div className={`px-4 py-6 text-center text-xs ${isDark ? 'text-white/40' : 'text-gray-400'}`}>
                            Nenhuma conversa ainda
@@ -1002,7 +988,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
                       </p>
                     </div>
 
-                    <div className="max-h-[300px] overflow-y-auto">
+                    <div className="max-h-[300px] overflow-y-auto scrollbar-thin">
                       {loadingLinks ? (
                         <div className="py-8 text-center">
                           <div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto" />
@@ -1671,6 +1657,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
                       const selected = publicLinks.find(l => l.id === e.target.value);
                       if (selected) setWidgetConfigModalLink(selected);
                     }}
+                    style={isDark ? { colorScheme: 'dark' } : undefined}
                     className={`w-full px-3 py-2 rounded-lg border text-sm ${
                       isDark
                         ? 'bg-white/[0.05] border-white/[0.1] text-white'
@@ -1678,7 +1665,7 @@ function AIBuilderChatIntegrated({ isDark, theme, agentId, workspaceId }: { isDa
                     }`}
                   >
                     {publicLinks.map(link => (
-                      <option key={link.id} value={link.id}>
+                      <option key={link.id} value={link.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                         {link.public_slug} {link.is_active ? '(Ativo)' : '(Inativo)'}
                       </option>
                     ))}

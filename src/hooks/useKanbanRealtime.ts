@@ -199,22 +199,17 @@ export function useKanbanRealtime(options: UseKanbanRealtimeOptions) {
       )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
-          console.log(`✅ [REALTIME] Kanban channel connected: ${channelName}`);
           setIsConnected(true);
         } else if (status === 'CHANNEL_ERROR') {
-          console.log(`⚠️ [REALTIME] Kanban channel error (silent): ${channelName}`, err?.message || '');
           setIsConnected(false);
         } else if (status === 'TIMED_OUT') {
-          console.log(`⏱️ [REALTIME] Kanban channel timeout: ${channelName}`);
           setIsConnected(false);
         } else if (status === 'CLOSED') {
-          console.log(`🔌 [REALTIME] Kanban channel closed: ${channelName}`);
           setIsConnected(false);
         }
       });
 
     return () => {
-      console.log(`🔌 [REALTIME] Disconnecting from channel ${channelName}`);
       supabase.removeChannel(channel);
       setIsConnected(false);
     };

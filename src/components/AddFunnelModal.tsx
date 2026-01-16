@@ -24,7 +24,6 @@ export function AddFunnelModal({ isOpen, onClose, onSave, theme }: AddFunnelModa
 
   const isDark = theme === 'dark';
 
-  console.log('[AddFunnelModal] Render:', { isOpen, theme });
 
   if (!isOpen) return null;
 
@@ -105,7 +104,7 @@ export function AddFunnelModal({ isOpen, onClose, onSave, theme }: AddFunnelModa
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto max-h-[calc(90vh-140px)] px-6 py-5">
+        <div className="overflow-y-auto scrollbar-thin max-h-[calc(90vh-140px)] px-6 py-5">
           {/* Funnel Name */}
           <div className="mb-6">
             <label

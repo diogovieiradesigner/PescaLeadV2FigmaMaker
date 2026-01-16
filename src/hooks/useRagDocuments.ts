@@ -50,7 +50,6 @@ export function useRagDocuments(agentId: string | null): UseRagDocumentsReturn {
         throw fetchError;
       }
 
-      console.log('[useRagDocuments] Documents loaded:', data?.length || 0);
       setDocuments(data || []);
     } catch (err: any) {
       console.error('[useRagDocuments] Error:', err);

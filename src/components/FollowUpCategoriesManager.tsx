@@ -52,7 +52,6 @@ export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refres
 
   const loadCategories = async () => {
     if (!workspaceId) {
-      console.warn('[FollowUpCategoriesManager] Workspace ID não disponível');
       setLoading(false);
       return;
     }
@@ -178,7 +177,6 @@ export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refres
       handleCloseModal();
       
       // ✅ Notificar mudança para sincronizar com FollowUpModelsManager
-      console.log('[FollowUpCategoriesManager] Notificando mudança de categorias');
       if (onCategoryChanged) {
         onCategoryChanged();
       }
@@ -228,6 +226,7 @@ export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refres
           value={followUpMode}
           onChange={(e) => handleFollowUpModeChange(e.target.value as 'ai_only' | 'human_only' | 'both' | 'disabled')}
           disabled={loadingMode}
+          style={isDark ? { colorScheme: 'dark' } : undefined}
           className={cn(
             "w-full px-3 py-2 rounded-lg border outline-none transition-colors",
             isDark
@@ -236,10 +235,10 @@ export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refres
             loadingMode && "opacity-50 cursor-not-allowed"
           )}
         >
-          <option value="ai_only">Apenas quando IA ativa</option>
-          <option value="human_only">Apenas quando atendimento humano</option>
-          <option value="both">IA e Humano</option>
-          <option value="disabled">Desabilitado</option>
+          <option value="ai_only" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Apenas quando IA ativa</option>
+          <option value="human_only" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Apenas quando atendimento humano</option>
+          <option value="both" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>IA e Humano</option>
+          <option value="disabled" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Desabilitado</option>
         </select>
       </div>
 
@@ -418,6 +417,7 @@ export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refres
                 id="availability"
                 value={formData.availability}
                 onChange={(e) => setFormData({ ...formData, availability: e.target.value as '24hrs' | 'business_hours' })}
+                style={isDark ? { colorScheme: 'dark' } : undefined}
                 className={cn(
                   "w-full px-4 py-2 border-b transition-all text-sm focus:outline-none",
                   isDark
@@ -425,8 +425,8 @@ export function FollowUpCategoriesManager({ isDark, agentId, workspaceId, refres
                     : "bg-white border-zinc-300 text-zinc-900 focus:border-[#0169D9]"
                 )}
               >
-                <option value="24hrs">Follow-ups 24hrs</option>
-                <option value="business_hours">Horário Comercial</option>
+                <option value="24hrs" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Follow-ups 24hrs</option>
+                <option value="business_hours" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Horário Comercial</option>
               </select>
             </div>
 

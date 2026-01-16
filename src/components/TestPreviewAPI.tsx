@@ -31,7 +31,6 @@ export function TestPreviewAPI() {
         throw new Error('Não autenticado');
       }
 
-      console.log('🔍 Chamando API...');
       
       const response = await fetch(
         `${API_BASE_URL}/functions/v1/ai-preview-chat`,
@@ -52,16 +51,8 @@ export function TestPreviewAPI() {
 
       const data = await response.json();
       
-      console.log('📦 Resposta completa:', data);
-      console.log('🔑 Chaves da resposta:', Object.keys(data));
-      console.log('📊 Pipeline presente:', !!data.pipeline);
       
       if (data.pipeline) {
-        console.log('✅ Pipeline:', {
-          id: data.pipeline.id,
-          status: data.pipeline.status,
-          steps: data.pipeline.steps?.length
-        });
       }
 
       setResult(data);

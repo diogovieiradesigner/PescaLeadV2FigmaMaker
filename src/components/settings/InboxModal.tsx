@@ -106,7 +106,7 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
         </div>
 
         {/* Content */}
-        <div className={`overflow-y-auto flex-1 ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
+        <div className={`overflow-y-auto scrollbar-thin flex-1 ${isDark ? 'bg-[#0A0A0A]' : ''}`}>
           <form onSubmit={handleSubmit} className="px-6 py-6 space-y-4">
           {/* Nome */}
           <div>
@@ -140,7 +140,7 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
             >
               Selecionar Membros com Acesso
             </label>
-            <div className={`border rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto ${
+            <div className={`border rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto scrollbar-thin ${
               isDark ? 'border-white/[0.08]' : 'border-border-light'
             }`}>
               {members.length === 0 ? (
@@ -184,7 +184,7 @@ export function InboxModal({ theme, inbox, members, instances, onClose, onSave }
             >
               Selecionar Instâncias
             </label>
-            <div className={`border rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto ${
+            <div className={`border rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto scrollbar-thin ${
               isDark ? 'border-white/[0.08]' : 'border-border-light'
             }`}>
               {instances.length === 0 ? (

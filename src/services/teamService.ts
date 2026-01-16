@@ -8,7 +8,6 @@ export async function inviteMemberByEmail(
   email: string,
   role: 'admin' | 'member' | 'viewer' = 'member'
 ) {
-  console.log('[TEAM-SERVICE] inviteMemberByEmail called:', { workspaceId, email, role });
 
   const { data: { session } } = await supabase.auth.getSession();
   
@@ -17,7 +16,6 @@ export async function inviteMemberByEmail(
     throw new Error('Não autenticado');
   }
 
-  console.log('[TEAM-SERVICE] Session found, access_token exists:', !!session.access_token);
 
   const url = `https://${projectId}.supabase.co/functions/v1/invite-member-by-email`;
   const payload = {
@@ -26,8 +24,6 @@ export async function inviteMemberByEmail(
     role
   };
 
-  console.log('[TEAM-SERVICE] Sending request to:', url);
-  console.log('[TEAM-SERVICE] Payload:', payload);
 
   try {
     const response = await fetch(url, {
@@ -39,11 +35,8 @@ export async function inviteMemberByEmail(
       body: JSON.stringify(payload),
     });
 
-    console.log('[TEAM-SERVICE] Response status:', response.status);
-    console.log('[TEAM-SERVICE] Response headers:', Object.fromEntries(response.headers.entries()));
 
     const data = await response.json();
-    console.log('[TEAM-SERVICE] Response data:', data);
     
     if (!response.ok) {
       console.error('[TEAM-SERVICE] Request failed:', data);
@@ -53,7 +46,6 @@ export async function inviteMemberByEmail(
       };
     }
 
-    console.log('[TEAM-SERVICE] Success:', data);
     return data;
   } catch (error) {
     console.error('[TEAM-SERVICE] Exception caught:', error);

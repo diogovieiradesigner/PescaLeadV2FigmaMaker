@@ -191,7 +191,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
   useEffect(() => {
     if (!workspaceId) return;
 
-    console.log('🔥 [useChatData] Setting up REALTIME subscriptions for workspace:', workspaceId);
 
     // Subscribe to conversations changes
     const conversationsChannel = supabase
@@ -209,36 +208,25 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           filter: `workspace_id=eq.${workspaceId}`,
         },
         async (payload) => {
-          console.log('✅ [REALTIME] Conversation change detected:', payload.eventType, payload);
-          console.log('📊 [REALTIME] Payload workspace_id:', payload.new?.workspace_id || payload.old?.workspace_id);
-          console.log('📊 [REALTIME] Current workspace_id:', workspaceId);
 
           if (payload.eventType === 'INSERT') {
             // Nova conversa criada
-            console.log('➕ [REALTIME] NEW CONVERSATION INSERTED!');
-            console.log('   Conversation ID:', payload.new.id);
-            console.log('   Workspace ID:', payload.new.workspace_id);
-            console.log('   Contact Name:', payload.new.contact_name);
             
             // ✅ Verificar se já existe ANTES de buscar os detalhes
             const exists = conversations.some(c => c.id === payload.new.id);
             if (exists) {
-              console.log('ℹ️ [REALTIME] Conversation already in state (possibly from pagination), skipping fetch:', payload.new.id);
               return;
             }
 
             setTotalConversations(prev => prev + 1);
             const newConversation = await fetchConversation(payload.new.id);
             if (newConversation) {
-              console.log('✅ [REALTIME] Adding new conversation:', newConversation.contactName);
               setConversations((prev) => {
                 // ✅ SEGURANÇA: Double check antes de adicionar (race condition protection)
                 const stillNotExists = !prev.some(c => c.id === newConversation.id);
                 if (stillNotExists) {
-                  console.log('🎉 [REALTIME] Conversation added to state! Total:', prev.length + 1);
                   return [newConversation, ...prev];
                 }
-                console.log('ℹ️ [REALTIME] Conversation was added by another event, skipping:', newConversation.id);
                 return prev;
               });
             } else {
@@ -269,7 +257,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
             );
           } else if (payload.eventType === 'DELETE') {
             // Conversa deletada
-            console.log('✅ [REALTIME] Deleting conversation:', payload.old.id);
             setTotalConversations(prev => Math.max(0, prev - 1));
             setConversations((prev) => prev.filter((conv) => conv.id !== payload.old.id));
           }
@@ -277,16 +264,12 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
       )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [REALTIME] Conversations channel CONNECTED!');
-          console.log('📡 [REALTIME] Listening for changes in workspace:', workspaceId);
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ [REALTIME] Conversations channel error:', err?.message || '', err);
         } else if (status === 'TIMED_OUT') {
           console.error('⏱️ [REALTIME] Conversations channel timeout - connection failed');
         } else if (status === 'CLOSED') {
-          console.log('🔌 [REALTIME] Conversations channel closed');
         } else {
-          console.log('🔄 [REALTIME] Conversations channel status:', status);
         }
       });
 
@@ -316,7 +299,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
 
             // Se a conversa não está no estado local, ignorar (pode ser de outro workspace)
             if (!existingConv) {
-              console.log('⚠️ [REALTIME] Message for unknown conversation, ignoring');
               return prev;
             }
 
@@ -395,18 +377,13 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
       )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
-          console.log('✅ [REALTIME] Messages channel CONNECTED!');
         } else if (status === 'CHANNEL_ERROR') {
-          console.log('⚠️ [REALTIME] Messages channel error (silent):', err?.message || '');
         } else if (status === 'TIMED_OUT') {
-          console.log('⏱️ [REALTIME] Messages channel timeout');
         } else if (status === 'CLOSED') {
-          console.log('🔌 [REALTIME] Messages channel closed');
         }
       });
 
     return () => {
-      console.log('🔌 [REALTIME] Cleaning up realtime subscriptions');
       conversationsChannel.unsubscribe();
       messagesChannel.unsubscribe();
     };
@@ -599,18 +576,9 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           );
         } else if (messageData.contentType === 'audio' && messageData.audioUrl) {
           // Enviar áudio via servidor (Evolution API)
-          console.log('🎤 [useChatData] ==========================================');
-          console.log('🎤 [useChatData] SENDING AUDIO MESSAGE');
-          console.log('🎤 [useChatData] ==========================================');
-          console.log('   Conversation ID:', conversationId);
-          console.log('   Audio URL length:', messageData.audioUrl?.length);
-          console.log('   Audio Duration (raw):', messageData.audioDuration);
-          console.log('   Audio Duration (type):', typeof messageData.audioDuration);
-          console.log('🎤 [useChatData] ==========================================');
           
           const result = await sendAudioViaServer(conversationId, workspaceId, messageData.audioUrl, messageData.audioDuration);
           
-          console.log('🎤 [useChatData] Audio sent successfully. Result:', result);
           
           // ✅ Atualizar mensagem temporária com dados reais
           setConversations((prev) =>
@@ -665,11 +633,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           );
         } else if ((messageData.contentType === 'document' || messageData.contentType === 'video') && messageData.mediaUrl) {
           // ✅ Enviar documento ou vídeo via servidor
-          console.log(`📎 [useChatData] Sending ${messageData.contentType}:`, {
-            fileName: messageData.fileName,
-            mimeType: messageData.mimeType,
-            fileSize: messageData.fileSize
-          });
 
           const result = await sendMediaViaServer(
             conversationId,
@@ -781,7 +744,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
       }
 
       try {
-        console.log(`[useChatData] Updating attendant type: ${conversationId} → ${attendantType}`);
 
         // ✅ Obter token do usuário autenticado
         const { data: { session } } = await supabase.auth.getSession();
@@ -817,7 +779,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           )
         );
 
-        console.log(`[useChatData] Attendant type updated successfully`);
       } catch (err) {
         console.error('[useChatData] Error updating attendant type:', err);
         throw err;
@@ -832,7 +793,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
         throw new Error('Workspace ID is required');
       }
 
-      console.log(`[useChatData] Deleting message: ${messageId}`);
 
       // ✅ FEEDBACK IMEDIATO: Update otimista + toast ANTES da API
       setConversations((prev) =>
@@ -873,7 +833,6 @@ export function useChatData({ workspaceId, searchQuery }: UseChatDataProps) {
           throw new Error(errorData.error || 'Failed to delete message');
         }
 
-        console.log(`[useChatData] Message deleted successfully`);
       } catch (err: any) {
         console.error('[useChatData] Error deleting message:', err);
         // ✅ Reverter update otimista em caso de erro

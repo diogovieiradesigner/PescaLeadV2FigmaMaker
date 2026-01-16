@@ -262,7 +262,6 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
 
     // Se o workspace mudou, voltar para a lista
     if (currentWorkspace.id !== initialWorkspaceId.current) {
-      console.log('🔄 Workspace mudou, voltando para a lista de extrações...');
       toast.info('Workspace alterado. Redirecionando...');
       if (onBack) {
         onBack();
@@ -283,7 +282,6 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
     const status = analytics.run.status;
     if (status === 'completed' || status === 'failed' || status === 'cancelled') return;
 
-    console.log('🔌 Conectando ao Realtime para run:', runId);
 
     const channel = supabase
       .channel(`run-${runId}`)
@@ -296,21 +294,16 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
           filter: `id=eq.${runId}`
         },
         (payload) => {
-          console.log('🔄 Run atualizado via Realtime:', payload.new);
           fetchData(); // Recarregar tudo
         }
       )
       .subscribe((status) => {
-        console.log('📡 Status da subscription Realtime:', status);
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Realtime conectado com sucesso!');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('⚠️ Realtime falhou. Usando polling como fallback.');
         }
       });
 
     return () => {
-      console.log('🔌 Desconectando Realtime para run:', runId);
       supabase.removeChannel(channel);
     };
   }, [runId, analytics?.run?.status]);
@@ -341,7 +334,6 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
 
     // Continuar polling se extração está rodando OU se enriquecimento está pendente
     if (!extractionRunning && !hasEnrichmentPending) {
-      console.log('✅ Polling finalizado - extração e enriquecimento completos');
       return;
     }
 
@@ -353,15 +345,12 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
     if (enrichmentStatus?.scraping.pending > 0) pendingItems.push(`Scraping: ${enrichmentStatus.scraping.pending}`);
     if (enrichmentStatus?.scraping.processing > 0) pendingItems.push(`Scraping em andamento: ${enrichmentStatus.scraping.processing}`);
 
-    console.log(`⏱️ Polling automático a cada ${pollInterval / 1000}s ${pendingItems.length > 0 ? `(Pendentes: ${pendingItems.join(', ')})` : ''}`);
 
     const interval = setInterval(() => {
-      console.log('🔄 Polling: Atualizando dados de enriquecimento...');
       fetchData();
     }, pollInterval);
 
     return () => {
-      console.log('⏹️ Polling interrompido');
       clearInterval(interval);
     };
   }, [
@@ -386,17 +375,12 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
       const data = await getExtractionAnalytics({ runId });
       setAnalytics(data);
 
-      console.log('📊 Analytics carregado:', data);
-      console.log('📞 Contatos:', data?.contatos);
-      console.log('📈 Run:', data?.run);
 
       // Buscar status de enriquecimento
       try {
         const enrichment = await getEnrichmentStatus(runId);
         setEnrichmentStatus(enrichment);
-        console.log('🔄 Enriquecimento:', enrichment);
       } catch (enrichmentError) {
-        console.warn('⚠️ Erro ao buscar status de enriquecimento:', enrichmentError);
       }
     } catch (error: any) {
       console.error('❌ Erro ao buscar dados:', error);
@@ -408,36 +392,11 @@ export function ExtractionProgress({ theme, onThemeToggle, runId, onBack, onNavi
         });
         
         // Log visual detalhado no console
-        console.log('\n');
-        console.log('%c╔════════════════════════════════════════════════════════════════╗', 'color: #ef4444; font-weight: bold');
-        console.log('%c║  ❌ ERRO: Função RPC não configurada                          ║', 'color: #ef4444; font-weight: bold');
-        console.log('%c╚════════════════════════════════════════════════════════════════╝', 'color: #ef4444; font-weight: bold');
-        console.log('\n');
         
-        console.log('%c📋 PROBLEMA DETECTADO:', 'color: #f97316; font-weight: bold; font-size: 14px');
-        console.log('%c   A função RPC "get_extraction_analytics" está tentando acessar', 'color: #a8a29e');
-        console.log('%c   a tabela "lead_stats" que NÃO EXISTE no banco de dados.', 'color: #a8a29e');
-        console.log('\n');
         
-        console.log('%c✅ SOLUÇÃO RÁPIDA:', 'color: #14b8a6; font-weight: bold; font-size: 14px');
-        console.log('%c   1. Abra: %c/SUPABASE_RPC_FIX.md', 'color: #a8a29e', 'color: #14b8a6; font-weight: bold');
-        console.log('%c   2. Acesse o SQL Editor no Supabase Dashboard', 'color: #a8a29e');
-        console.log('%c   3. Execute o SQL de correção fornecido', 'color: #a8a29e');
-        console.log('%c   4. Recarregue esta página', 'color: #a8a29e');
-        console.log('\n');
         
-        console.log('%c📚 DOCUMENTAÇÃO:', 'color: #a855f7; font-weight: bold; font-size: 14px');
-        console.log('%c   • Overview:  %cREADME_ERRO_RPC.md', 'color: #a8a29e', 'color: #a855f7; font-weight: bold');
-        console.log('%c   • Fix SQL:   %cSUPABASE_RPC_FIX.md', 'color: #a8a29e', 'color: #a855f7; font-weight: bold');
-        console.log('\n');
         
-        console.log('%c🔍 ERRO ORIGINAL:', 'color: #71717a; font-weight: bold; font-size: 12px');
-        console.log('%c   Code:    ' + (error?.code || 'N/A'), 'color: #71717a; font-size: 11px');
-        console.log('%c   Message: ' + (error?.message || 'N/A'), 'color: #71717a; font-size: 11px');
-        console.log('\n');
         
-        console.log('%c═══════════════════════════════════════════════════════════════', 'color: #27272a');
-        console.log('\n');
       } else {
         toast.error('Erro ao carregar progresso');
       }

@@ -83,7 +83,6 @@ export async function getLeadsByWorkspace(workspaceId: string): Promise<{
     }
 
     const frontendLeads = dbLeadsToFrontend(leads as DbLead[] || []);
-    console.log(`[LEADS] ${frontendLeads.length} lead(s) carregado(s)`);
     return { leads: frontendLeads, error: null };
 
   } catch (error) {
@@ -183,26 +182,15 @@ export async function getLeadById(leadId: string): Promise<{
  * Registra uma atividade no histórico do lead
  */
 export async function createLeadActivity(
-  leadId: string, 
-  description: string, 
+  leadId: string,
+  description: string,
   type: 'system' | 'user' | 'status_change' | 'field_update' = 'user'
 ): Promise<void> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:185',message:'createLeadActivity ENTRY',data:{leadId,description,type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:192',message:'User not authenticated',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      console.warn('[LEADS] Usuário não autenticado, pulando registro de atividade');
       return;
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:198',message:'BEFORE insert lead_activities',data:{userId:user.id,leadId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     // ✅ Verificar se o lead existe e pertence a um workspace acessível
     // A política RLS with_check verifica isso, mas vamos fazer uma verificação prévia para debug
@@ -213,17 +201,8 @@ export async function createLeadActivity(
       .single();
 
     if (leadCheckError || !leadCheck) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:203',message:'Lead not found or not accessible',data:{leadId,leadCheckError:leadCheckError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      console.warn('[LEADS] ⚠️ Lead não encontrado ou não acessível:', leadId, leadCheckError);
-      console.warn('[LEADS] ⚠️ Não será possível registrar atividade (RLS bloqueando)');
       return; // Não bloquear operação principal
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:210',message:'Lead found, attempting insert',data:{leadId,workspaceId:(leadCheck as any).workspace_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     // ✅ Tabela confirmada via MCP: lead_activities existe no banco
     // Usando activity_type e user_id conforme definição do banco (DbLeadActivity)
@@ -231,91 +210,46 @@ export async function createLeadActivity(
     const { error } = await (supabase.from('lead_activities') as any).insert({
       lead_id: leadId,
       description: description,
-      activity_type: type, 
+      activity_type: type,
       user_id: user.id,
     });
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:212',message:'AFTER insert lead_activities',data:{hasError:!!error,errorCode:error?.code,errorMessage:error?.message,errorStatus:error?.status,errorDetails:JSON.stringify(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-
     if (error) {
       // Log detalhado do erro para debug
-      console.warn('[LEADS] ⚠️ Erro ao registrar atividade:', {
-        code: error.code,
-        status: error.status,
-        message: error.message,
-        details: (error as any)?.details,
-        hint: (error as any)?.hint,
-        fullError: error
-      });
 
       // Erro específico: lead_extraction_staging não existe (pode ser problema de trigger)
       if (error.message?.includes('lead_extraction_staging')) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:223',message:'lead_extraction_staging error in trigger',data:{errorCode:error.code,errorMessage:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        console.warn('[LEADS] ⚠️ Erro relacionado a lead_extraction_staging (provavelmente em trigger)');
-        console.warn('[LEADS] ⚠️ A atividade não foi registrada, mas o movimento do lead foi bem-sucedido');
-        console.warn('[LEADS] ⚠️ Este erro não bloqueia a operação principal');
         return; // Não bloquear operação principal
       }
 
       // Erro 404 ou 42P01: pode ser problema de RLS ou tabela não acessível
       const errorStatus = (error as any)?.status;
       if (errorStatus === 404 || error.code === '42P01' || error.code === 'PGRST116') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:223',message:'RLS or table access error',data:{errorCode:error.code,errorStatus:error.status,errorMessage:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        console.warn('[LEADS] ⚠️ Erro 404/42P01: Pode ser problema de RLS (Row Level Security)');
-        console.warn('[LEADS] ⚠️ A política de INSERT pode estar bloqueando o acesso');
-        console.warn('[LEADS] ⚠️ Verifique se o lead pertence a um workspace acessível pelo usuário');
-        console.warn('[LEADS] ⚠️ Movimento do lead não será bloqueado por este erro');
         return; // Não bloquear operação principal
       }
 
       // Erro 42703: coluna não existe (schema diferente)
       if (error.code === '42703') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:232',message:'Column error, trying fallback schema',data:{errorCode:error.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        console.warn('[LEADS] Coluna não existe, tentando fallback com schema antigo...', error);
         const { error: fallbackError } = await (supabase.from('lead_activities') as any).insert({
           lead_id: leadId,
           description: description,
           type: type,
           created_by: user.id
         });
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:238',message:'Fallback insert result',data:{hasError:!!fallbackError,errorCode:fallbackError?.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        
+
         if (fallbackError) {
-          console.warn('[LEADS] ⚠️ Fallback também falhou, mas não bloqueando operação:', fallbackError);
+          console.error('[LEADS] Fallback insert failed:', fallbackError);
         }
         return; // Não bloquear operação principal mesmo se fallback falhar
       }
 
       // Outros erros: logar mas não bloquear
-      console.warn('[LEADS] ⚠️ Erro ao registrar atividade (não bloqueante):', error);
-    } else {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:250',message:'Activity registered successfully',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
-      console.log('[LEADS] ✅ Atividade registrada com sucesso');
+      console.error('[LEADS] Error creating activity:', error);
     }
   } catch (error: any) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:254',message:'Unexpected error in createLeadActivity',data:{errorMessage:error?.message,errorStack:error?.stack,errorDetails:error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     // Erro inesperado: logar mas não bloquear operação principal
-    console.warn('[LEADS] ⚠️ Erro inesperado ao registrar atividade (não bloqueante):', error);
-    // Não re-throw: atividades são secundárias, não devem bloquear operações principais
+    console.error('[LEADS] Unexpected error in createLeadActivity:', error);
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/11f18f3f-1c25-4599-80fb-48a3ba88b98d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'leads-service.ts:260',message:'createLeadActivity EXIT',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
 }
 
 
@@ -487,7 +421,6 @@ export async function createLead(data: CreateLeadData): Promise<{
     // Log activity
     await createLeadActivity(newLead.id, 'Lead criado manualmente', 'system');
 
-    console.log('[LEADS] Lead criado com sucesso:', newLead.id);
     return { lead: dbLeadToFrontend(newLead), error: null };
 
   } catch (error) {
@@ -558,7 +491,6 @@ export async function createLeadFromConversation(data: {
     // 3. Se tem telefone, buscar custom field de telefone e salvar
     if (data.phone) {
       try {
-        console.log('[LEADS] Tentando salvar telefone como custom field:', data.phone);
         
         // Buscar custom field de telefone do workspace (busca por tipo e nome comum)
         let { data: phoneField, error: cfError } = await supabase
@@ -571,7 +503,6 @@ export async function createLeadFromConversation(data: {
 
         // Se não encontrou, buscar por nome (case insensitive)
         if (!phoneField) {
-          console.log('[LEADS] Nenhum custom field tipo phone encontrado, buscando por nome...');
           
           const { data: fieldByName, error: nameError } = await supabase
             .from('custom_fields')
@@ -587,7 +518,6 @@ export async function createLeadFromConversation(data: {
 
         // Se ainda não encontrou, criar o custom field
         if (!phoneField) {
-          console.log('[LEADS] Custom field de telefone não existe, criando...');
           
           const { data: newPhoneField, error: createError } = await supabase
             .from('custom_fields')
@@ -607,9 +537,7 @@ export async function createLeadFromConversation(data: {
           }
 
           phoneField = newPhoneField;
-          console.log('[LEADS] Custom field de telefone criado:', phoneField.id);
         } else {
-          console.log('[LEADS] Custom field de telefone encontrado:', phoneField.id);
         }
 
         if (phoneField) {
@@ -625,7 +553,6 @@ export async function createLeadFromConversation(data: {
           if (valueError) {
             console.error('[LEADS] Erro ao salvar telefone como custom field:', valueError);
           } else {
-            console.log('[LEADS] Telefone salvo como custom field com sucesso!');
           }
         }
       } catch (cfErr) {
@@ -652,7 +579,6 @@ export async function createLeadFromConversation(data: {
     // Processar cada campo personalizado adicional
     for (const field of additionalFields) {
       try {
-        console.log(`[LEADS] Processando custom field: ${field.name}`);
         
         // Buscar ou criar o custom field
         let { data: customField } = await supabase
@@ -666,7 +592,6 @@ export async function createLeadFromConversation(data: {
 
         // Se não encontrou, criar
         if (!customField) {
-          console.log(`[LEADS] Criando custom field: ${field.name}`);
           
           const { data: newField, error: createError } = await supabase
             .from('custom_fields')
@@ -701,7 +626,6 @@ export async function createLeadFromConversation(data: {
           if (valueError) {
             console.error(`[LEADS] Erro ao salvar ${field.name}:`, valueError);
           } else {
-            console.log(`[LEADS] ${field.name} salvo com sucesso!`);
           }
         }
       } catch (fieldErr) {
@@ -713,7 +637,6 @@ export async function createLeadFromConversation(data: {
     // Log activity
     await createLeadActivity(newLead.id, 'Lead criado a partir de conversa', 'system');
 
-    console.log('[LEADS] Lead criado com sucesso a partir da conversa:', newLead.id);
     return { leadId: newLead.id, error: null };
 
   } catch (error) {
@@ -878,14 +801,12 @@ export async function updateLead(
 
     // ✅ 3. REGISTRAR CADA ALTERAÇÃO COMO UMA ATIVIDADE SEPARADA
     if (detailedChanges.length > 0) {
-      console.log('[LEADS] Campos alterados:', detailedChanges);
       
       // Registrar cada mudança como uma atividade separada
       for (const change of detailedChanges) {
         await createLeadActivity(leadId, change, 'field_update');
       }
     } else {
-      console.log('[LEADS] Nenhuma alteração detectada nos campos principais');
     }
 
     // Atualizar custom fields se fornecidos
@@ -902,7 +823,6 @@ export async function updateLead(
       }
     }
 
-    console.log('[LEADS] Lead atualizado com sucesso');
     return { error: null };
 
   } catch (error) {
@@ -992,10 +912,8 @@ export async function moveLead(data: MoveLeadData): Promise<{ error: Error | nul
       await createLeadActivity(data.leadId, description, 'status_change');
     } catch (activityError) {
       // Logar mas não bloquear movimento
-      console.warn('[LEADS] ⚠️ Falha ao registrar atividade (não bloqueante):', activityError);
     }
 
-    console.log('[LEADS] ✅ Lead movido com sucesso via kanban-api');
     return { error: null };
 
   } catch (error) {
@@ -1037,7 +955,6 @@ export async function deleteLead(leadId: string): Promise<{ error: Error | null 
       return { error: deleteError };
     }
 
-    console.log('[LEADS] Lead deletado com sucesso');
     return { error: null };
 
   } catch (error) {
@@ -1060,7 +977,6 @@ export async function deleteLead(leadId: string): Promise<{ error: Error | null 
  */
 export async function hardDeleteLead(leadId: string): Promise<{ error: Error | null }> {
   try {
-    console.log('[LEADS] 🔥 Iniciando hard delete via backend:', leadId);
 
     // ✅ Obter workspace ID e funnel ID do lead
     const { data: leadData, error: leadError } = await supabase
@@ -1086,7 +1002,6 @@ export async function hardDeleteLead(leadId: string): Promise<{ error: Error | n
       return { error: sessionError || new Error('Sessão não encontrada') };
     }
 
-    console.log('[LEADS] 🌐 Chamando kanban-api para deletar lead...');
     // ✅ CORREÇÃO: Usar rota correta da kanban-api
     const response = await fetch(
       `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/leads/${leadId}`,
@@ -1105,7 +1020,6 @@ export async function hardDeleteLead(leadId: string): Promise<{ error: Error | n
       return { error: new Error(errorData.error || 'Erro ao deletar lead') };
     }
 
-    console.log('[LEADS] ✅ Lead deletado permanentemente com sucesso via backend');
     return { error: null };
 
   } catch (error) {
@@ -1133,7 +1047,6 @@ export async function restoreLead(leadId: string): Promise<{ error: Error | null
       return { error: restoreError };
     }
 
-    console.log('[LEADS] Lead restaurado com sucesso');
     return { error: null };
 
   } catch (error) {

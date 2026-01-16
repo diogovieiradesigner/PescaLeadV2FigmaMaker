@@ -60,7 +60,7 @@ export function CampaignsRanking({ isDark, campaigns }: CampaignsRankingProps) {
       </CardHeader>
 
       <CardContent className="pb-6">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full">
             <thead>
               <tr className={cn(

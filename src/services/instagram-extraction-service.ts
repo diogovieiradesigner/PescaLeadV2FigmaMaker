@@ -38,9 +38,7 @@ async function getHeaders(): Promise<HeadersInit> {
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session?.access_token) {
-    console.warn('⚠️ Instagram service: No active session, authentication may fail');
   } else {
-    console.log('✅ Instagram service: Using user session token');
   }
 
   return {

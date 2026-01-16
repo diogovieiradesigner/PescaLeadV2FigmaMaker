@@ -21,21 +21,20 @@ export function useRagEnabled(agentId: string | null): UseRagEnabledReturn {
       }
 
       try {
-        console.log('[useRagEnabled] Loading state for agent:', agentId);
 
         const { data, error } = await supabase
           .from('ai_agents')
           .select('rag_enabled')
           .eq('id', agentId)
-          .single();
+          .maybeSingle();
 
         if (error) {
           console.error('[useRagEnabled] Error loading state:', error);
           throw error;
         }
 
+        // Se não encontrou o agente, manter default true
         const enabled = data?.rag_enabled ?? true;
-        console.log('[useRagEnabled] Current state:', enabled);
         setRagEnabledState(enabled);
       } catch (err) {
         console.error('[useRagEnabled] Failed to load state:', err);
@@ -56,7 +55,6 @@ export function useRagEnabled(agentId: string | null): UseRagEnabledReturn {
     }
 
     try {
-      console.log('[useRagEnabled] Updating state to:', enabled);
 
       const { error } = await supabase
         .from('ai_agents')
@@ -69,7 +67,6 @@ export function useRagEnabled(agentId: string | null): UseRagEnabledReturn {
       }
 
       setRagEnabledState(enabled);
-      console.log('[useRagEnabled] State updated successfully');
     } catch (err) {
       console.error('[useRagEnabled] Failed to update state:', err);
       throw err;

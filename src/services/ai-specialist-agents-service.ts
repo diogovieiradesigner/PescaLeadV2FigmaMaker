@@ -211,35 +211,26 @@ export async function syncSpecialistAgents(
     throw new Error('User not authenticated. Please login.');
   }
 
-  console.log('[AI-SPECIALIST-SERVICE] 🔄 Syncing specialists for agent:', parentAgentId);
-  console.log('[AI-SPECIALIST-SERVICE] 📊 Total specialists to sync:', specialists.length);
 
   // 1. Buscar especialistas existentes no banco
   const existing = await fetchSpecialistAgents(parentAgentId);
   const existingIds = new Set(existing.map(s => s.id));
   const newIds = new Set(specialists.map(s => s.id).filter(id => !id.startsWith('temp-')));
 
-  console.log('[AI-SPECIALIST-SERVICE] 📋 Existing IDs:', Array.from(existingIds));
-  console.log('[AI-SPECIALIST-SERVICE] 🆕 New IDs:', Array.from(newIds));
 
   // 2. Identificar operações
   const toDelete = existing.filter(s => !newIds.has(s.id));
   const toInsert = specialists.filter(s => s.id.startsWith('temp-') || !existingIds.has(s.id));
   const toUpdate = specialists.filter(s => !s.id.startsWith('temp-') && existingIds.has(s.id));
 
-  console.log('[AI-SPECIALIST-SERVICE] 🗑️ To delete:', toDelete.length);
-  console.log('[AI-SPECIALIST-SERVICE] ➕ To insert:', toInsert.length);
-  console.log('[AI-SPECIALIST-SERVICE] 🔄 To update:', toUpdate.length);
 
   // 3. Deletar removidos
   for (const spec of toDelete) {
-    console.log('[AI-SPECIALIST-SERVICE] 🗑️ Deleting:', spec.name);
     await deleteSpecialistAgent(spec.id);
   }
 
   // 4. Inserir novos
   for (const spec of toInsert) {
-    console.log('[AI-SPECIALIST-SERVICE] ➕ Inserting:', spec.name);
     
     // Garantir function_key único
     let functionKey = spec.function_key || await generateUniqueFunctionKey(parentAgentId, spec.name);
@@ -258,7 +249,6 @@ export async function syncSpecialistAgents(
 
   // 5. Atualizar modificados
   for (const spec of toUpdate) {
-    console.log('[AI-SPECIALIST-SERVICE] 🔄 Updating:', spec.name);
     
     // Garantir function_key único
     let functionKey = spec.function_key || await generateUniqueFunctionKey(parentAgentId, spec.name, spec.id);
@@ -274,5 +264,4 @@ export async function syncSpecialistAgents(
     });
   }
 
-  console.log('[AI-SPECIALIST-SERVICE] ✅ Sync completed successfully');
 }

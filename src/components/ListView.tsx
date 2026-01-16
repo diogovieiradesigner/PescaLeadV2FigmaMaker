@@ -36,9 +36,9 @@ export function ListView({ leads, theme, onLeadClick }: ListViewProps) {
   };
 
   return (
-    <div className="flex-1 overflow-auto p-6">
+    <div className="flex-1 overflow-auto scrollbar-thin p-6">
       {/* Wrapper with horizontal scroll */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto scrollbar-thin">
         <div className={`rounded-xl border overflow-hidden min-w-[800px] ${
           isDark 
             ? 'bg-elevated border-white/[0.05]' 

@@ -226,9 +226,7 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
   };
 
   const fetchStats = async () => {
-    console.log('[fetchStats] Calling with filters:', JSON.stringify(state.filters, null, 2));
     const preview = await getStats(state.filters);
-    console.log('[fetchStats] Result:', preview);
     if (preview) {
       setStats(preview);
     }
@@ -552,15 +550,16 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
               value={state.funnelId}
               onChange={(e) => setFunnelId(e.target.value)}
               disabled={loadingFunnels}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={`w-full px-4 py-2 border-b transition-all ${
                 isDark
                   ? 'bg-black border-white/[0.2] text-white focus:border-[#0169D9]'
                   : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
               } focus:outline-none disabled:opacity-50 ${showValidation && !state.funnelId ? 'border-red-500' : ''}`}
             >
-              <option value="">Selecione um funil</option>
+              <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione um funil</option>
               {funnels.map(funnel => (
-                <option key={funnel.id} value={funnel.id}>
+                <option key={funnel.id} value={funnel.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                   {funnel.name}
                 </option>
               ))}
@@ -575,15 +574,16 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
               value={state.columnId}
               onChange={(e) => setColumnId(e.target.value)}
               disabled={!state.funnelId || columns.length === 0}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={`w-full px-4 py-2 border-b transition-all ${
                 isDark
                   ? 'bg-black border-white/[0.2] text-white focus:border-[#0169D9]'
                   : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
               } focus:outline-none disabled:opacity-50 ${showValidation && !state.columnId ? 'border-red-500' : ''}`}
             >
-              <option value="">Selecione uma coluna</option>
+              <option value="" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Selecione uma coluna</option>
               {columns.map(column => (
-                <option key={column.id} value={column.id}>
+                <option key={column.id} value={column.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                   {column.title}
                 </option>
               ))}
@@ -635,7 +635,7 @@ export const CNPJExtractionView = forwardRef<CNPJExtractionViewRef, CNPJExtracti
           </p>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full">
             <thead className={`text-xs uppercase ${isDark ? 'text-white/50 bg-white/[0.02]' : 'text-text-secondary-light bg-light-elevated'}`}>
               <tr>

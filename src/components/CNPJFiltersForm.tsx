@@ -193,7 +193,7 @@ function MultiSelect({
             </div>
           )}
 
-          <div className="overflow-y-auto max-h-48">
+          <div className="overflow-y-auto scrollbar-thin max-h-48">
             {isSearching ? (
               <div className={`px-4 py-6 text-sm flex flex-col items-center gap-2 ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -354,7 +354,7 @@ function SelectWithAll({
             ? 'bg-[#1a1a1a] border-white/[0.1]'
             : 'bg-white border-border-light'
         }`}>
-          <div className="overflow-y-auto max-h-48">
+          <div className="overflow-y-auto scrollbar-thin max-h-48">
             {/* Opção "Todos" */}
             <button
               type="button"
@@ -531,15 +531,11 @@ export function CNPJFiltersForm({
   }, [filters]);
 
   // Log para debug - verificar CNAEs recebidos da API
-  console.log('[CNPJFiltersForm] cnaeOptions received:', cnaeOptions.length, 'items');
-  console.log('[CNPJFiltersForm] loading:', loading);
   if (cnaeOptions.length > 0) {
-    console.log('[CNPJFiltersForm] First 3 CNAEs:', cnaeOptions.slice(0, 3));
   }
 
   // Debounced search para CNAEs
   const handleCNAESearch = (query: string) => {
-    console.log('[CNPJFiltersForm] handleCNAESearch called with:', query);
 
     if (cnaeSearchTimeout) {
       clearTimeout(cnaeSearchTimeout);
@@ -547,12 +543,10 @@ export function CNPJFiltersForm({
 
     if (onCNAESearch) {
       const timeout = setTimeout(() => {
-        console.log('[CNPJFiltersForm] Triggering onCNAESearch with:', query);
         onCNAESearch(query);
       }, 300);
       setCnaeSearchTimeout(timeout);
     } else {
-      console.warn('[CNPJFiltersForm] onCNAESearch is not defined!');
     }
   };
 
@@ -705,12 +699,12 @@ export function CNPJFiltersForm({
                 const value = e.target.value as 'todos' | 'simples' | 'mei';
                 // Atualizar o novo campo regime_tributario
                 onFilterChange('regime_tributario', value);
-                
+
                 // Manter compatibilidade com os campos antigos
                 // Resetar ambos os filtros primeiro
                 onFilterChange('simples', undefined);
                 onFilterChange('mei', undefined);
-                
+
                 // Aplicar o filtro selecionado nos campos antigos para compatibilidade
                 if (value === 'simples') {
                   onFilterChange('simples', true);
@@ -720,15 +714,16 @@ export function CNPJFiltersForm({
                 // 'todos' não aplica nenhum filtro
               }}
               disabled={loading}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={`w-full px-4 py-2 border-b transition-all ${
                 isDark
                   ? 'bg-black border-white/[0.2] text-white focus:bg-black focus:border-[#0169D9]'
                   : 'bg-white border border-border-light text-text-primary-light focus:border-[#0169D9]'
               } focus:outline-none disabled:opacity-50`}
             >
-              <option value="todos">Todos</option>
-              <option value="simples">Optante do Simples Nacional</option>
-              <option value="mei">É MEI</option>
+              <option value="todos" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Todos</option>
+              <option value="simples" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Optante do Simples Nacional</option>
+              <option value="mei" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>É MEI</option>
             </select>
           </div>
 

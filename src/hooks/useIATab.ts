@@ -39,15 +39,7 @@ export function useIATab({
       }
       
       if (!data) {
-        console.warn('⚠️ Nenhum dado retornado pela RPC');
       } else {
-        console.log('✅ Dados de I.A carregados:', {
-          hasStatsCards: !!data.stats_cards,
-          hasIAvsHuman: !!data.ia_vs_human,
-          hasSuccessRate: !!data.success_rate,
-          hasFollowupStats: !!data.followup_stats,
-          hasTimeSavings: !!data.time_savings
-        });
       }
       
       return data;

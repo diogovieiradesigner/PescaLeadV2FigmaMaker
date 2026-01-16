@@ -44,7 +44,6 @@ export async function getFunnelsByWorkspace(workspaceId: string): Promise<{
   error: Error | null;
 }> {
   try {
-    console.log('[FUNNELS] Iniciando busca de funis para workspace:', workspaceId);
     
     // 1. Buscar funis
     const { data: funnels, error: funnelsError } = await supabase
@@ -60,15 +59,12 @@ export async function getFunnelsByWorkspace(workspaceId: string): Promise<{
     }
 
     if (!funnels || funnels.length === 0) {
-      console.log('[FUNNELS] Nenhum funil encontrado para este workspace');
       return { funnels: [], error: null };
     }
 
-    console.log('[FUNNELS] Encontrados', funnels.length, 'funil(is)');
 
     // 2. Buscar colunas dos funis
     const funnelIds = funnels.map(f => f.id);
-    console.log('[FUNNELS] Buscando colunas para funis:', funnelIds);
     
     const { data: columns, error: columnsError } = await supabase
       .from('funnel_columns')
@@ -81,10 +77,8 @@ export async function getFunnelsByWorkspace(workspaceId: string): Promise<{
       return { funnels: [], error: columnsError };
     }
 
-    console.log('[FUNNELS] Encontradas', columns?.length || 0, 'coluna(s)');
 
     // 3. Buscar leads dos funis
-    console.log('[FUNNELS] Buscando leads para funis:', funnelIds);
     
     const { data: leads, error: leadsError } = await supabase
       .from('leads')
@@ -98,10 +92,8 @@ export async function getFunnelsByWorkspace(workspaceId: string): Promise<{
       return { funnels: [], error: leadsError };
     }
 
-    console.log('[FUNNELS] Encontrados', leads?.length || 0, 'lead(s)');
 
     // 4. Converter para formato do frontend
-    console.log('[FUNNELS] Convertendo dados para formato do frontend...');
     const frontendFunnels = dbFunnelsToFrontend(
       funnels as DbFunnel[],
       columns as DbFunnelColumn[] || [],
@@ -112,7 +104,6 @@ export async function getFunnelsByWorkspace(workspaceId: string): Promise<{
     // Custom fields serão carregados individualmente quando o lead for aberto
     // Isso evita fazer centenas de queries ao banco de dados desnecessariamente
 
-    console.log(`[FUNNELS] ✅ ${frontendFunnels.length} funil(is) carregado(s) com sucesso`);
     return { funnels: frontendFunnels, error: null };
 
   } catch (error) {
@@ -180,7 +171,6 @@ export async function getFunnelById(
       return { funnel: null, error: leadsError };
     }
 
-    console.log(`[FUNNELS] Carregados ${leads?.length || 0} leads (offset: ${offset}, limit: ${limit})`);
 
     // 4. Converter para formato do frontend
     const frontendFunnel = dbFunnelToFrontend(
@@ -191,7 +181,6 @@ export async function getFunnelById(
 
     // 5. Carregar custom fields para os leads carregados
     if (leads && leads.length > 0) {
-      console.log('[FUNNELS] Carregando custom fields para', leads.length, 'leads...');
       
       for (const column of frontendFunnel.columns) {
         for (const lead of column.leads) {
@@ -203,7 +192,6 @@ export async function getFunnelById(
         }
       }
       
-      console.log('[FUNNELS] Custom fields carregados');
     }
 
     return { funnel: frontendFunnel, error: null };
@@ -245,7 +233,6 @@ export async function getLeadsByColumn(
     const filters = options?.filters;
     const accessToken = options?.accessToken;
 
-    console.log('[FUNNELS SERVICE] 🔍 Carregando leads com filtros:', { columnId, limit, offset, filters });
 
     if (!accessToken) {
       console.error('[FUNNELS SERVICE] ❌ accessToken não fornecido');
@@ -280,7 +267,6 @@ export async function getLeadsByColumn(
 
     const url = `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/columns/${columnId}/leads?${queryParams}`;
     
-    console.log('[FUNNELS SERVICE] 📡 Chamando API:', url);
 
     const response = await fetch(url, {
       method: 'GET',
@@ -290,8 +276,6 @@ export async function getLeadsByColumn(
       },
     });
 
-    console.log('[FUNNELS SERVICE] 📊 Response Status:', response.status, response.statusText);
-    console.log('[FUNNELS SERVICE] 📊 Response Headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const contentType = response.headers.get('content-type');
@@ -316,18 +300,11 @@ export async function getLeadsByColumn(
 
     const data = await response.json();
 
-    console.log(`[FUNNELS SERVICE] ✅ Carregados ${data.leads?.length || 0} leads (total: ${data.total})`);
 
     // Converter leads do backend para formato frontend
     const convertedLeads = (data.leads || []).map((lead: any) => {
       // 🔍 DEBUG: Log do lead antes da conversão
       if (!lead.clientName || lead.clientName === '') {
-        console.warn('[FUNNELS SERVICE] ⚠️ Lead sem clientName:', {
-          id: lead.id,
-          clientName: lead.clientName,
-          client_name: lead.client_name, // Verificar se vem com underscore
-          lead: lead
-        });
       }
       
       return {
@@ -451,7 +428,6 @@ export async function createFunnel(data: CreateFunnelData): Promise<{
       []
     );
 
-    console.log('[FUNNELS] Funil criado com sucesso:', frontendFunnel.name);
     return { funnel: frontendFunnel, error: null };
 
   } catch (error) {
@@ -472,7 +448,6 @@ export async function updateFunnel(
   data: UpdateFunnelData
 ): Promise<{ error: Error | null }> {
   try {
-    console.log('[FUNNELS SERVICE] Atualizando funil:', funnelId, data);
     
     // Get workspace ID
     const { data: funnelData } = await supabase
@@ -516,7 +491,6 @@ export async function updateFunnel(
       return { error: new Error(error.error || 'Erro ao atualizar funil') };
     }
     
-    console.log('[FUNNELS SERVICE] ✅ Funil atualizado com sucesso');
     return { error: null };
 
   } catch (error) {
@@ -560,7 +534,6 @@ export async function deleteFunnel(funnelId: string): Promise<{ error: Error | n
       return { error: deleteError };
     }
 
-    console.log('[FUNNELS] Funil deletado com sucesso');
     return { error: null };
 
   } catch (error) {
@@ -617,7 +590,6 @@ export async function getFunnelStats(funnelId: string): Promise<{
   error: Error | null;
 }> {
   try {
-    console.log('[FUNNELS STATS] 🚀 Buscando stats otimizadas para funil:', funnelId);
 
     // 1️⃣ Buscar estatísticas globais usando Stored Procedure (1 query)
     const { data: globalStats, error: globalError } = await supabase
@@ -630,7 +602,6 @@ export async function getFunnelStats(funnelId: string): Promise<{
       return { stats: null, error: globalError };
     }
 
-    console.log('[FUNNELS STATS] ✅ Stats globais recebidas:', globalStats);
 
     // 2️⃣ Buscar breakdown por coluna usando Stored Procedure (1 query)
     const { data: columnStats, error: columnError } = await supabase
@@ -643,7 +614,6 @@ export async function getFunnelStats(funnelId: string): Promise<{
       return { stats: null, error: columnError };
     }
 
-    console.log('[FUNNELS STATS] ✅ Stats por coluna recebidas:', columnStats);
 
     // RPC com RETURNS TABLE retorna um array com 1 elemento
     const global = Array.isArray(globalStats) && globalStats.length > 0 
@@ -664,7 +634,6 @@ export async function getFunnelStats(funnelId: string): Promise<{
       })),
     };
 
-    console.log('[FUNNELS STATS] 📊 Stats finais calculadas:', result);
 
     return {
       stats: result,
@@ -705,7 +674,6 @@ export async function getAllColumnsLeads(
     const filters = options?.filters;
     const accessToken = options?.accessToken;
 
-    console.log('[FUNNELS SERVICE] 🚀 Carregando todas as colunas em paralelo:', { funnelId, limit, filters });
 
     if (!accessToken) {
       console.error('[FUNNELS SERVICE] ❌ accessToken não fornecido');
@@ -725,7 +693,6 @@ export async function getAllColumnsLeads(
 
     const url = `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/leads?${queryParams}`;
     
-    console.log('[FUNNELS SERVICE] 📡 Chamando API otimizada:', url);
 
     const response = await fetch(url, {
       method: 'GET',
@@ -742,7 +709,6 @@ export async function getAllColumnsLeads(
 
     const data = await response.json();
 
-    console.log(`[FUNNELS SERVICE] ✅ Carregadas ${Object.keys(data.columns || {}).length} colunas`);
 
     return { columns: data.columns || {}, error: null };
   } catch (error: any) {

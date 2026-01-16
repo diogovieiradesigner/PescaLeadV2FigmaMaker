@@ -444,16 +444,16 @@ export async function sendMessageViaServer(
       throw new Error('User not authenticated');
     }
 
-    const { projectId } = await import('../utils/supabase/info.tsx');
-    const url = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/conversations/${conversationId}/messages/send?workspaceId=${workspaceId}`;
+    const { projectId, publicAnonKey } = await import('../utils/supabase/info.tsx');
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/make-server-e4f9d774/conversations/${conversationId}/messages/send?workspaceId=${workspaceId}`;
 
-    console.log('[CHAT SERVICE] Sending message via server:', url);
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
       },
       body: JSON.stringify({
         text,
@@ -467,7 +467,6 @@ export async function sendMessageViaServer(
     }
 
     const result = await response.json();
-    console.log('[CHAT SERVICE] Message sent successfully:', result);
     return result;
   } catch (error) {
     console.error('[CHAT SERVICE] Error sending message via server:', error);
@@ -493,18 +492,9 @@ export async function sendAudioViaServer(
       throw new Error('User not authenticated');
     }
 
-    const { projectId } = await import('../utils/supabase/info.tsx');
-    const url = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/conversations/${conversationId}/messages/send-audio?workspaceId=${workspaceId}`;
+    const { projectId, publicAnonKey } = await import('../utils/supabase/info.tsx');
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/make-server-e4f9d774/conversations/${conversationId}/messages/send-audio?workspaceId=${workspaceId}`;
 
-    console.log('🎤 [CHAT SERVICE] ==========================================');
-    console.log('🎤 [CHAT SERVICE] SENDING AUDIO TO SERVER');
-    console.log('🎤 [CHAT SERVICE] ==========================================');
-    console.log('   URL:', url);
-    console.log('   Audio URL length:', audioUrl?.length);
-    console.log('   Audio Duration (raw):', audioDuration);
-    console.log('   Audio Duration (type):', typeof audioDuration);
-    console.log('   Quoted Message ID:', quotedMessageId);
-    console.log('🎤 [CHAT SERVICE] ==========================================');
 
     const payload = {
       audioUrl,
@@ -512,13 +502,13 @@ export async function sendAudioViaServer(
       quotedMessageId,
     };
 
-    console.log('🎤 [CHAT SERVICE] Payload:', JSON.stringify(payload, null, 2));
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
       },
       body: JSON.stringify(payload),
     });
@@ -529,7 +519,6 @@ export async function sendAudioViaServer(
     }
 
     const result = await response.json();
-    console.log('[CHAT SERVICE] Audio sent successfully:', result);
     return result;
   } catch (error) {
     console.error('[CHAT SERVICE] Error sending audio via server:', error);
@@ -560,16 +549,16 @@ export async function sendMediaViaServer(
       throw new Error('User not authenticated');
     }
 
-    const { projectId } = await import('../utils/supabase/info.tsx');
-    const url = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/conversations/${conversationId}/messages/send-media?workspaceId=${workspaceId}`;
+    const { projectId, publicAnonKey } = await import('../utils/supabase/info.tsx');
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/make-server-e4f9d774/conversations/${conversationId}/messages/send-media?workspaceId=${workspaceId}`;
 
-    console.log('[CHAT SERVICE] Sending media via server:', url);
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
       },
       body: JSON.stringify({
         ...mediaData,
@@ -583,7 +572,6 @@ export async function sendMediaViaServer(
     }
 
     const result = await response.json();
-    console.log('[CHAT SERVICE] Media sent successfully:', result);
     return result;
   } catch (error) {
     console.error('[CHAT SERVICE] Error sending media via server:', error);
@@ -840,17 +828,17 @@ export async function fetchContactProfile(
       return { profile: null, error: new Error('Não autenticado') };
     }
 
-    const { projectId } = await import('../utils/supabase/info.tsx');
-    
-    const url = `https://${projectId}.supabase.co/functions/v1/make-server-e4f9d774/contacts/profile?phone=${encodeURIComponent(phone)}&conversationId=${conversationId}&workspaceId=${workspaceId}`;
-    
-    console.log('[CHAT SERVICE] Fetching contact profile:', { phone, conversationId, workspaceId });
+    const { projectId, publicAnonKey } = await import('../utils/supabase/info.tsx');
+
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/make-server-e4f9d774/contacts/profile?phone=${encodeURIComponent(phone)}&conversationId=${conversationId}&workspaceId=${workspaceId}`;
+
 
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${session.access_token}`, // ✅ Usar access_token da sessão
         'Content-Type': 'application/json',
+        'apikey': publicAnonKey,  // ✅ OBRIGATÓRIO: Kong exige apikey
       },
     });
 
@@ -861,7 +849,6 @@ export async function fetchContactProfile(
     }
 
     const profile: ContactProfile = await response.json();
-    console.log('[CHAT SERVICE] Profile fetched successfully:', profile);
 
     return { profile, error: null };
   } catch (error) {

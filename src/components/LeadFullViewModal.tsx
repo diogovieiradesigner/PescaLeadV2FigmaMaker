@@ -134,7 +134,6 @@ function renderFieldValue(field: CustomField, isDark: boolean) {
   const fieldNameLower = field.fieldName.toLowerCase();
   
   // Debug: log para ver o que está sendo processado
-  console.log('[renderFieldValue] Campo:', field.fieldName, 'Valor:', field.fieldValue.substring(0, 100));
   
   // ✅ Verificar se é um e-mail simples (string) antes de tentar parse JSON
   if (fieldNameLower.includes('email') && isValidEmail(field.fieldValue)) {
@@ -381,14 +380,6 @@ function renderEmailValue(email: string, isDark: boolean) {
 }
 
 export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavigateNext, onNavigatePrev, onNavigateToInstances, navigationState }: LeadFullViewModalProps) {
-  console.log('[LeadFullViewModal] RENDERIZADO:', {
-    isOpen,
-    hasLead: !!lead,
-    leadId: lead?.id,
-    hasNavigateNext: !!onNavigateNext,
-    hasNavigatePrev: !!onNavigatePrev,
-    navigationState
-  });
   
   const { currentWorkspace, user } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('data');
@@ -668,7 +659,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
       toast.success('Campo adicionado! Clique em "Salvar Alterações" para confirmar.');
 
-      console.log('[LeadFullViewModal] Novo campo adicionado:', newField);
     } catch (error) {
       console.error('[LeadFullViewModal] Erro ao adicionar campo:', error);
       toast.error('Erro ao adicionar campo. Tente novamente.');
@@ -725,7 +715,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
       toast.success(`Campo "${fieldName}" excluído com sucesso!`);
 
-      console.log('[LeadFullViewModal] Campo excluído do banco:', fieldId);
 
     } catch (error) {
       console.error('[LeadFullViewModal] Erro inesperado ao excluir campo:', error);
@@ -756,7 +745,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     
     setFormData(prev => prev ? ({ ...prev, customFields: updatedFields }) : null);
     
-    console.log('[LeadFullViewModal] Custom field alterado:', { fieldId, value, updatedFieldsCount: updatedFields.length });
   };
 
   // ✅ Carregar inboxes disponíveis
@@ -1002,7 +990,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
         .remove([file.file_path]);
 
       if (storageError) {
-        console.warn('[LeadFullViewModal] Arquivo não encontrado no storage:', storageError);
       }
 
       // Deletar do banco
@@ -1044,7 +1031,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
   // Abrir seletor de templates para criar documento
   const handleCreateDocument = (folderId?: string) => {
-    console.log('[LeadFullViewModal] handleCreateDocument chamado com folderId:', folderId);
     setPendingFolderId(folderId);
     setShowTemplateSelector(true);
   };
@@ -1052,7 +1038,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   // Criar documento a partir do template selecionado (ou em branco)
   const handleSelectTemplate = async (template: LeadDocumentTemplate | null) => {
     if (!lead?.id || !currentWorkspace?.id || !user?.id) {
-      console.warn('[LeadFullViewModal] Missing required data for document creation');
       setShowTemplateSelector(false);
       return;
     }
@@ -1103,7 +1088,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   ) => {
     // Verificar se user está disponível
     if (!user?.id) {
-      console.warn('[LeadFullViewModal] User not available for document update');
       return;
     }
 
@@ -1131,10 +1115,8 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                 version_number: latestVersion + 1,
                 created_by: user.id,
               });
-              console.log('[LeadFullViewModal] Versão criada:', latestVersion + 1);
             } catch (versionError) {
               // Não bloquear o save se a versão falhar
-              console.warn('[LeadFullViewModal] Erro ao criar versão (não bloqueante):', versionError);
             }
           }
         }
@@ -1239,26 +1221,40 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
     if (!lead?.id || !currentWorkspace?.id) return;
 
     try {
-      const newFolder = await createFolder({
+      const { folder: newFolder, error } = await createFolder({
         lead_id: lead.id,
         workspace_id: currentWorkspace.id,
         name,
         position: documentFolders.length
       });
 
+      if (error || !newFolder) {
+        console.error('[LeadFullViewModal] Erro ao criar pasta:', error);
+        toast.error('Erro ao criar pasta');
+        return;
+      }
+
       setDocumentFolders(prev => [...prev, newFolder]);
       toast.success('Pasta criada!');
     } catch (error: any) {
       console.error('[LeadFullViewModal] Erro ao criar pasta:', error);
-      toast.error('Erro ao excluir pasta');
+      toast.error('Erro ao criar pasta');
     }
   };
 
   // Renomear pasta
   const handleRenameFolder = async (folderId: string, newName: string) => {
     try {
-      const updated = await updateFolder(folderId, { name: newName });
+      const { folder: updated, error } = await updateFolder(folderId, { name: newName });
+
+      if (error || !updated) {
+        console.error('[LeadFullViewModal] Erro ao renomear pasta:', error);
+        toast.error('Erro ao renomear pasta');
+        return;
+      }
+
       setDocumentFolders(prev => prev.map(f => f.id === folderId ? updated : f));
+      toast.success('Pasta renomeada!');
     } catch (error: any) {
       console.error('[LeadFullViewModal] Erro ao renomear pasta:', error);
       toast.error('Erro ao renomear pasta');
@@ -1302,11 +1298,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
         customFields: formData.customFields || customFields, // Usar customFields do hook se formData não tiver
       };
       
-      console.log('[LeadFullViewModal] Salvando alterações:', {
-        leadId: dataToSave.id,
-        customFieldsCount: dataToSave.customFields?.length || 0,
-        customFields: dataToSave.customFields
-      });
       
       // Chamar onSave para que o componente pai gerencie a atualização
       await onSave(dataToSave);
@@ -1330,10 +1321,8 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
 
   // ✅ Criar conversa manual com o lead
   const handleCreateConversation = async () => {
-    console.log('🔵 [LeadFullViewModal] BOTÃO CLICADO - handleCreateConversation executado');
     
     if (!formData || !currentWorkspace?.id) {
-      console.log('❌ [LeadFullViewModal] formData ou currentWorkspace ausente', { formData, currentWorkspace });
       return;
     }
 
@@ -1352,20 +1341,12 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
       return;
     }
 
-    console.log('[LeadFullViewModal] Iniciando criação de conversa...');
     setIsCreatingConversation(true);
 
     try {
       // Limpar telefone (apenas números)
       const cleanPhone = phone.replace(/\D/g, '');
 
-      console.log('[LeadFullViewModal] Dados da conversa:', {
-        workspace_id: currentWorkspace.id,
-        inbox_id: inboxId,
-        contact_name: formData.clientName,
-        contact_phone: cleanPhone,
-        lead_id: formData.id,
-      });
 
       const newConversation = await createConversation({
         workspace_id: currentWorkspace.id,
@@ -1377,7 +1358,6 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
         lead_id: formData.id,
       });
 
-      console.log('[LeadFullViewModal] Conversa criada com sucesso:', newConversation);
 
       // ✅ Atualizar o estado diretamente para feedback imediato
       setConversation(newConversation);
@@ -1394,13 +1374,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
   if (!isOpen || !formData) return null;
 
   // ✅ Debug: verificar se as props de navegação estão chegando
-  console.log('[LeadFullViewModal] Navigation props:', {
-    hasNavigateNext: !!onNavigateNext,
-    hasNavigatePrev: !!onNavigatePrev,
-    navigationState
-  });
 
-  console.log('[LeadFullViewModal] RENDERIZANDO JSX');
 
   return (
     <div 
@@ -1607,14 +1581,15 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                             <select
                                                value={selectedInboxId}
                                                onChange={(e) => setSelectedInboxId(e.target.value)}
+                                               style={isDark ? { colorScheme: 'dark' } : undefined}
                                                className={`w-full px-3 py-2 rounded-lg text-sm border transition-colors ${
-                                                  isDark 
-                                                     ? 'bg-white/[0.05] text-white border-white/[0.08] focus:border-[#0169D9]' 
+                                                  isDark
+                                                     ? 'bg-white/[0.05] text-white border-white/[0.08] focus:border-[#0169D9]'
                                                      : 'bg-white text-gray-900 border-gray-300 focus:border-[#0169D9]'
                                                } focus:outline-none focus:ring-1 focus:ring-[#0169D9]`}
                                             >
                                                {availableInboxes.map(inbox => (
-                                                  <option key={inbox.id} value={inbox.id}>
+                                                  <option key={inbox.id} value={inbox.id} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                                                      {inbox.name} ({inbox.channel})
                                                   </option>
                                                ))}
@@ -1637,14 +1612,15 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                                   <select
                                                      value={selectedPhone}
                                                      onChange={(e) => setSelectedPhone(e.target.value)}
+                                                     style={isDark ? { colorScheme: 'dark' } : undefined}
                                                      className={`w-full px-3 py-2 rounded-lg text-sm border transition-colors ${
-                                                        isDark 
-                                                           ? 'bg-white/[0.05] text-white border-white/[0.08] focus:border-[#0169D9]' 
+                                                        isDark
+                                                           ? 'bg-white/[0.05] text-white border-white/[0.08] focus:border-[#0169D9]'
                                                            : 'bg-white text-gray-900 border-gray-300 focus:border-[#0169D9]'
                                                      } focus:outline-none focus:ring-1 focus:ring-[#0169D9]`}
                                                   >
                                                      {availablePhones.map((phone, index) => (
-                                                        <option key={`${phone.value}-${index}`} value={phone.value}>
+                                                        <option key={`${phone.value}-${index}`} value={phone.value} className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>
                                                            {phone.label}
                                                         </option>
                                                      ))}
@@ -1679,7 +1655,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  )}
 
                  {activeTab === 'data' && (
-                    <div className={`p-6 overflow-y-auto h-full ${
+                    <div className={`p-6 overflow-y-auto scrollbar-thin h-full ${
                        isDark ? 'bg-[#000000]' : 'bg-gray-50'
                     }`}>
                        <div className="max-w-3xl mx-auto">
@@ -1736,19 +1712,20 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                                       <select
                                          value={newFieldType}
                                          onChange={(e) => setNewFieldType(e.target.value as any)}
+                                         style={isDark ? { colorScheme: 'dark' } : undefined}
                                          className={`w-full px-3 py-2 rounded-lg border text-sm transition-all focus:outline-none focus:ring-1 focus:ring-[#0169D9] ${
                                             isDark
                                                ? 'bg-white/[0.05] border-white/[0.1] text-white'
                                                : 'bg-gray-50 border-gray-200 text-gray-900'
                                          }`}
                                       >
-                                         <option value="text">Texto</option>
-                                         <option value="number">Número</option>
-                                         <option value="date">Data</option>
-                                         <option value="email">E-mail</option>
-                                         <option value="phone">Telefone</option>
-                                         <option value="url">URL</option>
-                                         <option value="textarea">Texto Longo</option>
+                                         <option value="text" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Texto</option>
+                                         <option value="number" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Número</option>
+                                         <option value="date" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Data</option>
+                                         <option value="email" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>E-mail</option>
+                                         <option value="phone" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Telefone</option>
+                                         <option value="url" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>URL</option>
+                                         <option value="textarea" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Texto Longo</option>
                                       </select>
                                    </div>
 
@@ -2243,7 +2220,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  )}
 
                  {activeTab === 'activities' && (
-                    <div className={`p-6 overflow-y-auto h-full ${
+                    <div className={`p-6 overflow-y-auto scrollbar-thin h-full ${
                        isDark ? 'bg-[#000000]' : 'bg-gray-50'
                     }`}>
                        <div className="max-w-3xl mx-auto">
@@ -2290,7 +2267,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  )}
 
                  {activeTab === 'files' && (
-                    <div className={`p-6 overflow-y-auto h-full ${
+                    <div className={`p-6 overflow-y-auto scrollbar-thin h-full ${
                        isDark ? 'bg-[#000000]' : 'bg-gray-50'
                     }`}>
                        <div className="max-w-3xl mx-auto">
@@ -2480,7 +2457,7 @@ export function LeadFullViewModal({ lead, isOpen, onClose, onSave, theme, onNavi
                  {activeTab === 'documents' && (
                     <div className={`h-full flex ${isDark ? 'bg-[#000000]' : 'bg-gray-50'}`}>
                        {/* Lista de Documentos */}
-                       <div className="flex-1 p-6 overflow-y-auto">
+                       <div className="flex-1 p-6 overflow-y-auto scrollbar-thin">
                           <div className="max-w-3xl mx-auto">
                              {loadingDocuments ? (
                                 <div className="flex items-center justify-center py-12">

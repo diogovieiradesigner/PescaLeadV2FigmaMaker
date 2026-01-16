@@ -74,7 +74,6 @@ export function useExtractionData(workspaceId: string) {
           filter: `workspace_id=eq.${workspaceId}`
         },
         (payload) => {
-          console.log('🔄 [REALTIME] Extractions changed:', payload);
           fetchData();
         }
       )
@@ -92,7 +91,6 @@ export function useExtractionData(workspaceId: string) {
           filter: `workspace_id=eq.${workspaceId}`
         },
         (payload) => {
-          console.log('🔄 [REALTIME] Extraction runs changed:', payload);
           fetchData();
         }
       )

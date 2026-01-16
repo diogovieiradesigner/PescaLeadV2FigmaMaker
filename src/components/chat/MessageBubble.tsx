@@ -62,7 +62,6 @@ function linkifyText(text: string, isSentMessage: boolean): React.ReactNode {
         
         // ✅ APENAS http e https são permitidos
         if (!['http:', 'https:'].includes(parsed.protocol)) {
-          console.warn('[MessageBubble] Protocolo não permitido:', parsed.protocol);
           return <span key={index}>{part}</span>; // Renderizar como texto normal
         }
         
@@ -75,13 +74,11 @@ function linkifyText(text: string, isSentMessage: boolean): React.ReactNode {
         ];
         
         if (suspiciousPatterns.some(pattern => pattern.test(url))) {
-          console.warn('[MessageBubble] URL suspeita bloqueada:', url);
           return <span key={index}>{part}</span>;
         }
         
       } catch (error) {
         // URL inválida - renderizar como texto
-        console.warn('[MessageBubble] URL inválida:', url);
         return <span key={index}>{part}</span>;
       }
       

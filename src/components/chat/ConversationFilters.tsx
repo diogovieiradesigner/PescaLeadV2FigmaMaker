@@ -114,7 +114,7 @@ function FilterDropdown({ label, options, selectedValues, onToggle, theme }: Fil
               isDark ? 'bg-[#1a1a1a] border-white/[0.08]' : 'bg-white border-border-light'
             }`}
           >
-            <div className="py-1 max-h-[300px] overflow-y-auto">
+            <div className="py-1 max-h-[300px] overflow-y-auto scrollbar-thin">
               {options.map((option) => (
                 <label
                   key={option.value}
@@ -346,7 +346,7 @@ export function ConversationFilters({
       }`}
     >
       <div 
-        className="px-4 py-2 overflow-x-auto"
+        className="px-4 py-2 overflow-x-auto scrollbar-thin"
         style={{
           scrollbarWidth: 'thin',
           scrollbarColor: isDark ? 'rgba(255,255,255,0.2) transparent' : 'rgba(0,0,0,0.2) transparent',

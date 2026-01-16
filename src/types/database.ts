@@ -25,9 +25,53 @@ export interface DbWorkspace {
   name: string;
   slug: string;
   owner_id: string;
+  plan_id: string | null;
   settings: Record<string, any>;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================
+// PLANS (Planos de Acesso)
+// ============================================
+export interface DbPlan {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================
+// SYSTEM PAGES (Páginas do Sistema)
+// ============================================
+export interface DbSystemPage {
+  id: string;
+  name: string;
+  path: string;
+  icon: string | null;
+  display_order: number;
+}
+
+// ============================================
+// PLAN PAGE ACCESS (Acesso Plano → Páginas)
+// ============================================
+export interface DbPlanPageAccess {
+  plan_id: string;
+  page_id: string;
+}
+
+// ============================================
+// ACCESSIBLE PAGE (Retorno da função RPC)
+// ============================================
+export interface AccessiblePage {
+  page_id: string;
+  page_name: string;
+  page_path: string;
+  page_icon: string | null;
+  display_order: number;
 }
 
 // ============================================

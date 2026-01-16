@@ -120,7 +120,7 @@ export function TagSelector({ theme, selectedTags, onTagsChange }: TagSelectorPr
             <p className={`text-xs mb-2 ${isDark ? 'text-white/50' : 'text-text-secondary-light'}`}>
               Tags disponíveis
             </p>
-            <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+            <div className="space-y-1 max-h-48 overflow-y-auto scrollbar-thin mb-3">
               {AVAILABLE_TAGS.map((tag) => (
                 <button
                   key={tag}

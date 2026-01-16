@@ -64,7 +64,6 @@ export function useKanbanData(
   // ============================================
   const loadFunnels = useCallback(async () => {
     if (!workspaceId) {
-      console.log('[KANBAN] loadFunnels: No workspace, skipping');
       setFunnelsLoading(false);
       setLoading(false);
       return;
@@ -72,7 +71,6 @@ export function useKanbanData(
 
     try {
       setFunnelsLoading(true);
-      console.log('[KANBAN] Carregando funis do workspace:', workspaceId);
       const { funnels: loadedFunnels, error } = await funnelsService.getFunnelsByWorkspace(workspaceId);
       
       if (error) {
@@ -80,7 +78,6 @@ export function useKanbanData(
         throw error;
       }
 
-      console.log('[KANBAN] Funis carregados:', loadedFunnels?.length || 0);
       setFunnels(loadedFunnels || []);
     } catch (error: any) {
       console.error('[KANBAN] Failed to load funnels:', error);
@@ -102,7 +99,6 @@ export function useKanbanData(
 
     try {
       setLoading(true);
-      console.log('[KANBAN] 🔍 Carregando funnel com filtros:', funnelId, filters);
       
       // Load funnel with columns (sem leads ainda)
       const { funnel, error } = await funnelsService.getFunnelById(funnelId, { limit: 0, offset: 0 });
@@ -112,11 +108,9 @@ export function useKanbanData(
         throw error || new Error('Funil não encontrado');
       }
 
-      console.log('[KANBAN] Funnel carregado:', funnel.name, 'com', funnel.columns.length, 'colunas');
       setCurrentFunnel(funnel);
 
       // ✅ OTIMIZAÇÃO: Carregar leads de TODAS as colunas em paralelo (1 requisição)
-      console.log('[KANBAN] 🚀 Carregando leads de todas as colunas em paralelo...');
       
       // Obter accessToken do Supabase
       const { data: { session } } = await supabase.auth.getSession();
@@ -137,20 +131,18 @@ export function useKanbanData(
       if (filters?.hasWhatsapp) queryParams.append('hasWhatsapp', 'true');
       if (filters?.searchQuery) queryParams.append('searchQuery', filters.searchQuery);
       
-      const url = `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/leads?${queryParams}`;
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${funnelId}/leads?${queryParams}`;
       
-      console.log('[KANBAN] 📡 Chamando API otimizada:', url);
       
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY, // ✅ OBRIGATÓRIO: Kong exige apikey
         },
       });
       
-      console.log('[KANBAN] 📊 Response status:', response.status, response.statusText);
-      console.log('[KANBAN] 📊 Response headers:', Object.fromEntries(response.headers.entries()));
       
       if (!response.ok) {
         // Verificar se a resposta é JSON antes de fazer parse
@@ -181,7 +173,6 @@ export function useKanbanData(
       
       const { columns: leadsByColumn } = await response.json();
       
-      console.log('[KANBAN] ✅ Leads carregados para', Object.keys(leadsByColumn || {}).length, 'colunas');
       
       // Mapear para o formato do estado
       const newColumnState: ColumnLeadsState = {};
@@ -193,12 +184,6 @@ export function useKanbanData(
         const convertedLeads = (columnData.leads || []).map((lead: any) => {
           // 🔍 DEBUG: Log do lead antes da conversão
           if (!lead.clientName || lead.clientName === '') {
-            console.warn('[KANBAN DATA] ⚠️ Lead sem clientName:', {
-              id: lead.id,
-              clientName: lead.clientName,
-              client_name: lead.client_name, // Verificar se vem com underscore
-              lead: lead
-            });
           }
           
           return {
@@ -250,7 +235,6 @@ export function useKanbanData(
       // 🚀 OTIMIZAÇÃO: Buscar estatísticas usando Stored Procedures
       // Performance: ~100ms (vs ~1000ms do método antigo com 10 queries)
       // Escalabilidade: Funciona com qualquer quantidade de leads (sem limite de 1000)
-      console.log('[KANBAN DATA] 🚀 Buscando stats otimizadas via Stored Procedures...');
       
       const { stats: optimizedStats, error: statsError } = await funnelsService.getFunnelStats(funnel.id);
 
@@ -263,7 +247,6 @@ export function useKanbanData(
           highPriorityCount: 0 
         });
       } else {
-        console.log('[KANBAN DATA] ✅ Stats otimizadas carregadas:', optimizedStats);
         setStats({
           totalLeads: optimizedStats?.totalLeads || 0,
           totalValue: optimizedStats?.totalValue || 0,
@@ -286,7 +269,6 @@ export function useKanbanData(
   // ============================================
   const loadMoreLeads = useCallback(async (columnId: string) => {
     if (!workspaceId) {
-      console.log('[KANBAN] loadMoreLeads: No workspace');
       return;
     }
 
@@ -294,11 +276,6 @@ export function useKanbanData(
     setColumnLeadsState(prev => {
       const columnState = prev[columnId];
       if (!columnState || !columnState.hasMore || columnState.loading) {
-        console.log('[KANBAN] loadMoreLeads: Nada para carregar', { 
-          hasState: !!columnState, 
-          hasMore: columnState?.hasMore,
-          loading: columnState?.loading 
-        });
         return prev; // Não muda nada
       }
 
@@ -308,7 +285,6 @@ export function useKanbanData(
       // Executar carregamento de forma assíncrona
       (async () => {
         try {
-          console.log('[KANBAN] Carregando mais leads para coluna:', columnId, 'offset:', offset, 'com filtros:', filters);
 
           // ✅ Obter accessToken do Supabase
           const { data: { session } } = await supabase.auth.getSession();
@@ -329,13 +305,11 @@ export function useKanbanData(
             throw error;
           }
 
-          console.log('[KANBAN] Carregados mais', newLeads.length, 'leads');
 
           // Atualizar estado e filtrar duplicatas
           setColumnLeadsState(prev => {
             // ✅ Verificar se a coluna existe no estado antes de acessar
             if (!prev[columnId]) {
-              console.warn('[KANBAN] Coluna não encontrada no estado:', columnId);
               return prev;
             }
 
@@ -504,7 +478,6 @@ export function useKanbanData(
             
             // Se mudou de coluna, remover da antiga
             if (newColumnId && oldColumnId !== newColumnId) {
-              console.log('[KANBAN] 🔄 Movendo lead de', oldColumnId, 'para', newColumnId);
               const newLeads = [...newState[columnId].leads];
               newLeads.splice(leadIndex, 1);
               newState[columnId] = {
@@ -555,18 +528,15 @@ export function useKanbanData(
   // ============================================
   const reloadStats = useCallback(async () => {
     if (!currentFunnel?.id) {
-      console.log('[KANBAN DATA] reloadStats: No current funnel');
       return;
     }
 
-    console.log('[KANBAN DATA] 🔄 Recarregando stats...');
     
     const { stats: optimizedStats, error: statsError } = await funnelsService.getFunnelStats(currentFunnel.id);
 
     if (statsError) {
       console.error('[KANBAN DATA] ❌ Erro ao recarregar stats:', statsError);
     } else {
-      console.log('[KANBAN DATA] ✅ Stats recarregadas:', optimizedStats);
       setStats({
         totalLeads: optimizedStats?.totalLeads || 0,
         totalValue: optimizedStats?.totalValue || 0,
@@ -754,13 +724,6 @@ export function useKanbanData(
     description?: string,
     columns?: { name: string; color?: string }[]
   ) => {
-    console.log('[KANBAN] createFunnel called:', {
-      name,
-      description,
-      columns: columns?.length || 0,
-      workspaceId,
-      hasWorkspaceId: !!workspaceId,
-    });
 
     if (!workspaceId) {
       console.error('[KANBAN] ❌ createFunnel: workspaceId is null/undefined');
@@ -803,7 +766,6 @@ export function useKanbanData(
     }
 
     try {
-      console.log('[KANBAN] Atualizando funil:', funnelId, updates);
 
       const { error } = await funnelsService.updateFunnel(funnelId, {
         name: updates.name,
@@ -815,7 +777,6 @@ export function useKanbanData(
         throw error;
       }
 
-      console.log('[KANBAN] ✅ Funil atualizado com sucesso');
 
       // Recarregar funil atualizado
       const { funnel: updatedFunnel } = await funnelsService.getFunnelById(funnelId);
@@ -846,7 +807,6 @@ export function useKanbanData(
     }
 
     try {
-      console.log('[KANBAN DATA] Deletando funil:', funnelId);
 
       // Chamar RPC para deletar funil de forma segura
       const { data, error } = await supabase.rpc('delete_funnel_safe', {
@@ -863,7 +823,6 @@ export function useKanbanData(
         throw new Error(data.error || 'Erro ao deletar funil');
       }
 
-      console.log('[KANBAN DATA] Funil deletado:', data);
 
       // Atualizar lista de funis
       setFunnels(prev => prev.filter(f => f.id !== funnelId));
@@ -889,14 +848,12 @@ export function useKanbanData(
 
   // Initial load - funnels
   useEffect(() => {
-    console.log('[KANBAN] useEffect funnels triggered:', { workspaceId, hasWorkspace: !!workspaceId });
 
     if (workspaceId) {
       // ✅ Detectar mudança de workspace usando ref (síncrono, sem delay)
       const workspaceChanged = previousWorkspaceRef.current !== null && previousWorkspaceRef.current !== workspaceId;
 
       if (workspaceChanged) {
-        console.log('[KANBAN] 🔄 Workspace MUDOU de', previousWorkspaceRef.current, 'para', workspaceId, '- limpando estado...');
 
         // ✅ CRÍTICO: Setar loading ANTES de resetar, para evitar flash de "Nenhum funil"
         setFunnelsLoading(true);
@@ -914,7 +871,6 @@ export function useKanbanData(
 
       loadFunnels();
     } else {
-      console.log('[KANBAN] No workspace ID, setting loading to false');
       setLoading(false);
       setFunnelsLoading(false);
 
@@ -930,13 +886,6 @@ export function useKanbanData(
 
   // Load funnel when currentFunnelId changes
   useEffect(() => {
-    console.log('[KANBAN] useEffect funnel triggered:', {
-      currentFunnelId,
-      workspaceId,
-      hasBoth: !!(currentFunnelId && workspaceId),
-      funnelsLoading,
-      funnelsCount: funnels.length
-    });
 
     if (currentFunnelId && workspaceId) {
       // ✅ PROTEÇÃO: Se os funis já carregaram, verificar se o funnel existe na lista
@@ -944,7 +893,6 @@ export function useKanbanData(
       if (!funnelsLoading && funnels.length > 0) {
         const funnelExistsInCurrentWorkspace = funnels.some(f => f.id === currentFunnelId);
         if (!funnelExistsInCurrentWorkspace) {
-          console.log('[KANBAN] ⚠️ Funnel', currentFunnelId, 'não existe no workspace atual - ignorando');
           setLoading(false);
           return;
         }
@@ -953,7 +901,6 @@ export function useKanbanData(
       loadFunnel(currentFunnelId);
     } else if (!currentFunnelId && funnelsLoading === false) {
       // Se não tem funnel selecionado mas os funis já carregaram, pode desligar loading
-      console.log('[KANBAN] No funnel selected, turning off loading');
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -990,13 +937,11 @@ export function useKanbanData(
     // ✅ CRÍTICO: Não depender de loadFunnel (evita recriações em cadeia)
     refetchFunnel: useCallback(async () => {
       if (!currentFunnelId || !workspaceId) {
-        console.log('[KANBAN DATA] refetchFunnel: Missing IDs');
         return;
       }
 
       try {
         setLoading(true);
-        console.log('[KANBAN] 🔄 Recarregando funnel:', currentFunnelId);
         
         // Load funnel with columns (sem leads ainda)
         const { funnel, error } = await funnelsService.getFunnelById(currentFunnelId, { limit: 0, offset: 0 });
@@ -1006,11 +951,9 @@ export function useKanbanData(
           return;
         }
 
-        console.log('[KANBAN] Funnel recarregado:', funnel.name, 'com', funnel.columns.length, 'colunas');
         setCurrentFunnel(funnel);
 
         // ✅ OTIMIZAÇÃO: Carregar leads de TODAS as colunas em paralelo (1 requisição)
-        console.log('[KANBAN] 🚀 Recarregando leads de todas as colunas em paralelo...');
         
         // Obter accessToken do Supabase
         const { data: { session } } = await supabase.auth.getSession();
@@ -1033,9 +976,8 @@ export function useKanbanData(
         if (filters?.hasWhatsapp) queryParams.append('hasWhatsapp', 'true');
         if (filters?.searchQuery) queryParams.append('searchQuery', filters.searchQuery);
         
-        const url = `https://${projectId}.supabase.co/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${currentFunnelId}/leads?${queryParams}`;
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/kanban-api/workspaces/${workspaceId}/funnels/${currentFunnelId}/leads?${queryParams}`;
         
-        console.log('[KANBAN] 📡 Chamando API otimizada para refetch:', url);
         
         const response = await fetch(url, {
           method: 'GET',
@@ -1045,8 +987,6 @@ export function useKanbanData(
           },
         });
         
-        console.log('[KANBAN] 📊 Response status:', response.status, response.statusText);
-        console.log('[KANBAN] 📊 Response headers:', Object.fromEntries(response.headers.entries()));
         
         if (!response.ok) {
           // Verificar se a resposta é JSON antes de fazer parse
@@ -1077,7 +1017,6 @@ export function useKanbanData(
         
         const { columns: leadsByColumn } = await response.json();
         
-        console.log('[KANBAN] ✅ Leads recarregados para', Object.keys(leadsByColumn || {}).length, 'colunas');
         
         // Mapear para o formato do estado
         const newColumnState: ColumnLeadsState = {};
@@ -1131,7 +1070,6 @@ export function useKanbanData(
         setColumnLeadsState(newColumnState);
 
         // Buscar estatísticas
-        console.log('[KANBAN DATA] 🚀 Buscando stats...');
         
         const { stats: optimizedStats, error: statsError } = await funnelsService.getFunnelStats(funnel.id);
 
@@ -1144,7 +1082,6 @@ export function useKanbanData(
             highPriorityCount: 0 
           });
         } else {
-          console.log('[KANBAN DATA] ✅ Stats carregadas:', optimizedStats);
           setStats({
             totalLeads: optimizedStats?.totalLeads || 0,
             totalValue: optimizedStats?.totalValue || 0,

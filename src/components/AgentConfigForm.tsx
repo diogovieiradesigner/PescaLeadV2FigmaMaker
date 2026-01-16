@@ -133,13 +133,11 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
   }, [hasChanges, onHasChanges]);
 
   const loadInitialData = async () => {
-    console.log('[AgentConfigForm] 🚀 Starting loadInitialData');
     try {
       setLoading(true);
 
       // ✅ Usar workspace do contexto de autenticação
       if (!currentWorkspace?.id) {
-        console.log('[AgentConfigForm] ❌ No current workspace in context');
         toast.error('Nenhum workspace selecionado. Selecione um workspace para continuar.');
         setLoadingInboxes(false);
         setLoadingAttendants(false);
@@ -147,19 +145,12 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
       }
 
       const wsId = currentWorkspace.id;
-      console.log('[AgentConfigForm] ✅ Using workspace from context:', {
-        id: wsId,
-        name: currentWorkspace.name,
-        role: currentWorkspace.role
-      });
       setWorkspaceId(wsId);
 
       // Carregar inboxes
-      console.log('[AgentConfigForm] 📞 Calling loadInboxes');
       loadInboxes(wsId);
 
       // Carregar atendentes
-      console.log('[AgentConfigForm] 📞 Calling loadAttendants');
       loadAttendants(wsId);
 
       // Se tem agentId, carregar dados do agente
@@ -173,13 +164,11 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
       setLoadingInboxes(false);
       setLoadingAttendants(false);
     } finally {
-      console.log('[AgentConfigForm] 🏁 loadInitialData completed');
       setLoading(false);
     }
   };
 
   const loadInboxes = async (wsId: string) => {
-    console.log('[AgentConfigForm] 📥 Loading inboxes for workspace:', wsId);
     try {
       const { data: inboxes } = await supabase
         .from('inboxes')
@@ -187,18 +176,14 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
         .eq('workspace_id', wsId)
         .order('created_at', { ascending: false });
 
-      console.log('[AgentConfigForm] ✅ Inboxes loaded:', inboxes?.length || 0);
       setAvailableInboxes(inboxes || []);
     } catch (error) {
-      console.log('[AgentConfigForm] ⚠️ Error loading inboxes (silent):', error);
     } finally {
-      console.log('[AgentConfigForm] 🏁 Setting loadingInboxes to false');
       setLoadingInboxes(false);
     }
   };
 
   const loadAttendants = async (wsId: string) => {
-    console.log('[AgentConfigForm] 👥 Loading attendants for workspace:', wsId);
     try {
       const { data: members } = await supabase
         .from('workspace_members')
@@ -229,26 +214,21 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
           };
         }) || [];
 
-      console.log('[AgentConfigForm] ✅ Attendants loaded:', attendants.length);
       setAvailableAttendants(attendants);
     } catch (error) {
-      console.log('[AgentConfigForm] ⚠️ Error loading attendants (silent):', error);
     } finally {
-      console.log('[AgentConfigForm] 🏁 Setting loadingAttendants to false');
       setLoadingAttendants(false);
     }
   };
 
   const loadAgentData = async (id: string) => {
     try {
-      console.log('[AgentConfigForm] 📥 Carregando dados do agente:', id);
       const agent = await fetchAIAgent(id);
       if (!agent) {
         console.error('[AgentConfigForm] ❌ Agente não encontrado:', id);
         toast.error('Agente não encontrado');
         return;
       }
-      console.log('[AgentConfigForm] ✅ Agente carregado:', agent.name);
 
       // Configurações Básicas
       setAgentName(agent.name);
@@ -258,9 +238,7 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
       setSystemPrompt(agent.system_prompt);
 
       // ✅ Especialistas - AGORA DA TABELA ai_specialist_agents
-      console.log('[AgentConfigForm] 📥 Carregando especialistas da tabela...');
       const specialists = await fetchSpecialistAgents(id);
-      console.log('[AgentConfigForm] ✅ Especialistas carregados:', specialists.length);
       setSpecialistAgents(specialists);
 
       // Behavior Config
@@ -352,17 +330,13 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
 
       if (agentId) {
         // Atualizar agente existente
-        console.log('[AgentConfigForm] 🔄 MODO UPDATE - Agente ID:', agentId);
         const updated = await updateAIAgent(agentId, agentData);
         savedAgentId = updated.id;
-        console.log('[AgentConfigForm] ✅ Agente atualizado:', savedAgentId);
         toast.success('Agente atualizado com sucesso');
       } else {
         // Criar novo agente
-        console.log('[AgentConfigForm] ➕ MODO INSERT - Criando novo agente');
         const created = await createAIAgent(agentData as any);
         savedAgentId = created.id;
-        console.log('[AgentConfigForm] ✅ Novo agente criado:', savedAgentId);
         toast.success('Agente criado com sucesso');
       }
 
@@ -379,14 +353,12 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
       await updateAgentAttendants(savedAgentId, attendantsList);
 
       // ✅ NOVO: Sincronizar especialistas na tabela ai_specialist_agents
-      console.log('[AgentConfigForm] 🔄 Sincronizando especialistas na tabela...');
       // Garantir que todos os especialistas tenham parent_agent_id
       const specialistsWithParent = specialistAgents.map(spec => ({
         ...spec,
         parent_agent_id: savedAgentId,
       }));
       await syncSpecialistAgents(savedAgentId, specialistsWithParent);
-      console.log('[AgentConfigForm] ✅ Especialistas sincronizados');
 
       setHasChanges(false);
 
@@ -624,14 +596,15 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
             <select
               value={defaultAttendantType}
               onChange={(e) => { setDefaultAttendantType(e.target.value as 'ai' | 'human'); setHasChanges(true); }}
+              style={isDark ? { colorScheme: 'dark' } : undefined}
               className={`w-full px-3 py-2 rounded-lg border outline-none transition-colors ${
                 isDark
                   ? 'bg-white/[0.05] border-white/[0.1] text-white focus:border-[#0169D9]'
                   : 'bg-white border-gray-200 text-gray-900 focus:border-[#0169D9]'
               }`}
             >
-              <option value="ai">I.A (Inteligência Artificial)</option>
-              <option value="human">Humano (Atendimento Manual)</option>
+              <option value="ai" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>I.A (Inteligência Artificial)</option>
+              <option value="human" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Humano (Atendimento Manual)</option>
             </select>
           </div>
 
@@ -721,6 +694,7 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
                     <select
                       value={agent.type || 'custom'}
                       onChange={(e) => updateSpecialistAgent(agent.id, 'type', e.target.value)}
+                      style={isDark ? { colorScheme: 'dark' } : undefined}
                       className={`flex-1 lg:w-auto lg:min-w-[200px] px-3 py-2 rounded-lg border outline-none transition-colors ${
                         isDark
                           ? 'bg-white/[0.05] border-white/[0.1] text-white focus:border-[#0169D9]'
@@ -728,9 +702,9 @@ export function AgentConfigForm({ isDark, agentId, onSaved, onHasChanges, onSave
                       }`}
                       title="Tipo do especialista"
                     >
-                      <option value="custom">Personalizado (temático)</option>
-                      <option value="inbound">Inbound (cliente iniciou)</option>
-                      <option value="outbound">Outbound (prospecção)</option>
+                      <option value="custom" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Personalizado (temático)</option>
+                      <option value="inbound" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Inbound (cliente iniciou)</option>
+                      <option value="outbound" className={isDark ? 'bg-[#0a0a0a] text-white' : 'bg-white text-black'}>Outbound (prospecção)</option>
                     </select>
                     
                     {/* Toggle Switch */}

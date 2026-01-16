@@ -708,3 +708,48 @@ body:not(.light-theme) .expanded-editor-content .ProseMirror p.is-editor-empty:f
     background: white !important;
   }
 }
+
+/* ========================================
+   AUDIO PLAYER STYLING
+   ======================================== */
+
+/* Light audio player (for dark backgrounds like user messages) */
+.audio-player-light {
+  filter: invert(1) brightness(1.2);
+}
+
+.audio-player-light::-webkit-media-controls-panel {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.audio-player-light::-webkit-media-controls-current-time-display,
+.audio-player-light::-webkit-media-controls-time-remaining-display {
+  color: white;
+}
+
+/* Dark audio player (for light backgrounds) */
+.audio-player-dark {
+  filter: none;
+}
+
+/* Custom audio player container styles */
+.audio-player-container {
+  position: relative;
+  width: 100%;
+}
+
+/* Audio element base styles */
+audio {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+}
+
+audio::-webkit-media-controls-enclosure {
+  border-radius: 8px;
+}
+
+/* Firefox audio player */
+audio::-moz-media-controls {
+  border-radius: 8px;
+}
